@@ -3,7 +3,7 @@ const recoverableSignals = new Set([
   'attended-review-correction',
   'clean-interrupted-command',
   'adapter-failure-before-submission',
-  'correction-session-lost',
+  'reserved-shim-stop',
 ]);
 
 export function classify(input) {
@@ -11,11 +11,15 @@ export function classify(input) {
   const assignment = object(input.assignment, 'assignment');
   const reason = nonrecoverableReason(input);
   if (reason !== null) return decision(false, nonrecoverableAction(reason), reason, assignment);
+  if (input.signal === 'correction-session-lost') {
+    if (!validCorrectionContext(input.correction)) return decision(false, 'stop-without-restart', 'correction-context-lost', assignment);
+    if (input.correction.controllerResumeSupported !== true) {
+      return decision(false, 'stop-without-restart', 'correction-session-unresumable', assignment);
+    }
+    return decision(true, 'resume-controller-journal', 'correction-session-lost', assignment);
+  }
   if (!recoverableSignals.has(input.signal)) {
     return decision(false, 'stop-for-operator-classification', 'unrecognized-stop-signal', assignment);
-  }
-  if (input.signal === 'correction-session-lost' && !validCorrectionContext(input.correction)) {
-    return decision(false, 'stop-without-restart', 'correction-context-lost', assignment);
   }
   return decision(true, 'continue-same-assignment', input.signal, assignment);
 }
@@ -23,17 +27,19 @@ export function classify(input) {
 function nonrecoverableAction(reason) {
   if (reason.startsWith('outcome-')) return 'record-terminal-outcome';
   if (reason === 'uncertain-partial-publication') return 'stop-for-evidence';
+  if (reason === 'command-failure') return 'record-command-failure';
   return 'quarantine-and-stop';
 }
 
 function validCorrectionContext(value) {
-  return value && typeof value === 'object' &&
+  return value && typeof value === 'object' && value.authenticJournal === true &&
     /^sha256:[0-9a-f]{64}$/.test(value.previousResponseDigest ?? '') &&
-    /^sha256:[0-9a-f]{64}$/.test(value.diagnosticsDigest ?? '');
+    Array.isArray(value.diagnostics);
 }
 
 function nonrecoverableReason(input) {
-  if (input.integrity?.doctorOk !== true || input.integrity?.snapshotOk !== true) return 'integrity-drift';
+  if (input.commandFailure === true || input.integrity?.snapshotOk !== true) return 'command-failure';
+  if (input.integrity?.doctorOk !== true) return 'integrity-drift';
   if (input.repository?.clean !== true) return 'repository-dirty-or-uncertain';
   if (input.repository?.fingerprintMatches !== true) return 'repository-drift';
   if (input.package?.fingerprintMatches !== true) return 'package-drift';
@@ -61,12 +67,6 @@ function decision(recoverable, action, reason, assignment) {
 }
 
 function requireContract(value, expected) {
-  if (!value || typeof value !== 'object' || Array.isArray(value) || value.contract !== expected) {
-    throw new Error(`expected ${expected}`);
-  }
+  if (!value || typeof value !== 'object' || Array.isArray(value) || value.contract !== expected) throw new Error(`expected ${expected}`);
 }
-
-function object(value, name) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${name} must be an object`);
-  return value;
-}
+function object(value, name) { if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${name} must be an object`); return value; }

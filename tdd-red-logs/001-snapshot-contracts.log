@@ -1,0 +1,37 @@
+✖ snapshot retains complete immutable evidence and classifies malformed command output (481.761141ms)
+✖ snapshot records exact lifecycle and Assignment repository fingerprints separately (595.757094ms)
+ℹ tests 2
+ℹ suites 0
+ℹ pass 0
+ℹ fail 2
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1208.359902
+
+✖ failing tests:
+
+test at test/remediation.test.mjs:89:1
+✖ snapshot retains complete immutable evidence and classifies malformed command output (481.761141ms)
+  AssertionError [ERR_ASSERTION]: {"contract":"mdlm-demo-error@1","error":"assignment show returned invalid JSON: Unexpected end of JSON input"}
+  
+  
+  1 !== 0
+  
+      at TestContext.<anonymous> (file:///home/ubuntu/git/mdlm-demo-orchestrator/test/remediation.test.mjs:96:10)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 1,
+    expected: 0,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/remediation.test.mjs:108:1
+✖ snapshot records exact lifecycle and Assignment repository fingerprints separately (595.757094ms)
+  TypeError: Cannot read properties of undefined (reading 'trackedState')
+      at TestContext.<anonymous> (file:///home/ubuntu/git/mdlm-demo-orchestrator/test/remediation.test.mjs:113:45)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7)

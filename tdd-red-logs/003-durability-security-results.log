@@ -1,0 +1,80 @@
+✔ run and resume submit and commit an external Assignment exactly once (1815.938582ms)
+✔ an uncertain submission is never repeated on resume (1816.555462ms)
+✔ resume commits a durably accepted publication without resubmitting (1853.125259ms)
+✔ run refuses command provenance drift before preparing or submitting (850.478966ms)
+✔ a clean extra commit is nonrecoverable on resume (1683.012639ms)
+✔ changed executable bytes cannot be blessed by changing configured provenance (1616.884644ms)
+✔ lost correction session is not fed shell stdin or restarted without controller resume support (1618.523412ms)
+✔ mdlm-pi exit codes and typed results distinguish lifecycle outcomes from operational failures (6533.905436ms)
+✖ controlled worker environment strips Git, Node, and shell startup injection variables (166.221612ms)
+✔ successive ordinary Assignments use immutable Assignment-keyed state (1723.415793ms)
+✔ publication rejects traversal, malformed execution identities, and symlink parents before Git staging (3085.063226ms)
+✖ durable submitting transition prevents duplicate submit across injected crash seams (715.862147ms)
+✔ attended correction re-entry passes an operator-selected catalog decision to mdlm-pi (907.05267ms)
+ℹ tests 13
+ℹ suites 0
+ℹ pass 11
+ℹ fail 2
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 24513.015022
+
+✖ failing tests:
+
+test at test/run.test.mjs:246:1
+✖ controlled worker environment strips Git, Node, and shell startup injection variables (166.221612ms)
+  AssertionError [ERR_ASSERTION]: node:internal/modules/cjs/loader:1520
+    throw err;
+    ^
+  
+  Error: Cannot find module '/tmp/hostile-node-hook'
+  Require stack:
+  - internal/preload
+      at Module._resolveFilename (node:internal/modules/cjs/loader:1517:15)
+      at wrapResolveFilename (node:internal/modules/cjs/loader:1071:27)
+      at defaultResolveImplForCJSLoading (node:internal/modules/cjs/loader:1095:10)
+      at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1122:12)
+      at Module._load (node:internal/modules/cjs/loader:1294:5)
+      at wrapModuleLoad (node:internal/modules/cjs/loader:255:19)
+      at Module.require (node:internal/modules/cjs/loader:1617:12)
+      at node:internal/modules/cjs/loader:2164:12
+      at loadPreloadModules (node:internal/process/pre_execution:710:5)
+      at initializeModuleLoaders (node:internal/process/pre_execution:243:5) {
+    code: 'MODULE_NOT_FOUND',
+    requireStack: [ 'internal/preload' ]
+  }
+  
+  Node.js v24.19.0
+  
+  
+  1 !== 0
+  
+      at TestContext.<anonymous> (file:///home/ubuntu/git/mdlm-demo-orchestrator/test/run.test.mjs:261:10)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 1,
+    expected: 0,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/run.test.mjs:313:1
+✖ durable submitting transition prevents duplicate submit across injected crash seams (715.862147ms)
+  AssertionError [ERR_ASSERTION]: {"contract":"mdlm-demo-error@1","error":"lifecycle repository writer lock is held: /tmp/issue-213-run-TFKjMy/repository/.git/mdlm-demo-orchestrator/a9ff2ff3f6c31d5623bf0aeb3bf026dab79ff8b51fb4735c836aa5a1aae7d489/writer.lock"}
+  
+  
+  1 !== 0
+  
+      at TestContext.<anonymous> (file:///home/ubuntu/git/mdlm-demo-orchestrator/test/run.test.mjs:319:12)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 1,
+    expected: 0,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

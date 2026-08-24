@@ -31,13 +31,13 @@ The shim also stops before the next Assignment. It does not inspect worker text,
 
 ## Recovery rules
 
-Every `run` and `resume` starts with a create-once snapshot, then reconciles `doctor`, `status`, the active Assignment, the transaction journal, Git, tools, package bytes, and configured source identities. A one-writer directory lock covers this work.
+Every `run` and `resume` first resolves the lifecycle repository and worktree-private Git directory, then acquires a repository-wide lock beneath the canonical common Git directory. The lock is independent of caller-selected state paths and covers snapshotting, reconciliation, execution, and the post-run snapshot. Stale locks left by terminated owners are recovered. The runner then reconciles `doctor`, `status`, the active Assignment, assignment-keyed transaction state, Git, tools, package bytes, the installed Process Package, and source identities.
 
 | Observed state | Result |
 | --- | --- |
 | Attended answer, active Assignment, matching fingerprints | Continue the same Assignment with a catalog decision |
 | Attended Review correction, active Assignment, matching fingerprints | Continue the same Assignment |
-| Lost correction worker session with durable response and diagnostics digests | Continue the same Assignment; never resubmit the old bytes |
+| Lost correction worker session with an authentic durable `mdlm-pi` journal | Resume only if the installed controller exposes an authentic journal-resume operation; otherwise stop without stdin replay or Assignment restart |
 | Clean command interruption before submission starts | Continue the same Assignment |
 | External adapter stop before submission | Re-run the adapter against the same packet bytes |
 | Captured response, submission not started | Submit the captured exact bytes |
@@ -48,9 +48,11 @@ Every `run` and `resume` starts with a create-once snapshot, then reconciles `do
 | Invalid provenance or failed integrity check | Stop as nonrecoverable |
 | Submission started without accepted execution evidence | Stop as an uncertain transaction; never retry automatically |
 | Accepted execution with missing, mismatched, or ambiguous Git publication evidence | Stop as uncertain publication; never retry automatically |
-| Explicit terminal, invalid, dead-end, boundary, abandoned, or complete outcome | Stop as nonrecoverable |
+| Explicit terminal, invalid, dead-end, boundary, abandoned, or complete outcome | Record the typed lifecycle outcome; never treat it as a generic retryable command failure |
 
-A failed command is not enough to make a retry safe. The journal must still say that submission never started. Once the journal reaches `submitting`, only exact accepted-execution evidence can settle the transaction.
+A failed command is not enough to make a retry safe. The journal must still say that submission never started. Once the journal reaches `submitting`, only exact accepted-execution evidence can settle the transaction. Journal replacement uses a unique temporary file, file `fsync`, parent-directory `fsync`, atomic rename, and a second parent-directory `fsync`.
+
+A clean unrelated lifecycle-repository commit is drift, not recovery. Expected values supplied by a later request cannot bless changes to source, harness, artifact, executable target, installed Process Package, or an existing Assignment boundary. Successive ordinary Assignments get separate immutable directories beneath `stateDirectory/assignments`; repository identity and locking remain repository-wide.
 
 ## Evidence
 
@@ -58,13 +60,16 @@ A failed command is not enough to make a retry safe. The journal must still say 
 
 - raw stdout and stderr bytes for `git rev-parse`, `git status`, `mdlm doctor`, `mdlm status`, and `mdlm assignment show`
 - argv, working directory, deadline, timestamps, exit status, signal, and SHA-256 for each command
-- Git HEAD, tree, and porcelain status
+- Git HEAD, tree, a tracked-state digest computed from HEAD plus staged and worktree patches, and porcelain status
+- lifecycle repository identity kept separate from Assignment repository identity
 - Assignment identity and state
 - the transaction journal bytes and digest, when present
-- source, qualification harness, package artifact, `mdlm`, and `mdlm-pi` identities
+- exact source and qualification-harness commit/tree identities, harness manifest bytes, package artifact bytes, and configured/real `mdlm` and `mdlm-pi` identities
 - `manifest.json` with byte lengths and SHA-256 values
 
-The runner removes write permission from completed snapshot files and directories. Process commands after the snapshot go into create-once files under `stateDirectory/command-evidence`. The transaction journal remains mutable through atomic replacement. Each later snapshot captures its then-current bytes.
+Every command record includes spawn errors and output-limit state as well as exit/signal/deadline evidence. Nonzero commands and malformed JSON produce a complete immutable snapshot whose result is `command-failure`; evidence capture does not substitute an exception for the failed command. Every run also returns a post-run snapshot.
+
+The runner removes write permission from completed snapshot files and directories. Process commands after the snapshot go into create-once files under the Assignment directory. The transaction journal remains mutable only through durable atomic replacement. Each later snapshot captures its then-current bytes.
 
 ## External adapter inputs
 
@@ -146,7 +151,8 @@ The runner records the origin, authority basis, and digest. It does not label th
   "provenance": {
     "source": {
       "repository": "/absolute/path/to/mdlm-source",
-      "commit": "SOURCE_COMMIT"
+      "commit": "SOURCE_COMMIT",
+      "tree": "SOURCE_TREE"
     },
     "package": {
       "artifact": "/absolute/path/to/package.tgz",
@@ -164,13 +170,18 @@ The runner records the origin, authority basis, and digest. It does not label th
     },
     "qualificationHarness": {
       "repository": "/absolute/path/to/mdlm-phase1-qualification-harness",
-      "commit": "79c87627aaf48ca3261a3476aa82c52524f3c938"
+      "commit": "79c87627aaf48ca3261a3476aa82c52524f3c938",
+      "tree": "e7311ce6e36df8df6fa840ea2df70ff00fe316c1",
+      "manifest": {
+        "path": "/absolute/path/to/tracked-qualification-manifest.json",
+        "digest": "sha256:MANIFEST_SHA256"
+      }
     }
   }
 }
 ```
 
-The artifact digest is the SHA-256 of the configured file bytes. The MDLM Process Package digest is a separate lifecycle identity. The runner compares that identity across status, Assignment state, and packet data. It does not claim that a tarball digest equals the Process Package digest unless the operator supplies evidence for that relationship.
+The artifact digest is the SHA-256 of the configured file bytes. Configured paths and resolved real paths are both recorded. The MDLM Process Package digest is a separate lifecycle identity. The runner compares that identity across status, Assignment state, and packet data. It does not claim that a tarball digest equals the Process Package digest unless the operator supplies evidence for that relationship.
 
 ## Commands
 
@@ -191,5 +202,7 @@ That command has not been run. No remote has been created, and no result from th
 
 - The runner supports the issue #213 Phase 1 path. It is not a general workflow scheduler.
 - An uncertain submit or publication requires operator evidence. Automatic recovery refuses it.
-- `mdlm-pi` owns worker-session correction recovery. If its durable correction context is missing, the runner stops without restarting the Assignment.
+- `mdlm-pi` owns worker-session correction recovery. The inspected packaged controller reports `assignment-correction-session-lost` but exposes no correction-session resume command, so this runner currently stops without stdin replay or Assignment restart even when the durable context is authentic.
+- Accepted publication paths must use a UUIDv4 execution ID and remain canonical regular files below `.lifecycle/data/.transactions/<execution-id>`. Traversal, duplicate paths, symlink components, and canonical-path changes are rejected before hashing or staging.
+- Child processes receive an allowlisted environment. Git subprocesses additionally use isolated system/global configuration; ambient Git, Node, and shell-startup injection variables are removed. The policy is recorded in each snapshot.
 - For the issue #212 run, the authoritative `mdlm` archive is SHA-256 `8f7eb4b7d4e04a053713c72debc2a4a71d7878a0a9ed084ade8c964e9eef6cf7`, rebuilt from source commit `516f9e0ef52bb5fcc47cce56282a44075c5af4f2` and tree `623575c22b53bd6a2a21c73c4420ca5f26aaa172`. Its installed Process Package independently recomputes as `sha256:ee99e698d36e406a836a796a36fc1db2d2451072ad662c0e06805ab5c20fe5ac`. The archive digest and Process Package digest remain distinct identities and both must match their configured boundaries.

@@ -1,6 +1,6 @@
 import { copyFile, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { commandRecord, parseJsonBytes, requireObject, runProcess, sha256 } from './util.mjs';
+import { commandRecord, commandSucceeded, controlledEnvironment, gitEnvironment, parseJsonBytes, requireObject, runProcess, sha256 } from './util.mjs';
 
 const intercepted = new Set([
   'realize-verification-environment@1',
@@ -16,7 +16,9 @@ export async function adaptAssignment(options) {
   const assignmentId = packet.assignment.id;
   const scenario = packet.scenario.reference;
   if (!intercepted.has(scenario)) return adapterStop('scenario-not-intercepted', scenario, packet);
-  const root = path.resolve(options.stateDirectory, 'assignments', safeId(assignmentId));
+  const root = options.assignmentDirectory
+    ? path.resolve(options.assignmentDirectory)
+    : path.resolve(options.stateDirectory, 'assignments', safeId(assignmentId));
   await mkdir(root, { recursive: true, mode: 0o700 });
   const identityPath = path.join(root, 'packet-identity.json');
   const packetDigest = sha256(packetBytes);
@@ -58,14 +60,14 @@ async function realizeEnvironment(packet, root, responsePath, options) {
     '--output', generatedPath,
   ], { cwd: harness.directory, timeoutMs: timeout(options.timeoutMs), env: environment });
   await retainCommand(attempt, 'generate', generated);
-  if (generated.exitStatus !== 0 || generated.timedOut) {
+  if (!commandSucceeded(generated)) {
     return adapterStop('harness-proposal-generation-failed', commandFailure(generated), packet, { generate: commandRecord(generated) });
   }
   const preflight = await runProcess(process.execPath, [
     path.join(harness.directory, 'bin/mdlm-phase1-qualify.mjs'), 'preflight', '--proposal', generatedPath,
   ], { cwd: harness.directory, timeoutMs: timeout(options.timeoutMs), env: environment });
   await retainCommand(attempt, 'preflight', preflight);
-  if (preflight.exitStatus !== 0 || preflight.timedOut) {
+  if (!commandSucceeded(preflight)) {
     return adapterStop('harness-preflight-failed', commandFailure(preflight), packet, { preflight: commandRecord(preflight) });
   }
   const preflightOutput = parseJsonBytes(preflight.stdout, 'qualification preflight');
@@ -111,12 +113,12 @@ async function verifyHarness(value, timeoutMs) {
   if (!value || typeof value.directory !== 'string' || typeof value.commit !== 'string' || typeof value.tree !== 'string' || typeof value.repositoryLocator !== 'string') {
     return { ok: false, reason: 'harness directory, commit, tree, and repositoryLocator are required', commands: {} };
   }
-  const commandOptions = { cwd: value.directory, timeoutMs: timeout(timeoutMs) };
+  const commandOptions = { cwd: value.directory, timeoutMs: timeout(timeoutMs), env: gitEnvironment() };
   const head = await runProcess('git', ['rev-parse', 'HEAD^{commit}'], commandOptions);
   const tree = await runProcess('git', ['rev-parse', 'HEAD^{tree}'], commandOptions);
   const status = await runProcess('git', ['status', '--porcelain=v1', '--untracked-files=all'], commandOptions);
   const commands = { head: commandRecord(head), tree: commandRecord(tree), status: commandRecord(status) };
-  const ok = head.exitStatus === 0 && tree.exitStatus === 0 && status.exitStatus === 0 &&
+  const ok = commandSucceeded(head) && commandSucceeded(tree) && commandSucceeded(status) &&
     head.stdout.toString('utf8').trim() === value.commit && tree.stdout.toString('utf8').trim() === value.tree && status.stdout.length === 0;
   return { ok, reason: ok ? null : 'harness HEAD, tree, or clean status differs', commands };
 }
@@ -165,7 +167,6 @@ function adapterStop(reason, detail, packet, evidence = {}) {
   return { kind: 'stop', stop: { contract: 'mdlm-demo-reserved-stop@1', type: 'external-adapter', phase: 'before-submission', reason, detail, ...(packet ? { assignment: packet.assignment, scenario: packet.scenario.reference, package: packet.package, repository: packet.repository } : {}), evidence } };
 }
 function commandFailure(result) { return result.timedOut ? 'deadline exceeded' : `exit status ${result.exitStatus}`; }
-function controlledEnvironment() { return { PATH: process.env.PATH ?? '/usr/bin:/bin', HOME: process.env.HOME ?? '/', LANG: 'C', LC_ALL: 'C', NODE_OPTIONS: '' }; }
 function timeout(value) { return Number.isSafeInteger(value) && value >= 1 && value <= 900_000 ? value : 30_000; }
 function safeId(value) { return value.replace(/[^A-Za-z0-9._-]/g, '_'); }
 async function optionalBytes(file) { try { return await readFile(file); } catch (error) { if (error.code === 'ENOENT') return null; throw error; } }

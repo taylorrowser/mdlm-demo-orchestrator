@@ -30,6 +30,7 @@ test('snapshot writes raw command and Git evidence once and cannot replace it', 
     command('git', ['commit', '-m', 'initial'], directory);
   }
   const sourceCommit = command('git', ['rev-parse', 'HEAD'], source);
+  const sourceTree = command('git', ['rev-parse', 'HEAD^{tree}'], source);
   const harnessCommit = sourceCommit;
   const fakeMdlm = path.join(scratch, 'mdlm');
   const fakePi = path.join(scratch, 'mdlm-pi');
@@ -49,13 +50,16 @@ test('snapshot writes raw command and Git evidence once and cannot replace it', 
     journalPath: path.join(scratch, 'journal.json'),
     timeoutMs: 5_000,
     provenance: {
-      source: { repository: source, commit: sourceCommit },
+      source: { repository: source, commit: sourceCommit, tree: sourceTree },
       package: { artifact: packageArtifact, digest: `sha256:${sha(packageArtifact)}` },
       tools: {
         mdlm: { path: fakeMdlm, digest: `sha256:${sha(fakeMdlm)}` },
         mdlmPi: { path: fakePi, digest: `sha256:${sha(fakePi)}` },
       },
-      qualificationHarness: { repository: source, commit: harnessCommit },
+      qualificationHarness: {
+        repository: source, commit: harnessCommit, tree: sourceTree,
+        manifest: { path: path.join(source, 'tracked.txt'), digest: `sha256:${sha(path.join(source, 'tracked.txt'))}` },
+      },
     },
   };
   const first = spawnSync(process.execPath, [cli, 'snapshot'], { cwd: root, input: JSON.stringify(request), encoding: 'utf8', timeout: 10_000 });

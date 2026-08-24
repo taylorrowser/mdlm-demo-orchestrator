@@ -86,8 +86,18 @@ test('a lost correction session resumes only with durable correction context', (
   assert.equal(missing.output.reason, 'correction-context-lost');
 
   const input = healthy('correction-session-lost');
-  input.correction = { previousResponseDigest: `sha256:${'a'.repeat(64)}`, diagnosticsDigest: `sha256:${'b'.repeat(64)}` };
+  input.correction = {
+    authenticJournal: true,
+    controllerResumeSupported: false,
+    previousResponseDigest: `sha256:${'a'.repeat(64)}`,
+    diagnostics: [],
+  };
+  const unsupported = invoke('classify', input);
+  assert.equal(unsupported.output.recoverable, false);
+  assert.equal(unsupported.output.reason, 'correction-session-unresumable');
+
+  input.correction.controllerResumeSupported = true;
   const retained = invoke('classify', input);
   assert.equal(retained.output.recoverable, true);
-  assert.equal(retained.output.action, 'continue-same-assignment');
+  assert.equal(retained.output.action, 'resume-controller-journal');
 });

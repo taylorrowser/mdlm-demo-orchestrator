@@ -1,0 +1,2 @@
+# Test runner diagnostics are preserved byte-for-byte as TDD red evidence.
+tdd-red-logs/*.log whitespace=-blank-at-eol,-blank-at-eof
