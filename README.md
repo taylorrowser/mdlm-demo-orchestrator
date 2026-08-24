@@ -192,4 +192,4 @@ That command has not been run. No remote has been created, and no result from th
 - The runner supports the issue #213 Phase 1 path. It is not a general workflow scheduler.
 - An uncertain submit or publication requires operator evidence. Automatic recovery refuses it.
 - `mdlm-pi` owns worker-session correction recovery. If its durable correction context is missing, the runner stops without restarting the Assignment.
-- The supplied Process Package digest `sha256:ee99e698d36e406a836a796a36fc1db2d2451072ad662c0e06805ab5c20fe5ac` has not been mapped to either observed package archive. A real request must identify and hash the authoritative artifact first.
+- For the issue #212 run, the authoritative `mdlm` archive is SHA-256 `8f7eb4b7d4e04a053713c72debc2a4a71d7878a0a9ed084ade8c964e9eef6cf7`, rebuilt from source commit `516f9e0ef52bb5fcc47cce56282a44075c5af4f2` and tree `623575c22b53bd6a2a21c73c4420ca5f26aaa172`. Its installed Process Package independently recomputes as `sha256:ee99e698d36e406a836a796a36fc1db2d2451072ad662c0e06805ab5c20fe5ac`. The archive digest and Process Package digest remain distinct identities and both must match their configured boundaries.
