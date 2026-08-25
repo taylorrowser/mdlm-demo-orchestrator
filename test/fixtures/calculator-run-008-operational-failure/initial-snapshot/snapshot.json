@@ -1,0 +1,840 @@
+{
+  "contract": "mdlm-demo-snapshot@2",
+  "createdAt": "2026-08-25T04:20:18.612Z",
+  "postRun": false,
+  "repository": "/home/ubuntu/git/mdlm-successor-demos/issue-212/calculator-post214-resumable-20260825T0050Z",
+  "lifecycleRepository": {
+    "head": "06d7f01d343102a8da9ea0f118276f55b4235c4a",
+    "tree": "8be45f60bd797c6723fbdeea40723698c7a0a39c",
+    "trackedState": "sha256:622cae94f60649df1b1f874e6520b5cd416cd06ff6ae23ebc85f2667a6709f96",
+    "clean": true,
+    "porcelainSha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "assignmentRepository": {
+    "head": "06d7f01d343102a8da9ea0f118276f55b4235c4a",
+    "trackedState": "sha256:622cae94f60649df1b1f874e6520b5cd416cd06ff6ae23ebc85f2667a6709f96"
+  },
+  "git": {
+    "head": {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD^{commit}"
+      ],
+      "cwd": "/home/ubuntu/git/mdlm-successor-demos/issue-212/calculator-post214-resumable-20260825T0050Z",
+      "startedAt": "2026-08-25T04:18:18.849Z",
+      "completedAt": "2026-08-25T04:18:18.865Z",
+      "timeoutMs": 900000,
+      "timedOut": false,
+      "outputLimitExceeded": false,
+      "observedOutputBytes": 41,
+      "exitStatus": 0,
+      "signal": null,
+      "spawnError": null,
+      "stdoutBase64": "MDZkN2YwMWQzNDMxMDJhOGRhOWVhMGYxMTgyNzZmNTViNDIzNWM0YQo=",
+      "stderrBase64": "",
+      "stdoutSha256": "sha256:a3a928cff51c4aaba120651d5a1c8576720c0020381d66eb5df2803bd11848a4",
+      "stderrSha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "tree": {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD^{tree}"
+      ],
+      "cwd": "/home/ubuntu/git/mdlm-successor-demos/issue-212/calculator-post214-resumable-20260825T0050Z",
+      "startedAt": "2026-08-25T04:18:18.865Z",
+      "completedAt": "2026-08-25T04:18:19.006Z",
+      "timeoutMs": 900000,
+      "timedOut": false,
+      "outputLimitExceeded": false,
+      "observedOutputBytes": 41,
+      "exitStatus": 0,
+      "signal": null,
+      "spawnError": null,
+      "stdoutBase64": "OGJlNDVmNjBiZDc5N2M2NzIzZmJkZWVhNDA3MjM2OThjN2EwYTM5Ywo=",
+      "stderrBase64": "",
+      "stdoutSha256": "sha256:e492b8e327f160278e867329eb61aa598e9f5c35823b9f6b6226108b0bb26b51",
+      "stderrSha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "status": {
+      "argv": [
+        "git",
+        "status",
+        "--porcelain=v1",
+        "-z",
+        "--untracked-files=all"
+      ],
+      "cwd": "/home/ubuntu/git/mdlm-successor-demos/issue-212/calculator-post214-resumable-20260825T0050Z",
+      "startedAt": "2026-08-25T04:18:19.006Z",
+      "completedAt": "2026-08-25T04:18:19.078Z",
+      "timeoutMs": 900000,
+      "timedOut": false,
+      "outputLimitExceeded": false,
+      "observedOutputBytes": 0,
+      "exitStatus": 0,
+      "signal": null,
+      "spawnError": null,
+      "stdoutBase64": "",
+      "stderrBase64": "",
+      "stdoutSha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "stagedDiff": {
+      "argv": [
+        "git",
+        "diff",
+        "--binary",
+        "--no-ext-diff",
+        "--cached",
+        "HEAD",
+        "--"
+      ],
+      "cwd": "/home/ubuntu/git/mdlm-successor-demos/issue-212/calculator-post214-resumable-20260825T0050Z",
+      "startedAt": "2026-08-25T04:18:19.078Z",
+      "completedAt": "2026-08-25T04:18:19.086Z",
+      "timeoutMs": 900000,
+      "timedOut": false,
+      "outputLimitExceeded": false,
+      "observedOutputBytes": 0,
+      "exitStatus": 0,
+      "signal": null,
+      "spawnError": null,
+      "stdoutBase64": "",
+      "stderrBase64": "",
+      "stdoutSha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "worktreeDiff": {
+      "argv": [
+        "git",
+        "diff",
+        "--binary",
+        "--no-ext-diff",
+        "--"
+      ],
+      "cwd": "/home/ubuntu/git/mdlm-successor-demos/issue-212/calculator-post214-resumable-20260825T0050Z",
+      "startedAt": "2026-08-25T04:18:19.086Z",
+      "completedAt": "2026-08-25T04:18:19.097Z",
+      "timeoutMs": 900000,
+      "timedOut": false,
+      "outputLimitExceeded": false,
+      "observedOutputBytes": 0,
+      "exitStatus": 0,
+      "signal": null,
+      "spawnError": null,
+      "stdoutBase64": "",
+      "stderrBase64": "",
+      "stdoutSha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "commands": {
+    "doctor": {
+      "argv": [
+        "/home/ubuntu/git/mdlm-successor-demos/.tooling-issue-214/node_modules/.bin/mdlm",
+        "doctor",
+        "--json"
+      ],
+      "cwd": "/home/ubuntu/git/mdlm-successor-demos/issue-212/calculator-post214-resumable-20260825T0050Z",
+      "startedAt": "2026-08-25T04:18:19.097Z",
+      "completedAt": "2026-08-25T04:18:49.015Z",
+      "timeoutMs": 900000,
+      "timedOut": false,
+      "outputLimitExceeded": false,
+      "observedOutputBytes": 616,
+      "exitStatus": 0,
+      "signal": null,
+      "spawnError": null,
+      "stdoutBase64": "ewogICJvayI6IHRydWUsCiAgImNvbW1hbmQiOiAiZG9jdG9yIiwKICAicGFja2FnZSI6IHsKICAgICJpZCI6ICJtZGxtLWJvb3RzdHJhcCIsCiAgICAidmVyc2lvbiI6ICIwLjc0LjAiLAogICAgInJlZmVyZW5jZSI6ICJtZGxtLWJvb3RzdHJhcEAwLjc0LjAiLAogICAgImxhbmd1YWdlIjogIm1kbG0tZXhwcmVzc2lvbkAxIiwKICAgICJkaWdlc3QiOiAic2hhMjU2OmVlOTllNjk4ZDM2ZTQwNmE4MzZhNzk2YTM2ZmMxZGIyZDI0NTEwNzJhZDY2MmMwZTA2ODA1YWI1YzIwZmU1YWMiCiAgfSwKICAiYmFzZWxpbmVSZXBvc2l0b3J5VmVyaWZpY2F0aW9uIjogewogICAgInZlcmlmaWVkQmFzZWxpbmVzIjogMywKICAgICJwcm9jZXNzRHJpZnQiOiAwCiAgfSwKICAiaW5kZXgiOiB7CiAgICAicmVidWlsdCI6IGZhbHNlLAogICAgImRhdGEiOiA4LAogICAgInBhdGgiOiAiLmxpZmVjeWNsZS9nZW5lcmF0ZWQvaW5kZXhlcy9kYXRhLmpzb24iCiAgfSwKICAicmVwb3J0IjogewogICAgInJlYnVpbHQiOiBmYWxzZSwKICAgICJkYXRhIjogNywKICAgICJwYXRoIjogIi5saWZlY3ljbGUvZ2VuZXJhdGVkL3JlcG9ydHMvbGlmZWN5Y2xlLmpzb24iCiAgfSwKICAiZGlhZ25vc3RpY3MiOiBbXQp9Cg==",
+      "stderrBase64": "",
+      "stdoutSha256": "sha256:0e215bc8e4b82ab0ee703daa98c11c85bc6f62c75233f722adec32587e0c35f9",
+      "stderrSha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "status": {
+      "argv": [
+        "/home/ubuntu/git/mdlm-successor-demos/.tooling-issue-214/node_modules/.bin/mdlm",
+        "status",
+        "--json"
+      ],
+      "cwd": "/home/ubuntu/git/mdlm-successor-demos/issue-212/calculator-post214-resumable-20260825T0050Z",
+      "startedAt": "2026-08-25T04:18:49.015Z",
+      "completedAt": "2026-08-25T04:19:20.758Z",
+      "timeoutMs": 900000,
+      "timedOut": false,
+      "outputLimitExceeded": false,
+      "observedOutputBytes": 19671,
+      "exitStatus": 0,
+      "signal": null,
+      "spawnError": null,
+      "stdoutBase64": "ewogICJvayI6IHRydWUsCiAgImNvbW1hbmQiOiAic3RhdHVzIiwKICAiY29udHJhY3QiOiAibWRsbS1zdGF0dXNAMSIsCiAgInBhY2thZ2UiOiB7CiAgICAiaWQiOiAibWRsbS1ib290c3RyYXAiLAogICAgInZlcnNpb24iOiAiMC43NC4wIiwKICAgICJyZWZlcmVuY2UiOiAibWRsbS1ib290c3RyYXBAMC43NC4wIiwKICAgICJsYW5ndWFnZSI6ICJtZGxtLWV4cHJlc3Npb25AMSIsCiAgICAiZGlnZXN0IjogInNoYTI1NjplZTk5ZTY5OGQzNmU0MDZhODM2YTc5NmEzNmZjMWRiMmQyNDUxMDcyYWQ2NjJjMGUwNjgwNWFiNWMyMGZlNWFjIgogIH0sCiAgInByb2ZpbGUiOiB7CiAgICAicmVmZXJlbmNlIjogImJvb3RzdHJhcEAzOCIsCiAgICAic3RhdHVzIjogImV4cGVyaW1lbnRhbCIsCiAgICAiZGVzY3JpcHRpb24iOiAiQ29tcGxldGUgYm9vdHN0cmFwIHByb2ZpbGUgd2l0aCBwcm9wb3J0aW9uYWwgZ3JvdXBlZCBzeXN0ZW0gZGVmaW5pdGlvbiwgcmV2aWV3ZWQgaW50ZW50LCBxdWFsaWZpY2F0aW9uL3BpbG90LCBleGFjdCBhY2NlcHRlZC1TVEsgYW5kIHNoYXJlZC1TWVMgY2hhbmdlIGNvbnRyb2wsIGFuZCBhIHJldmlld2VkIGV4cGFuc2lvbiBEZWNpc2lvbi4iCiAgfSwKICAiaW50ZWdyaXR5IjogewogICAgInN0YXR1cyI6ICJ2YWxpZCIsCiAgICAiZGlhZ25vc3RpY3MiOiBbXQogIH0sCiAgImFjdGl2ZVBoYXNlIjogewogICAgInJlZmVyZW5jZSI6ICJwaGFzZS0wLXdheWZpbmRpbmdANSIsCiAgICAibmFtZSI6ICJXYXlmaW5kaW5nIGJvb3RzdHJhcCIsCiAgICAicHVycG9zZSI6ICJFc3RhYmxpc2ggcmV2aWV3ZWQsIHNjb3BlLWNoYWxsZW5nZWQgcHJvZHVjdCBpbnRlbnQgYW5kIHN0YWtlaG9sZGVyIGNvbW1pdG1lbnRzIGZvciBleHBsaWNpdCB1c2VyIGFwcHJvdmFsLiIsCiAgICAiY292ZXJhZ2UiOiAiYm9vdHN0cmFwLXN1YnNldCIKICB9LAogICJvbWl0dGVkQ292ZXJhZ2UiOiB7CiAgICAicHJvZmlsZSI6IFsKICAgICAgImNvbXBvbmVudCBhbmQgZGVzaWduIGRlY29tcG9zaXRpb24gbGlmZWN5Y2xlIHR5cGVzIiwKICAgICAgImZvcm1hbCB2ZXJpZmljYXRpb24gZXhlY3V0aW9uIiwKICAgICAgImNvbXBvbmVudCBhbmQgZGVzaWduIGltcGxlbWVudGF0aW9uIGxpZmVjeWNsZSB0eXBlcyIKICAgIF0sCiAgICAicGhhc2UiOiBbCiAgICAgICJWU1AgYW5kIGVudmlyb25tZW50IHByb2ZpbGVzIgogICAgXQogIH0sCiAgInJlY2VudFRyYW5zYWN0aW9uIjogewogICAgImF2YWlsYWJsZSI6IHRydWUsCiAgICAiaWQiOiAiYTM3MTI5ZDItNWE0Ny00YWFkLWIxOTAtNjg5M2ZkZDAxZWE3IiwKICAgICJzdGF0dXMiOiAiY29tcGxldGVkIiwKICAgICJzY2VuYXJpbyI6ICJyZXZpZXctZGF0dW0taW4tY29udGV4dEAyIgogIH0sCiAgInVucmVzb2x2ZWRXb3JrIjogewogICAgInRvdGFsIjogNiwKICAgICJkaXNwYXRjaGFibGUiOiAyLAogICAgImJ5U3RhdHVzIjogewogICAgICAiYXdhaXRpbmctcmV2aWV3IjogMSwKICAgICAgImJsb2NrZWQiOiAzLAogICAgICAiZmFpbGVkIjogMSwKICAgICAgInJlYWR5IjogMQogICAgfQogIH0sCiAgImN1cnJlbnRPdXRjb21lIjogewogICAgIm91dGNvbWUiOiAiYXR0ZW50aW9uLXJlcXVpcmVkIiwKICAgICJhc3NpZ25tZW50IjogewogICAgICAiYWxsb2NhdGlvbiI6ICJhY3RpdmUiLAogICAgICAiaWQiOiAiYmRiOWZmYzktMzQ5MS00NDNiLTg4YjAtODBkNWRjODAwNzgxIgogICAgfSwKICAgICJhdXRob3JpdHlSZXF1aXJlbWVudCI6IHsKICAgICAgIm1vZGUiOiAiYXR0ZW5kZWQiLAogICAgICAiYXV0aG9yaXR5IjogInN0YWtlaG9sZGVyIiwKICAgICAgImRlbGVnYXRpb25BbGxvd2VkIjogZmFsc2UKICAgIH0sCiAgICAiYXR0ZW50aW9uU2NoZWR1bGUiOiB7CiAgICAgICJ0aW1pbmciOiAiaW1tZWRpYXRlIiwKICAgICAgImNoZWNrcG9pbnQiOiBudWxsLAogICAgICAiY29uc29saWRhdGlvbkdyb3VwIjogbnVsbAogICAgfSwKICAgICJleHBsYW5hdGlvbiI6ICJUaGUgZXhhY3QgZmFpbGVkIERlY2lzaW9uIGZpbmRpbmdzIGFyZSByZWFkeSBmb3IgcmVuZXdlZCBzdGFrZWhvbGRlciBqdWRnbWVudC4iLAogICAgImF0dGVudGlvbkNvbnRleHQiOiB7CiAgICAgICJpbnZvY2F0aW9ucyI6IFsKICAgICAgICB7CiAgICAgICAgICAiaW5wdXRzIjogWwogICAgICAgICAgICB7CiAgICAgICAgICAgICAgIm5hbWUiOiAiZGVjaXNpb24iLAogICAgICAgICAgICAgICJ2YWx1ZXMiOiBbCiAgICAgICAgICAgICAgICB7CiAgICAgICAgICAgICAgICAgICJpZGVudGl0eSI6IHsKICAgICAgICAgICAgICAgICAgICAiaWQiOiAiREVDLUVCSFBDV1ZSU0ciLAogICAgICAgICAgICAgICAgICAgICJyZXZpc2lvbl9pZCI6ICJERUMtRUJIUENXVlJTRy1yMDAwMDEiLAogICAgICAgICAgICAgICAgICAgICJ0eXBlIjogIkRFQyIsCiAgICAgICAgICAgICAgICAgICAgInJldmlzaW9uIjogMQogICAgICAgICAgICAgICAgICB9LAogICAgICAgICAgICAgICAgICAiZGF0YSI6IHsKICAgICAgICAgICAgICAgICAgICAiaWQiOiAiREVDLUVCSFBDV1ZSU0ciLAogICAgICAgICAgICAgICAgICAgICJyZXZpc2lvbiI6IDEsCiAgICAgICAgICAgICAgICAgICAgInJldmlzaW9uX2lkIjogIkRFQy1FQkhQQ1dWUlNHLXIwMDAwMSIsCiAgICAgICAgICAgICAgICAgICAgInR5cGUiOiAiREVDIiwKICAgICAgICAgICAgICAgICAgICAicGF5bG9hZCI6IHsKICAgICAgICAgICAgICAgICAgICAgICJ0aXRsZSI6ICJDb21tYW5kLWxpbmUgY2FsY3VsYXRvciBwcm9kdWN0IGludGVudCIsCiAgICAgICAgICAgICAgICAgICAgICAicmF0aW9uYWxlIjogIlRoZSBhdHRlbmRlZCBzdGFrZWhvbGRlciBleHBsaWNpdGx5IHNlbGVjdGVkIHRoaXMgcHJvZHVjdCBiZWhhdmlvciBhbmQgaXRzIGNvbW1hbmQtbGluZSwgb3BlcmFuZCwgb3BlcmF0b3IsIG91dHB1dCwgcm91bmRpbmcsIGFuZCBlcnJvci1oYW5kbGluZyBib3VuZGFyaWVzLiIsCiAgICAgICAgICAgICAgICAgICAgICAia2luZCI6ICJzY29wZSIsCiAgICAgICAgICAgICAgICAgICAgICAiZGVjaXNpb24iOiAiQnVpbGQgYSBjb21tYW5kLWxpbmUgY2FsY3VsYXRvci4gSW52b2tlIGl0IGFzIGBjYWxjdWxhdG9yIDxsZWZ0PiA8b3BlcmF0b3I+IDxyaWdodD5gLiBTdXBwb3J0IG9ubHkgdGhlIG9wZXJhdG9ycyBgK2AsIGAtYCwgYCpgLCBhbmQgYC9gLiBBY2NlcHQgb3BlcmFuZHMgbWF0Y2hpbmcgZXhhY3RseSBgWystXT8oPzpbMC05XSsoPzpcXC5bMC05XSopP3xcXC5bMC05XSspYC4gRW1pdCBjYW5vbmljYWwgc3VjY2Vzc2Z1bCBvdXRwdXQuIEZvciBub250ZXJtaW5hdGluZyByZXN1bHRzLCByb3VuZCBleGFjdGx5IGF0IHRoZSAxMnRoIGZyYWN0aW9uYWwgZGlnaXQgdXNpbmcgaGFsZi1hd2F5LWZyb20temVybyBhbmQgdGhlbiB0cmltLiBGb3IgaW52YWxpZCBpbnB1dCwgZW1pdCBubyBzdGRvdXQsIGVtaXQgZXhhY3RseSBgaW52YWxpZCBpbnB1dFxcbmAgb24gc3RkZXJyLCBhbmQgZXhpdCAyLiBGb3IgZGl2aXNpb24gYnkgemVybywgZW1pdCBubyBzdGRvdXQsIGVtaXQgZXhhY3RseSBgZGl2aXNpb24gYnkgemVyb1xcbmAgb24gc3RkZXJyLCBhbmQgZXhpdCAyLiIsCiAgICAgICAgICAgICAgICAgICAgICAiYWx0ZXJuYXRpdmVzIjogW10sCiAgICAgICAgICAgICAgICAgICAgICAiZWZmZWN0aXZlX3Njb3BlIjogIlFTVC0yMTIxOUs2UlZaLXIwMDAwMiIKICAgICAgICAgICAgICAgICAgICB9LAogICAgICAgICAgICAgICAgICAgICJsaW5rcyI6IFsKICAgICAgICAgICAgICAgICAgICAgIHsKICAgICAgICAgICAgICAgICAgICAgICAgInR5cGUiOiAicmVzb2x2ZXMiLAogICAgICAgICAgICAgICAgICAgICAgICAidGFyZ2V0IjogIlFTVC0yMTIxOUs2UlZaLXIwMDAwMSIKICAgICAgICAgICAgICAgICAgICAgIH0sCiAgICAgICAgICAgICAgICAgICAgICB7CiAgICAgICAgICAgICAgICAgICAgICAgICJ0eXBlIjogInJlc29sdmVzIiwKICAgICAgICAgICAgICAgICAgICAgICAgInRhcmdldCI6ICJRU1QtMjEyMTlLNlJWWi1yMDAwMDIiCiAgICAgICAgICAgICAgICAgICAgICB9CiAgICAgICAgICAgICAgICAgICAgXSwKICAgICAgICAgICAgICAgICAgICAiY3JlYXRlZF9ieSI6IHsKICAgICAgICAgICAgICAgICAgICAgICJzY2VuYXJpbyI6ICJyZXNvbHZlLXF1ZXN0aW9uQDIiLAogICAgICAgICAgICAgICAgICAgICAgInByb21wdF9yZWYiOiAicHJvbXB0cy9yZXNvbHZlLXF1ZXN0aW9uLm1kQDIiLAogICAgICAgICAgICAgICAgICAgICAgInByb2Nlc3NfcmVmIjogIm1kbG0tYm9vdHN0cmFwQDAuNzQuMCNzaGEyNTY6ZWU5OWU2OThkMzZlNDA2YTgzNmE3OTZhMzZmYzFkYjJkMjQ1MTA3MmFkNjYyYzBlMDY4MDVhYjVjMjBmZTVhYyIsCiAgICAgICAgICAgICAgICAgICAgICAibG9hZGVkX3NraWxsX3JlZnMiOiBbCiAgICAgICAgICAgICAgICAgICAgICAgICJza2lsbHMvbGlmZWN5Y2xlLWRhdGEubWRAMSIsCiAgICAgICAgICAgICAgICAgICAgICAgICJza2lsbHMvY2xhcmlmaWNhdGlvbi1wcm90b2NvbC5tZEAxIiwKICAgICAgICAgICAgICAgICAgICAgICAgInNraWxscy90cmFjZWFiaWxpdHkubWRAMSIsCiAgICAgICAgICAgICAgICAgICAgICAgICJza2lsbHMvYXV0aG9yLXByZWZsaWdodC5tZEAyIgogICAgICAgICAgICAgICAgICAgICAgXSwKICAgICAgICAgICAgICAgICAgICAgICJwb2xpY3lfcmVmcyI6IFsKICAgICAgICAgICAgICAgICAgICAgICAgInF1ZXN0aW9uLXBhcnRpY2lwYXRpb25AMSIsCiAgICAgICAgICAgICAgICAgICAgICAgICJyZXZpZXctYXBwbGljYWJpbGl0eUAxIiwKICAgICAgICAgICAgICAgICAgICAgICAgIndhaXZlci1hcHBsaWNhYmlsaXR5QDEiCiAgICAgICAgICAgICAgICAgICAgICBdCiAgICAgICAgICAgICAgICAgICAgfSwKICAgICAgICAgICAgICAgICAgICAiYm9keSI6ICIjIENvbW1hbmQtbGluZSBjYWxjdWxhdG9yIHByb2R1Y3QgaW50ZW50XG5cbiMjIERlY2lzaW9uXG5cbkJ1aWxkIGEgY29tbWFuZC1saW5lIGNhbGN1bGF0b3IuIEludm9rZSBpdCBhcyBgY2FsY3VsYXRvciA8bGVmdD4gPG9wZXJhdG9yPiA8cmlnaHQ+YC4gU3VwcG9ydCBvbmx5IHRoZSBvcGVyYXRvcnMgYCtgLCBgLWAsIGAqYCwgYW5kIGAvYC4gQWNjZXB0IG9wZXJhbmRzIG1hdGNoaW5nIGV4YWN0bHkgYFsrLV0/KD86WzAtOV0rKD86XFwuWzAtOV0qKT98XFwuWzAtOV0rKWAuIEVtaXQgY2Fub25pY2FsIHN1Y2Nlc3NmdWwgb3V0cHV0LiBGb3Igbm9udGVybWluYXRpbmcgcmVzdWx0cywgcm91bmQgZXhhY3RseSBhdCB0aGUgMTJ0aCBmcmFjdGlvbmFsIGRpZ2l0IHVzaW5nIGhhbGYtYXdheS1mcm9tLXplcm8gYW5kIHRoZW4gdHJpbS4gRm9yIGludmFsaWQgaW5wdXQsIGVtaXQgbm8gc3Rkb3V0LCBlbWl0IGV4YWN0bHkgYGludmFsaWQgaW5wdXRcXG5gIG9uIHN0ZGVyciwgYW5kIGV4aXQgMi4gRm9yIGRpdmlzaW9uIGJ5IHplcm8sIGVtaXQgbm8gc3Rkb3V0LCBlbWl0IGV4YWN0bHkgYGRpdmlzaW9uIGJ5IHplcm9cXG5gIG9uIHN0ZGVyciwgYW5kIGV4aXQgMi5cblxuIyMgUmF0aW9uYWxlXG5cblRoZSBhdHRlbmRlZCBzdGFrZWhvbGRlciBleHBsaWNpdGx5IHNlbGVjdGVkIHRoaXMgcHJvZHVjdCBiZWhhdmlvciBhbmQgaXRzIGNvbW1hbmQtbGluZSwgb3BlcmFuZCwgb3BlcmF0b3IsIG91dHB1dCwgcm91bmRpbmcsIGFuZCBlcnJvci1oYW5kbGluZyBib3VuZGFyaWVzLlxuXG4jIyBBbHRlcm5hdGl2ZXNcblxuTm9uZSByZWNvcmRlZC5cblxuIyMgRWZmZWN0aXZlIHNjb3BlXG5cbmAkcHJvcG9zYWwudXBkYXRlZFF1ZXN0aW9uLnJldmlzaW9uX2lkYFxuIgogICAgICAgICAgICAgICAgICB9CiAgICAgICAgICAgICAgICB9CiAgICAgICAgICAgICAgXQogICAgICAgICAgICB9LAogICAgICAgICAgICB7CiAgICAgICAgICAgICAgIm5hbWUiOiAicXVlc3Rpb24iLAogICAgICAgICAgICAgICJ2YWx1ZXMiOiBbCiAgICAgICAgICAgICAgICB7CiAgICAgICAgICAgICAgICAgICJpZGVudGl0eSI6IHsKICAgICAgICAgICAgICAgICAgICAiaWQiOiAiUVNULTIxMjE5SzZSVloiLAogICAgICAgICAgICAgICAgICAgICJyZXZpc2lvbl9pZCI6ICJRU1QtMjEyMTlLNlJWWi1yMDAwMDIiLAogICAgICAgICAgICAgICAgICAgICJ0eXBlIjogIlFTVCIsCiAgICAgICAgICAgICAgICAgICAgInJldmlzaW9uIjogMgogICAgICAgICAgICAgICAgICB9LAogICAgICAgICAgICAgICAgICAiZGF0YSI6IHsKICAgICAgICAgICAgICAgICAgICAiaWQiOiAiUVNULTIxMjE5SzZSVloiLAogICAgICAgICAgICAgICAgICAgICJyZXZpc2lvbiI6IDIsCiAgICAgICAgICAgICAgICAgICAgInJldmlzaW9uX2lkIjogIlFTVC0yMTIxOUs2UlZaLXIwMDAwMiIsCiAgICAgICAgICAgICAgICAgICAgInR5cGUiOiAiUVNUIiwKICAgICAgICAgICAgICAgICAgICAicGF5bG9hZCI6IHsKICAgICAgICAgICAgICAgICAgICAgICJ0aXRsZSI6ICJQcm9kdWN0IGludGVudCIsCiAgICAgICAgICAgICAgICAgICAgICAia2luZCI6ICJwcmVmZXJlbnRpYWwiLAogICAgICAgICAgICAgICAgICAgICAgImludGVudF9zY29wZSI6ICJwcm9kdWN0IiwKICAgICAgICAgICAgICAgICAgICAgICJxdWVzdGlvbiI6ICJXaGF0IHByb2R1Y3QgZG8geW91IGN1cnJlbnRseSBpbnRlbmQgdG8gYnVpbGQ/IiwKICAgICAgICAgICAgICAgICAgICAgICJhdHRlbmRlZF9hbnN3ZXIiOiAiQnVpbGQgYSBjb21tYW5kLWxpbmUgY2FsY3VsYXRvci4gSW52b2tlIGl0IGFzIGBjYWxjdWxhdG9yIDxsZWZ0PiA8b3BlcmF0b3I+IDxyaWdodD5gLiBTdXBwb3J0IG9ubHkgdGhlIG9wZXJhdG9ycyBgK2AsIGAtYCwgYCpgLCBhbmQgYC9gLiBBY2NlcHQgb3BlcmFuZHMgbWF0Y2hpbmcgZXhhY3RseSBgWystXT8oPzpbMC05XSsoPzpcXC5bMC05XSopP3xcXC5bMC05XSspYC4gRW1pdCBjYW5vbmljYWwgc3VjY2Vzc2Z1bCBvdXRwdXQuIEZvciBub250ZXJtaW5hdGluZyByZXN1bHRzLCByb3VuZCBleGFjdGx5IGF0IHRoZSAxMnRoIGZyYWN0aW9uYWwgZGlnaXQgdXNpbmcgaGFsZi1hd2F5LWZyb20temVybyBhbmQgdGhlbiB0cmltLiBGb3IgaW52YWxpZCBpbnB1dCwgZW1pdCBubyBzdGRvdXQsIGVtaXQgZXhhY3RseSBgaW52YWxpZCBpbnB1dFxcbmAgb24gc3RkZXJyLCBhbmQgZXhpdCAyLiBGb3IgZGl2aXNpb24gYnkgemVybywgZW1pdCBubyBzdGRvdXQsIGVtaXQgZXhhY3RseSBgZGl2aXNpb24gYnkgemVyb1xcbmAgb24gc3RkZXJyLCBhbmQgZXhpdCAyLiIsCiAgICAgICAgICAgICAgICAgICAgICAic3RhdGUiOiAiYW5zd2VyZWQiLAogICAgICAgICAgICAgICAgICAgICAgImJsb2NraW5nX2ltcGFjdCI6ICJQU1AgY29tcGlsYXRpb24gaXMgYmxvY2tlZCB1bnRpbCB0aGUgc3Rha2Vob2xkZXIgYW5zd2VycyB0aGlzIHF1ZXN0aW9uLiIKICAgICAgICAgICAgICAgICAgICB9LAogICAgICAgICAgICAgICAgICAgICJsaW5rcyI6IFtdLAogICAgICAgICAgICAgICAgICAgICJjcmVhdGVkX2J5IjogewogICAgICAgICAgICAgICAgICAgICAgInNjZW5hcmlvIjogInJlc29sdmUtcXVlc3Rpb25AMiIsCiAgICAgICAgICAgICAgICAgICAgICAicHJvbXB0X3JlZiI6ICJwcm9tcHRzL3Jlc29sdmUtcXVlc3Rpb24ubWRAMiIsCiAgICAgICAgICAgICAgICAgICAgICAicHJvY2Vzc19yZWYiOiAibWRsbS1ib290c3RyYXBAMC43NC4wI3NoYTI1NjplZTk5ZTY5OGQzNmU0MDZhODM2YTc5NmEzNmZjMWRiMmQyNDUxMDcyYWQ2NjJjMGUwNjgwNWFiNWMyMGZlNWFjIiwKICAgICAgICAgICAgICAgICAgICAgICJsb2FkZWRfc2tpbGxfcmVmcyI6IFsKICAgICAgICAgICAgICAgICAgICAgICAgInNraWxscy9saWZlY3ljbGUtZGF0YS5tZEAxIiwKICAgICAgICAgICAgICAgICAgICAgICAgInNraWxscy9jbGFyaWZpY2F0aW9uLXByb3RvY29sLm1kQDEiLAogICAgICAgICAgICAgICAgICAgICAgICAic2tpbGxzL3RyYWNlYWJpbGl0eS5tZEAxIiwKICAgICAgICAgICAgICAgICAgICAgICAgInNraWxscy9hdXRob3ItcHJlZmxpZ2h0Lm1kQDIiCiAgICAgICAgICAgICAgICAgICAgICBdLAogICAgICAgICAgICAgICAgICAgICAgInBvbGljeV9yZWZzIjogWwogICAgICAgICAgICAgICAgICAgICAgICAicXVlc3Rpb24tcGFydGljaXBhdGlvbkAxIiwKICAgICAgICAgICAgICAgICAgICAgICAgInJldmlldy1hcHBsaWNhYmlsaXR5QDEiLAogICAgICAgICAgICAgICAgICAgICAgICAid2FpdmVyLWFwcGxpY2FiaWxpdHlAMSIKICAgICAgICAgICAgICAgICAgICAgIF0KICAgICAgICAgICAgICAgICAgICB9LAogICAgICAgICAgICAgICAgICAgICJib2R5IjogIiMgUHJvZHVjdCBpbnRlbnRcblxuKipRdWVzdGlvbjoqKiBXaGF0IHByb2R1Y3QgZG8geW91IGN1cnJlbnRseSBpbnRlbmQgdG8gYnVpbGQ/XG5cbioqS2luZDoqKiBQcmVmZXJlbnRpYWwgIFxuKipTdGF0ZToqKiBBbnN3ZXJlZFxuXG4jIyBBdHRlbmRlZCBhbnN3ZXJcblxuQnVpbGQgYSBjb21tYW5kLWxpbmUgY2FsY3VsYXRvci4gSW52b2tlIGl0IGFzIGBjYWxjdWxhdG9yIDxsZWZ0PiA8b3BlcmF0b3I+IDxyaWdodD5gLiBTdXBwb3J0IG9ubHkgdGhlIG9wZXJhdG9ycyBgK2AsIGAtYCwgYCpgLCBhbmQgYC9gLiBBY2NlcHQgb3BlcmFuZHMgbWF0Y2hpbmcgZXhhY3RseSBgWystXT8oPzpbMC05XSsoPzpcXC5bMC05XSopP3xcXC5bMC05XSspYC4gRW1pdCBjYW5vbmljYWwgc3VjY2Vzc2Z1bCBvdXRwdXQuIEZvciBub250ZXJtaW5hdGluZyByZXN1bHRzLCByb3VuZCBleGFjdGx5IGF0IHRoZSAxMnRoIGZyYWN0aW9uYWwgZGlnaXQgdXNpbmcgaGFsZi1hd2F5LWZyb20temVybyBhbmQgdGhlbiB0cmltLiBGb3IgaW52YWxpZCBpbnB1dCwgZW1pdCBubyBzdGRvdXQsIGVtaXQgZXhhY3RseSBgaW52YWxpZCBpbnB1dFxcbmAgb24gc3RkZXJyLCBhbmQgZXhpdCAyLiBGb3IgZGl2aXNpb24gYnkgemVybywgZW1pdCBubyBzdGRvdXQsIGVtaXQgZXhhY3RseSBgZGl2aXNpb24gYnkgemVyb1xcbmAgb24gc3RkZXJyLCBhbmQgZXhpdCAyLlxuXG4qKkJsb2NraW5nIGltcGFjdDoqKiBQU1AgY29tcGlsYXRpb24gaXMgYmxvY2tlZCB1bnRpbCB0aGUgc3Rha2Vob2xkZXIgYW5zd2VycyB0aGlzIHF1ZXN0aW9uLlxuIgogICAgICAgICAgICAgICAgICB9CiAgICAgICAgICAgICAgICB9CiAgICAgICAgICAgICAgXQogICAgICAgICAgICB9LAogICAgICAgICAgICB7CiAgICAgICAgICAgICAgIm5hbWUiOiAibGluZWFnZSIsCiAgICAgICAgICAgICAgInZhbHVlcyI6IFsKICAgICAgICAgICAgICAgIHsKICAgICAgICAgICAgICAgICAgImlkZW50aXR5IjogewogICAgICAgICAgICAgICAgICAgICJpZCI6ICJERUMtRUJIUENXVlJTRyIsCiAgICAgICAgICAgICAgICAgICAgInJldmlzaW9uX2lkIjogIkRFQy1FQkhQQ1dWUlNHLXIwMDAwMSIsCiAgICAgICAgICAgICAgICAgICAgInR5cGUiOiAiREVDIiwKICAgICAgICAgICAgICAgICAgICAicmV2aXNpb24iOiAxCiAgICAgICAgICAgICAgICAgIH0sCiAgICAgICAgICAgICAgICAgICJkYXRhIjogewogICAgICAgICAgICAgICAgICAgICJpZCI6ICJERUMtRUJIUENXVlJTRyIsCiAgICAgICAgICAgICAgICAgICAgInJldmlzaW9uIjogMSwKICAgICAgICAgICAgICAgICAgICAicmV2aXNpb25faWQiOiAiREVDLUVCSFBDV1ZSU0ctcjAwMDAxIiwKICAgICAgICAgICAgICAgICAgICAidHlwZSI6ICJERUMiLAogICAgICAgICAgICAgICAgICAgICJwYXlsb2FkIjogewogICAgICAgICAgICAgICAgICAgICAgInRpdGxlIjogIkNvbW1hbmQtbGluZSBjYWxjdWxhdG9yIHByb2R1Y3QgaW50ZW50IiwKICAgICAgICAgICAgICAgICAgICAgICJyYXRpb25hbGUiOiAiVGhlIGF0dGVuZGVkIHN0YWtlaG9sZGVyIGV4cGxpY2l0bHkgc2VsZWN0ZWQgdGhpcyBwcm9kdWN0IGJlaGF2aW9yIGFuZCBpdHMgY29tbWFuZC1saW5lLCBvcGVyYW5kLCBvcGVyYXRvciwgb3V0cHV0LCByb3VuZGluZywgYW5kIGVycm9yLWhhbmRsaW5nIGJvdW5kYXJpZXMuIiwKICAgICAgICAgICAgICAgICAgICAgICJraW5kIjogInNjb3BlIiwKICAgICAgICAgICAgICAgICAgICAgICJkZWNpc2lvbiI6ICJCdWlsZCBhIGNvbW1hbmQtbGluZSBjYWxjdWxhdG9yLiBJbnZva2UgaXQgYXMgYGNhbGN1bGF0b3IgPGxlZnQ+IDxvcGVyYXRvcj4gPHJpZ2h0PmAuIFN1cHBvcnQgb25seSB0aGUgb3BlcmF0b3JzIGArYCwgYC1gLCBgKmAsIGFuZCBgL2AuIEFjY2VwdCBvcGVyYW5kcyBtYXRjaGluZyBleGFjdGx5IGBbKy1dPyg/OlswLTldKyg/OlxcLlswLTldKik/fFxcLlswLTldKylgLiBFbWl0IGNhbm9uaWNhbCBzdWNjZXNzZnVsIG91dHB1dC4gRm9yIG5vbnRlcm1pbmF0aW5nIHJlc3VsdHMsIHJvdW5kIGV4YWN0bHkgYXQgdGhlIDEydGggZnJhY3Rpb25hbCBkaWdpdCB1c2luZyBoYWxmLWF3YXktZnJvbS16ZXJvIGFuZCB0aGVuIHRyaW0uIEZvciBpbnZhbGlkIGlucHV0LCBlbWl0IG5vIHN0ZG91dCwgZW1pdCBleGFjdGx5IGBpbnZhbGlkIGlucHV0XFxuYCBvbiBzdGRlcnIsIGFuZCBleGl0IDIuIEZvciBkaXZpc2lvbiBieSB6ZXJvLCBlbWl0IG5vIHN0ZG91dCwgZW1pdCBleGFjdGx5IGBkaXZpc2lvbiBieSB6ZXJvXFxuYCBvbiBzdGRlcnIsIGFuZCBleGl0IDIuIiwKICAgICAgICAgICAgICAgICAgICAgICJhbHRlcm5hdGl2ZXMiOiBbXSwKICAgICAgICAgICAgICAgICAgICAgICJlZmZlY3RpdmVfc2NvcGUiOiAiUVNULTIxMjE5SzZSVlotcjAwMDAyIgogICAgICAgICAgICAgICAgICAgIH0sCiAgICAgICAgICAgICAgICAgICAgImxpbmtzIjogWwogICAgICAgICAgICAgICAgICAgICAgewogICAgICAgICAgICAgICAgICAgICAgICAidHlwZSI6ICJyZXNvbHZlcyIsCiAgICAgICAgICAgICAgICAgICAgICAgICJ0YXJnZXQiOiAiUVNULTIxMjE5SzZSVlotcjAwMDAxIgogICAgICAgICAgICAgICAgICAgICAgfSwKICAgICAgICAgICAgICAgICAgICAgIHsKICAgICAgICAgICAgICAgICAgICAgICAgInR5cGUiOiAicmVzb2x2ZXMiLAogICAgICAgICAgICAgICAgICAgICAgICAidGFyZ2V0IjogIlFTVC0yMTIxOUs2UlZaLXIwMDAwMiIKICAgICAgICAgICAgICAgICAgICAgIH0KICAgICAgICAgICAgICAgICAgICBdLAogICAgICAgICAgICAgICAgICAgICJjcmVhdGVkX2J5IjogewogICAgICAgICAgICAgICAgICAgICAgInNjZW5hcmlvIjogInJlc29sdmUtcXVlc3Rpb25AMiIsCiAgICAgICAgICAgICAgICAgICAgICAicHJvbXB0X3JlZiI6ICJwcm9tcHRzL3Jlc29sdmUtcXVlc3Rpb24ubWRAMiIsCiAgICAgICAgICAgICAgICAgICAgICAicHJvY2Vzc19yZWYiOiAibWRsbS1ib290c3RyYXBAMC43NC4wI3NoYTI1NjplZTk5ZTY5OGQzNmU0MDZhODM2YTc5NmEzNmZjMWRiMmQyNDUxMDcyYWQ2NjJjMGUwNjgwNWFiNWMyMGZlNWFjIiwKICAgICAgICAgICAgICAgICAgICAgICJsb2FkZWRfc2tpbGxfcmVmcyI6IFsKICAgICAgICAgICAgICAgICAgICAgICAgInNraWxscy9saWZlY3ljbGUtZGF0YS5tZEAxIiwKICAgICAgICAgICAgICAgICAgICAgICAgInNraWxscy9jbGFyaWZpY2F0aW9uLXByb3RvY29sLm1kQDEiLAogICAgICAgICAgICAgICAgICAgICAgICAic2tpbGxzL3RyYWNlYWJpbGl0eS5tZEAxIiwKICAgICAgICAgICAgICAgICAgICAgICAgInNraWxscy9hdXRob3ItcHJlZmxpZ2h0Lm1kQDIiCiAgICAgICAgICAgICAgICAgICAgICBdLAogICAgICAgICAgICAgICAgICAgICAgInBvbGljeV9yZWZzIjogWwogICAgICAgICAgICAgICAgICAgICAgICAicXVlc3Rpb24tcGFydGljaXBhdGlvbkAxIiwKICAgICAgICAgICAgICAgICAgICAgICAgInJldmlldy1hcHBsaWNhYmlsaXR5QDEiLAogICAgICAgICAgICAgICAgICAgICAgICAid2FpdmVyLWFwcGxpY2FiaWxpdHlAMSIKICAgICAgICAgICAgICAgICAgICAgIF0KICAgICAgICAgICAgICAgICAgICB9LAogICAgICAgICAgICAgICAgICAgICJib2R5IjogIiMgQ29tbWFuZC1saW5lIGNhbGN1bGF0b3IgcHJvZHVjdCBpbnRlbnRcblxuIyMgRGVjaXNpb25cblxuQnVpbGQgYSBjb21tYW5kLWxpbmUgY2FsY3VsYXRvci4gSW52b2tlIGl0IGFzIGBjYWxjdWxhdG9yIDxsZWZ0PiA8b3BlcmF0b3I+IDxyaWdodD5gLiBTdXBwb3J0IG9ubHkgdGhlIG9wZXJhdG9ycyBgK2AsIGAtYCwgYCpgLCBhbmQgYC9gLiBBY2NlcHQgb3BlcmFuZHMgbWF0Y2hpbmcgZXhhY3RseSBgWystXT8oPzpbMC05XSsoPzpcXC5bMC05XSopP3xcXC5bMC05XSspYC4gRW1pdCBjYW5vbmljYWwgc3VjY2Vzc2Z1bCBvdXRwdXQuIEZvciBub250ZXJtaW5hdGluZyByZXN1bHRzLCByb3VuZCBleGFjdGx5IGF0IHRoZSAxMnRoIGZyYWN0aW9uYWwgZGlnaXQgdXNpbmcgaGFsZi1hd2F5LWZyb20temVybyBhbmQgdGhlbiB0cmltLiBGb3IgaW52YWxpZCBpbnB1dCwgZW1pdCBubyBzdGRvdXQsIGVtaXQgZXhhY3RseSBgaW52YWxpZCBpbnB1dFxcbmAgb24gc3RkZXJyLCBhbmQgZXhpdCAyLiBGb3IgZGl2aXNpb24gYnkgemVybywgZW1pdCBubyBzdGRvdXQsIGVtaXQgZXhhY3RseSBgZGl2aXNpb24gYnkgemVyb1xcbmAgb24gc3RkZXJyLCBhbmQgZXhpdCAyLlxuXG4jIyBSYXRpb25hbGVcblxuVGhlIGF0dGVuZGVkIHN0YWtlaG9sZGVyIGV4cGxpY2l0bHkgc2VsZWN0ZWQgdGhpcyBwcm9kdWN0IGJlaGF2aW9yIGFuZCBpdHMgY29tbWFuZC1saW5lLCBvcGVyYW5kLCBvcGVyYXRvciwgb3V0cHV0LCByb3VuZGluZywgYW5kIGVycm9yLWhhbmRsaW5nIGJvdW5kYXJpZXMuXG5cbiMjIEFsdGVybmF0aXZlc1xuXG5Ob25lIHJlY29yZGVkLlxuXG4jIyBFZmZlY3RpdmUgc2NvcGVcblxuYCRwcm9wb3NhbC51cGRhdGVkUXVlc3Rpb24ucmV2aXNpb25faWRgXG4iCiAgICAgICAgICAgICAgICAgIH0KICAgICAgICAgICAgICAgIH0KICAgICAgICAgICAgICBdCiAgICAgICAgICAgIH0sCiAgICAgICAgICAgIHsKICAgICAgICAgICAgICAibmFtZSI6ICJwcmlvcl9mYWlsZWRfcmV2aWV3cyIsCiAgICAgICAgICAgICAgInZhbHVlcyI6IFtdCiAgICAgICAgICAgIH0sCiAgICAgICAgICAgIHsKICAgICAgICAgICAgICAibmFtZSI6ICJmYWlsZWRfcmV2aWV3cyIsCiAgICAgICAgICAgICAgInZhbHVlcyI6IFsKICAgICAgICAgICAgICAgIHsKICAgICAgICAgICAgICAgICAgImlkZW50aXR5IjogewogICAgICAgICAgICAgICAgICAgICJpZCI6ICJSRVYtMDc5TlZFMFk4TSIsCiAgICAgICAgICAgICAgICAgICAgInJldmlzaW9uX2lkIjogIlJFVi0wNzlOVkUwWThNLXIwMDAwMSIsCiAgICAgICAgICAgICAgICAgICAgInR5cGUiOiAiUkVWIiwKICAgICAgICAgICAgICAgICAgICAicmV2aXNpb24iOiAxCiAgICAgICAgICAgICAgICAgIH0sCiAgICAgICAgICAgICAgICAgICJkYXRhIjogewogICAgICAgICAgICAgICAgICAgICJpZCI6ICJSRVYtMDc5TlZFMFk4TSIsCiAgICAgICAgICAgICAgICAgICAgInJldmlzaW9uIjogMSwKICAgICAgICAgICAgICAgICAgICAicmV2aXNpb25faWQiOiAiUkVWLTA3OU5WRTBZOE0tcjAwMDAxIiwKICAgICAgICAgICAgICAgICAgICAidHlwZSI6ICJSRVYiLAogICAgICAgICAgICAgICAgICAgICJwYXlsb2FkIjogewogICAgICAgICAgICAgICAgICAgICAgInRpdGxlIjogIkNvbnRleHR1YWwgcmV2aWV3IG9mIGNvbW1hbmQtbGluZSBjYWxjdWxhdG9yIHByb2R1Y3QgaW50ZW50IGRlY2lzaW9uIiwKICAgICAgICAgICAgICAgICAgICAgICJyZXZpZXdfa2luZCI6ICJjb250ZXh0dWFsIiwKICAgICAgICAgICAgICAgICAgICAgICJydWJyaWNfcmVmIjogInBvbGljaWVzL3J1YnJpY3MvYm9vdHN0cmFwLXJldmlldy5tZEAzIiwKICAgICAgICAgICAgICAgICAgICAgICJmaW5kaW5ncyI6IFsKICAgICAgICAgICAgICAgICAgICAgICAgewogICAgICAgICAgICAgICAgICAgICAgICAgICJpZCI6ICJGLTAwMSIsCiAgICAgICAgICAgICAgICAgICAgICAgICAgInRhcmdldCI6ICJERUMtRUJIUENXVlJTRy1yMDAwMDEiLAogICAgICAgICAgICAgICAgICAgICAgICAgICJyZWxhdGlvbnNoaXAiOiAicHJpbWFyeSIsCiAgICAgICAgICAgICAgICAgICAgICAgICAgInNldmVyaXR5IjogImJsb2NraW5nIiwKICAgICAgICAgICAgICAgICAgICAgICAgICAic3VtbWFyeSI6ICJDbGFyaWZ5IHRoZSBzdWNjZXNzZnVsLW91dHB1dCBjYW5vbmljYWxpemF0aW9uIHJ1bGUgYmVmb3JlIHRoaXMgZGVjaXNpb24gaXMgdXNlZDogdGhlIGRlY2lzaW9uIHJlcXVpcmVzIOKAnGNhbm9uaWNhbCBzdWNjZXNzZnVsIG91dHB1dOKAnSBidXQgZG9lcyBub3QgZGVmaW5lIHRoZSBjYW5vbmljYWwgcmVwcmVzZW50YXRpb24gZm9yIHRlcm1pbmF0aW5nIHJlc3VsdHMgb3IgemVyby4iLAogICAgICAgICAgICAgICAgICAgICAgICAgICJjcml0ZXJpb24iOiAiQm9vdHN0cmFwIHJldmlldyB1bml2ZXJzYWwgY2xhcml0eSBhbmQgaW50ZXJuYWwtY29uc2lzdGVuY3kgcnVicmljLCBhbmQgdGhlIERFQyB0eXBlIGNoZWNrIHJlcXVpcmluZyBleGFjdCBzY29wZSB3aXRoIHJhdGlvbmFsZSBwcm9wb3J0aW9uYXRlIHRvIHRoZSBjb25zZXF1ZW5jZS4iLAogICAgICAgICAgICAgICAgICAgICAgICAgICJldmlkZW5jZSI6ICJUaGUgZGVjaXNpb24gc2F5cyBvbmx5IOKAnEVtaXQgY2Fub25pY2FsIHN1Y2Nlc3NmdWwgb3V0cHV0LuKAnSBJdHMgcm91bmRpbmctYW5kLXRyaW1taW5nIHJ1bGUgaXMgZXhwcmVzc2x5IGxpbWl0ZWQgdG8gbm9udGVybWluYXRpbmcgcmVzdWx0cy4gRm9yIHRoZSB2YWxpZCBpbnZvY2F0aW9uIGBjYWxjdWxhdG9yIDEuMCArIDIuMGAsIGJvdGggYDNcXG5gIGFuZCBgMy4wXFxuYCBhcmUgcGxhdXNpYmxlIGNhbm9uaWNhbCBkZWNpbWFsIG91dHB1dHM7IGZvciBhIHplcm8gcmVzdWx0LCBgMFxcbmAsIGAwLjBcXG5gLCBhbmQgYSBzaWduZWQtemVybyByZW5kZXJpbmcgYXJlIGxpa2V3aXNlIG5vdCBkaXN0aW5ndWlzaGVkLiBUaGVzZSBpbnRlcnByZXRhdGlvbnMgcHJvZHVjZSBvYnNlcnZhYmx5IGRpZmZlcmVudCBzdGRvdXQgd2hpbGUgcmVtYWluaW5nIGNvbnNpc3RlbnQgd2l0aCB0aGUgc3VwcGxpZWQgdGV4dC4gVGhlIGFtYmlndWl0eSBpcyBsb2NhbCB0byBERUMtRUJIUENXVlJTRy1yMDAwMDEgYW5kIGNvbmNlcm5zIGJlaGF2aW9yIHRoYXQgdGhlIGRlY2lzaW9uIGl0c2VsZiBwbGFjZXMgaW4gc2NvcGUuIiwKICAgICAgICAgICAgICAgICAgICAgICAgICAibWF0ZXJpYWxfY29uc2VxdWVuY2UiOiAiRG93bnN0cmVhbSByZXF1aXJlbWVudHMgYW5kIHZlcmlmaWNhdGlvbiBjYW5ub3QgZGVyaXZlIG9uZSBleHBlY3RlZCBzdGRvdXQgdmFsdWUgZm9yIHZhbGlkIHRlcm1pbmF0aW5nIGNhbGN1bGF0aW9ucywgc28gY29uZm9ybWluZyBpbXBsZW1lbnRhdGlvbnMgY2FuIGRpc2FncmVlIG9ic2VydmFibHkgYW5kIHRoZSBkZWNpc2lvbiBjYW5ub3QgYmUgdXNlZCBzYWZlbHkgYXMgZXhhY3QgcHJvZHVjdCBhdXRob3JpdHkgdW50aWwgdGhlIHN0YWtlaG9sZGVyIHNlbGVjdHMgb3IgZGVmaW5lcyB0aGUgY2Fub25pY2FsIHJlcHJlc2VudGF0aW9uLiIKICAgICAgICAgICAgICAgICAgICAgICAgfSwKICAgICAgICAgICAgICAgICAgICAgICAgewogICAgICAgICAgICAgICAgICAgICAgICAgICJpZCI6ICJGLTAwMiIsCiAgICAgICAgICAgICAgICAgICAgICAgICAgInRhcmdldCI6ICJERUMtRUJIUENXVlJTRy1yMDAwMDEiLAogICAgICAgICAgICAgICAgICAgICAgICAgICJyZWxhdGlvbnNoaXAiOiAicHJpbWFyeSIsCiAgICAgICAgICAgICAgICAgICAgICAgICAgInNldmVyaXR5IjogImFkdmlzb3J5IiwKICAgICAgICAgICAgICAgICAgICAgICAgICAic3VtbWFyeSI6ICJSZWdlbmVyYXRlIHRoZSBNYXJrZG93biBwcm9qZWN0aW9uOiBpdHMgRWZmZWN0aXZlIHNjb3BlIGlzIHRoZSB1bnJlc29sdmVkIHRva2VuIGAkcHJvcG9zYWwudXBkYXRlZFF1ZXN0aW9uLnJldmlzaW9uX2lkYCwgd2hpbGUgdGhlIGF1dGhvcml0YXRpdmUgcGF5bG9hZCByZWNvcmRzIGBRU1QtMjEyMTlLNlJWWi1yMDAwMDJgLiBUaGUgZXhhY3QgcGF5bG9hZCBhbmQgbGlua3MgcHJlc2VydmUgbWFjaGluZS1yZWFkYWJsZSBzY29wZSwgc28gdGhpcyBwcm9qZWN0aW9uIGRlZmVjdCBpcyBub3QgaW5kZXBlbmRlbnRseSBibG9ja2luZy4iCiAgICAgICAgICAgICAgICAgICAgICAgIH0KICAgICAgICAgICAgICAgICAgICAgIF0sCiAgICAgICAgICAgICAgICAgICAgICAiY29ycmVjdGlvbl9hdXRob3JpdHkiOiAic3Rha2Vob2xkZXIiLAogICAgICAgICAgICAgICAgICAgICAgIm91dGNvbWUiOiAiZmFpbCIKICAgICAgICAgICAgICAgICAgICB9LAogICAgICAgICAgICAgICAgICAgICJsaW5rcyI6IFsKICAgICAgICAgICAgICAgICAgICAgIHsKICAgICAgICAgICAgICAgICAgICAgICAgInR5cGUiOiAicmV2aWV3cyIsCiAgICAgICAgICAgICAgICAgICAgICAgICJ0YXJnZXQiOiAiREVDLUVCSFBDV1ZSU0ctcjAwMDAxIgogICAgICAgICAgICAgICAgICAgICAgfSwKICAgICAgICAgICAgICAgICAgICAgIHsKICAgICAgICAgICAgICAgICAgICAgICAgInR5cGUiOiAiY29udGV4dHVhbGl6ZXMiLAogICAgICAgICAgICAgICAgICAgICAgICAidGFyZ2V0IjogIkJTTC0xQ0U4WkhQN0dTLXIwMDAwMSIKICAgICAgICAgICAgICAgICAgICAgIH0KICAgICAgICAgICAgICAgICAgICBdLAogICAgICAgICAgICAgICAgICAgICJjcmVhdGVkX2J5IjogewogICAgICAgICAgICAgICAgICAgICAgInNjZW5hcmlvIjogInJldmlldy1kYXR1bS1pbi1jb250ZXh0QDIiLAogICAgICAgICAgICAgICAgICAgICAgInByb21wdF9yZWYiOiAicHJvbXB0cy9yZXZpZXctZGF0dW0taW4tY29udGV4dC5tZEA2IiwKICAgICAgICAgICAgICAgICAgICAgICJwcm9jZXNzX3JlZiI6ICJtZGxtLWJvb3RzdHJhcEAwLjc0LjAjc2hhMjU2OmVlOTllNjk4ZDM2ZTQwNmE4MzZhNzk2YTM2ZmMxZGIyZDI0NTEwNzJhZDY2MmMwZTA2ODA1YWI1YzIwZmU1YWMiLAogICAgICAgICAgICAgICAgICAgICAgImxvYWRlZF9za2lsbF9yZWZzIjogWwogICAgICAgICAgICAgICAgICAgICAgICAic2tpbGxzL2xpZmVjeWNsZS1kYXRhLm1kQDEiLAogICAgICAgICAgICAgICAgICAgICAgICAic2tpbGxzL2NvbnRleHR1YWwtYXJ0aWZhY3QtcmV2aWV3Lm1kQDIiLAogICAgICAgICAgICAgICAgICAgICAgICAic2tpbGxzL3RyYWNlYWJpbGl0eS5tZEAxIiwKICAgICAgICAgICAgICAgICAgICAgICAgInNraWxscy9zY29wZS1jaGFsbGVuZ2UubWRAMiIsCiAgICAgICAgICAgICAgICAgICAgICAgICJza2lsbHMvcmV2aWV3LWNvcnJlY3Rpb24tYXV0aG9yaXR5Lm1kQDEiCiAgICAgICAgICAgICAgICAgICAgICBdLAogICAgICAgICAgICAgICAgICAgICAgInBvbGljeV9yZWZzIjogWwogICAgICAgICAgICAgICAgICAgICAgICAiY29udGV4dHVhbC1yZXZpZXctcGFydGljaXBhdGlvbkAxIiwKICAgICAgICAgICAgICAgICAgICAgICAgInJldmlldy1hcHBsaWNhYmlsaXR5QDEiLAogICAgICAgICAgICAgICAgICAgICAgICAid2FpdmVyLWFwcGxpY2FiaWxpdHlAMSIKICAgICAgICAgICAgICAgICAgICAgIF0KICAgICAgICAgICAgICAgICAgICB9LAogICAgICAgICAgICAgICAgICAgICJib2R5IjogIiMgQ29udGV4dHVhbCByZXZpZXcgb2YgY29tbWFuZC1saW5lIGNhbGN1bGF0b3IgcHJvZHVjdCBpbnRlbnQgZGVjaXNpb25cblxuKipPdXRjb21lOioqIEZhaWwgIFxuKipSZXZpZXcga2luZDoqKiBDb250ZXh0dWFsICBcbioqUnVicmljOioqIGBwb2xpY2llcy9ydWJyaWNzL2Jvb3RzdHJhcC1yZXZpZXcubWRAM2BcblxuIyMgRmluZGluZ3NcblxuIyMjIEYtMDAxIOKAlCBCbG9ja2luZywgcHJpbWFyeVxuXG4qKlRhcmdldDoqKiBgREVDLUVCSFBDV1ZSU0ctcjAwMDAxYCAgXG4qKkNyaXRlcmlvbjoqKiBCb290c3RyYXAgcmV2aWV3IHVuaXZlcnNhbCBjbGFyaXR5IGFuZCBpbnRlcm5hbC1jb25zaXN0ZW5jeSBydWJyaWMsIGFuZCB0aGUgREVDIHR5cGUgY2hlY2sgcmVxdWlyaW5nIGV4YWN0IHNjb3BlIHdpdGggcmF0aW9uYWxlIHByb3BvcnRpb25hdGUgdG8gdGhlIGNvbnNlcXVlbmNlLlxuXG5UaGUgZGVjaXNpb24gcmVxdWlyZXMg4oCcY2Fub25pY2FsIHN1Y2Nlc3NmdWwgb3V0cHV04oCdIHdpdGhvdXQgZGVmaW5pbmcgdGhlIGNhbm9uaWNhbCByZXByZXNlbnRhdGlvbiBmb3IgdGVybWluYXRpbmcgcmVzdWx0cyBvciB6ZXJvLiBJdHMgcm91bmRpbmctYW5kLXRyaW1taW5nIHJ1bGUgaXMgZXhwcmVzc2x5IGxpbWl0ZWQgdG8gbm9udGVybWluYXRpbmcgcmVzdWx0cy4gRm9yIGBjYWxjdWxhdG9yIDEuMCArIDIuMGAsIGJvdGggYDNcXG5gIGFuZCBgMy4wXFxuYCBhcmUgcGxhdXNpYmxlOyB6ZXJvIGFsc28gYWRtaXRzIG1hdGVyaWFsbHkgZGlmZmVyZW50IHJlbmRlcmluZ3MuIFRoZXNlIGludGVycHJldGF0aW9ucyBjaGFuZ2Ugb2JzZXJ2YWJsZSBzdGRvdXQgd2hpbGUgcmVtYWluaW5nIGNvbnNpc3RlbnQgd2l0aCB0aGUgc3VwcGxpZWQgdGV4dC5cblxuKipNYXRlcmlhbCBjb25zZXF1ZW5jZToqKiBEb3duc3RyZWFtIHJlcXVpcmVtZW50cyBhbmQgdmVyaWZpY2F0aW9uIGNhbm5vdCBkZXJpdmUgb25lIGV4cGVjdGVkIHN0ZG91dCB2YWx1ZSBmb3IgdmFsaWQgdGVybWluYXRpbmcgY2FsY3VsYXRpb25zLiBUaGUgZGVjaXNpb24gY2Fubm90IGJlIHVzZWQgc2FmZWx5IGFzIGV4YWN0IHByb2R1Y3QgYXV0aG9yaXR5IHVudGlsIHRoZSBzdGFrZWhvbGRlciBzZWxlY3RzIG9yIGRlZmluZXMgdGhlIGNhbm9uaWNhbCByZXByZXNlbnRhdGlvbi5cblxuIyMjIEYtMDAyIOKAlCBBZHZpc29yeSwgcHJpbWFyeVxuXG4qKlRhcmdldDoqKiBgREVDLUVCSFBDV1ZSU0ctcjAwMDAxYFxuXG5SZWdlbmVyYXRlIHRoZSBNYXJrZG93biBwcm9qZWN0aW9uOiBpdHMgRWZmZWN0aXZlIHNjb3BlIGlzIHRoZSB1bnJlc29sdmVkIHRva2VuIGAkcHJvcG9zYWwudXBkYXRlZFF1ZXN0aW9uLnJldmlzaW9uX2lkYCwgd2hpbGUgdGhlIGF1dGhvcml0YXRpdmUgcGF5bG9hZCByZWNvcmRzIGBRU1QtMjEyMTlLNlJWWi1yMDAwMDJgLiBUaGUgZXhhY3QgcGF5bG9hZCBhbmQgbGlua3MgcHJlc2VydmUgbWFjaGluZS1yZWFkYWJsZSBzY29wZSwgc28gdGhpcyBpcyBub3QgaW5kZXBlbmRlbnRseSBibG9ja2luZy5cblxuIyMgQ29ycmVjdGlvbiBhdXRob3JpdHlcblxuU3Rha2Vob2xkZXIganVkZ21lbnQgaXMgcmVxdWlyZWQgYmVjYXVzZSByZXNvbHZpbmcgRi0wMDEgcmVxdWlyZXMgc2VsZWN0aW5nIHN0YWtlaG9sZGVyLXZpc2libGUgb3V0cHV0IGJlaGF2aW9yLlxuIgogICAgICAgICAgICAgICAgICB9CiAgICAgICAgICAgICAgICB9CiAgICAgICAgICAgICAgXQogICAgICAgICAgICB9CiAgICAgICAgICBdCiAgICAgICAgfQogICAgICBdCiAgICB9CiAgfSwKICAiZHJpbGxEb3duQ29tbWFuZHMiOiBbCiAgICAibWRsbSBuZXh0IiwKICAgICJtZGxtIGFzc2lnbm1lbnQgc2hvdyBiZGI5ZmZjOS0zNDkxLTQ0M2ItODhiMC04MGQ1ZGM4MDA3ODEgLS1qc29uIiwKICAgICJtZGxtIGxvb3NlLWVuZHMgLS1qc29uIiwKICAgICJtZGxtIHBoYXNlIHN0YXR1cyBwaGFzZS0wLXdheWZpbmRpbmcgLS1qc29uIiwKICAgICJtZGxtIGRvY3RvciAtLWpzb24iLAogICAgIm1kbG0gcHJvY2VzcyBzaG93IC0tanNvbiIKICBdLAogICJkaWFnbm9zdGljcyI6IFtdCn0K",
+      "stderrBase64": "",
+      "stdoutSha256": "sha256:01b55e4b681d5b72d93dd00543e9dafbac20c2bba5fb4e10ebe2e229401a92ef",
+      "stderrSha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "assignment": {
+      "argv": [
+        "/home/ubuntu/git/mdlm-successor-demos/.tooling-issue-214/node_modules/.bin/mdlm",
+        "assignment",
+        "show",
+        "bdb9ffc9-3491-443b-88b0-80d5dc800781",
+        "--json"
+      ],
+      "cwd": "/home/ubuntu/git/mdlm-successor-demos/issue-212/calculator-post214-resumable-20260825T0050Z",
+      "startedAt": "2026-08-25T04:19:20.758Z",
+      "completedAt": "2026-08-25T04:19:22.460Z",
+      "timeoutMs": 900000,
+      "timedOut": false,
+      "outputLimitExceeded": false,
+      "observedOutputBytes": 751,
+      "exitStatus": 0,
+      "signal": null,
+      "spawnError": null,
+      "stdoutBase64": "ewogICJvayI6IHRydWUsCiAgImNvbW1hbmQiOiAiYXNzaWdubWVudC5zaG93IiwKICAiY29udHJhY3QiOiAibWRsbS1hc3NpZ25tZW50LXN0YXRlQDEiLAogICJhc3NpZ25tZW50IjogewogICAgImlkIjogImJkYjlmZmM5LTM0OTEtNDQzYi04OGIwLTgwZDVkYzgwMDc4MSIKICB9LAogICJzZWxlY3RlZCI6IHRydWUsCiAgInBhY2thZ2UiOiB7CiAgICAicmVmZXJlbmNlIjogIm1kbG0tYm9vdHN0cmFwQDAuNzQuMCIsCiAgICAiZGlnZXN0IjogInNoYTI1NjplZTk5ZTY5OGQzNmU0MDZhODM2YTc5NmEzNmZjMWRiMmQyNDUxMDcyYWQ2NjJjMGUwNjgwNWFiNWMyMGZlNWFjIiwKICAgICJsYW5ndWFnZSI6ICJtZGxtLWV4cHJlc3Npb25AMSIKICB9LAogICJyZXBvc2l0b3J5IjogewogICAgImhlYWQiOiAiMDZkN2YwMWQzNDMxMDJhOGRhOWVhMGYxMTgyNzZmNTViNDIzNWM0YSIsCiAgICAidHJhY2tlZFN0YXRlIjogInNoYTI1Njo2MjJjYWU5NGY2MDY0OWRmMWIxZjg3NGU2NTIwYjVjZDQxNmNkMDZmZjZhZTIzZWJjODVmMjY2N2E2NzA5Zjk2IgogIH0sCiAgInNjZW5hcmlvUmVmZXJlbmNlIjogInJldmlzZS1xdWVzdGlvbi1kZWNpc2lvbi1hZnRlci1yZXZpZXdAMSIsCiAgImRpc3Bvc2l0aW9uIjogImFjdGl2ZSIsCiAgInJldHJ5QXZhaWxhYmlsaXR5IjogewogICAgIm1hbGZvcm1lZFJlc3BvbnNlQ29ycmVjdGlvbiI6IDEKICB9LAogICJtYWxmb3JtZWRSZXNwb25zZXMiOiBbXSwKICAiZGlhZ25vc3RpY3MiOiBbXQp9Cg==",
+      "stderrBase64": "",
+      "stdoutSha256": "sha256:55e59b27597f8f94be0e05acf36d4e6246c55c545c024cceb5134123eb039be4",
+      "stderrSha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "assignment": {
+    "id": "bdb9ffc9-3491-443b-88b0-80d5dc800781",
+    "disposition": "active",
+    "selected": true,
+    "package": {
+      "reference": "mdlm-bootstrap@0.74.0",
+      "digest": "sha256:ee99e698d36e406a836a796a36fc1db2d2451072ad662c0e06805ab5c20fe5ac",
+      "language": "mdlm-expression@1"
+    },
+    "repository": {
+      "head": "06d7f01d343102a8da9ea0f118276f55b4235c4a",
+      "trackedState": "sha256:622cae94f60649df1b1f874e6520b5cd416cd06ff6ae23ebc85f2667a6709f96"
+    },
+    "scenarioReference": "revise-question-decision-after-review@1",
+    "malformedResponses": []
+  },
+  "status": {
+    "ok": true,
+    "command": "status",
+    "contract": "mdlm-status@1",
+    "package": {
+      "id": "mdlm-bootstrap",
+      "version": "0.74.0",
+      "reference": "mdlm-bootstrap@0.74.0",
+      "language": "mdlm-expression@1",
+      "digest": "sha256:ee99e698d36e406a836a796a36fc1db2d2451072ad662c0e06805ab5c20fe5ac"
+    },
+    "profile": {
+      "reference": "bootstrap@38",
+      "status": "experimental",
+      "description": "Complete bootstrap profile with proportional grouped system definition, reviewed intent, qualification/pilot, exact accepted-STK and shared-SYS change control, and a reviewed expansion Decision."
+    },
+    "integrity": {
+      "status": "valid",
+      "diagnostics": []
+    },
+    "activePhase": {
+      "reference": "phase-0-wayfinding@5",
+      "name": "Wayfinding bootstrap",
+      "purpose": "Establish reviewed, scope-challenged product intent and stakeholder commitments for explicit user approval.",
+      "coverage": "bootstrap-subset"
+    },
+    "omittedCoverage": {
+      "profile": [
+        "component and design decomposition lifecycle types",
+        "formal verification execution",
+        "component and design implementation lifecycle types"
+      ],
+      "phase": [
+        "VSP and environment profiles"
+      ]
+    },
+    "recentTransaction": {
+      "available": true,
+      "id": "a37129d2-5a47-4aad-b190-6893fdd01ea7",
+      "status": "completed",
+      "scenario": "review-datum-in-context@2"
+    },
+    "unresolvedWork": {
+      "total": 6,
+      "dispatchable": 2,
+      "byStatus": {
+        "awaiting-review": 1,
+        "blocked": 3,
+        "failed": 1,
+        "ready": 1
+      }
+    },
+    "currentOutcome": {
+      "outcome": "attention-required",
+      "assignment": {
+        "allocation": "active",
+        "id": "bdb9ffc9-3491-443b-88b0-80d5dc800781"
+      },
+      "authorityRequirement": {
+        "mode": "attended",
+        "authority": "stakeholder",
+        "delegationAllowed": false
+      },
+      "attentionSchedule": {
+        "timing": "immediate",
+        "checkpoint": null,
+        "consolidationGroup": null
+      },
+      "explanation": "The exact failed Decision findings are ready for renewed stakeholder judgment.",
+      "attentionContext": {
+        "invocations": [
+          {
+            "inputs": [
+              {
+                "name": "decision",
+                "values": [
+                  {
+                    "identity": {
+                      "id": "DEC-EBHPCWVRSG",
+                      "revision_id": "DEC-EBHPCWVRSG-r00001",
+                      "type": "DEC",
+                      "revision": 1
+                    },
+                    "data": {
+                      "id": "DEC-EBHPCWVRSG",
+                      "revision": 1,
+                      "revision_id": "DEC-EBHPCWVRSG-r00001",
+                      "type": "DEC",
+                      "payload": {
+                        "title": "Command-line calculator product intent",
+                        "rationale": "The attended stakeholder explicitly selected this product behavior and its command-line, operand, operator, output, rounding, and error-handling boundaries.",
+                        "kind": "scope",
+                        "decision": "Build a command-line calculator. Invoke it as `calculator <left> <operator> <right>`. Support only the operators `+`, `-`, `*`, and `/`. Accept operands matching exactly `[+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)`. Emit canonical successful output. For nonterminating results, round exactly at the 12th fractional digit using half-away-from-zero and then trim. For invalid input, emit no stdout, emit exactly `invalid input\\n` on stderr, and exit 2. For division by zero, emit no stdout, emit exactly `division by zero\\n` on stderr, and exit 2.",
+                        "alternatives": [],
+                        "effective_scope": "QST-21219K6RVZ-r00002"
+                      },
+                      "links": [
+                        {
+                          "type": "resolves",
+                          "target": "QST-21219K6RVZ-r00001"
+                        },
+                        {
+                          "type": "resolves",
+                          "target": "QST-21219K6RVZ-r00002"
+                        }
+                      ],
+                      "created_by": {
+                        "scenario": "resolve-question@2",
+                        "prompt_ref": "prompts/resolve-question.md@2",
+                        "process_ref": "mdlm-bootstrap@0.74.0#sha256:ee99e698d36e406a836a796a36fc1db2d2451072ad662c0e06805ab5c20fe5ac",
+                        "loaded_skill_refs": [
+                          "skills/lifecycle-data.md@1",
+                          "skills/clarification-protocol.md@1",
+                          "skills/traceability.md@1",
+                          "skills/author-preflight.md@2"
+                        ],
+                        "policy_refs": [
+                          "question-participation@1",
+                          "review-applicability@1",
+                          "waiver-applicability@1"
+                        ]
+                      },
+                      "body": "# Command-line calculator product intent\n\n## Decision\n\nBuild a command-line calculator. Invoke it as `calculator <left> <operator> <right>`. Support only the operators `+`, `-`, `*`, and `/`. Accept operands matching exactly `[+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)`. Emit canonical successful output. For nonterminating results, round exactly at the 12th fractional digit using half-away-from-zero and then trim. For invalid input, emit no stdout, emit exactly `invalid input\\n` on stderr, and exit 2. For division by zero, emit no stdout, emit exactly `division by zero\\n` on stderr, and exit 2.\n\n## Rationale\n\nThe attended stakeholder explicitly selected this product behavior and its command-line, operand, operator, output, rounding, and error-handling boundaries.\n\n## Alternatives\n\nNone recorded.\n\n## Effective scope\n\n`$proposal.updatedQuestion.revision_id`\n"
+                    }
+                  }
+                ]
+              },
+              {
+                "name": "question",
+                "values": [
+                  {
+                    "identity": {
+                      "id": "QST-21219K6RVZ",
+                      "revision_id": "QST-21219K6RVZ-r00002",
+                      "type": "QST",
+                      "revision": 2
+                    },
+                    "data": {
+                      "id": "QST-21219K6RVZ",
+                      "revision": 2,
+                      "revision_id": "QST-21219K6RVZ-r00002",
+                      "type": "QST",
+                      "payload": {
+                        "title": "Product intent",
+                        "kind": "preferential",
+                        "intent_scope": "product",
+                        "question": "What product do you currently intend to build?",
+                        "attended_answer": "Build a command-line calculator. Invoke it as `calculator <left> <operator> <right>`. Support only the operators `+`, `-`, `*`, and `/`. Accept operands matching exactly `[+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)`. Emit canonical successful output. For nonterminating results, round exactly at the 12th fractional digit using half-away-from-zero and then trim. For invalid input, emit no stdout, emit exactly `invalid input\\n` on stderr, and exit 2. For division by zero, emit no stdout, emit exactly `division by zero\\n` on stderr, and exit 2.",
+                        "state": "answered",
+                        "blocking_impact": "PSP compilation is blocked until the stakeholder answers this question."
+                      },
+                      "links": [],
+                      "created_by": {
+                        "scenario": "resolve-question@2",
+                        "prompt_ref": "prompts/resolve-question.md@2",
+                        "process_ref": "mdlm-bootstrap@0.74.0#sha256:ee99e698d36e406a836a796a36fc1db2d2451072ad662c0e06805ab5c20fe5ac",
+                        "loaded_skill_refs": [
+                          "skills/lifecycle-data.md@1",
+                          "skills/clarification-protocol.md@1",
+                          "skills/traceability.md@1",
+                          "skills/author-preflight.md@2"
+                        ],
+                        "policy_refs": [
+                          "question-participation@1",
+                          "review-applicability@1",
+                          "waiver-applicability@1"
+                        ]
+                      },
+                      "body": "# Product intent\n\n**Question:** What product do you currently intend to build?\n\n**Kind:** Preferential  \n**State:** Answered\n\n## Attended answer\n\nBuild a command-line calculator. Invoke it as `calculator <left> <operator> <right>`. Support only the operators `+`, `-`, `*`, and `/`. Accept operands matching exactly `[+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)`. Emit canonical successful output. For nonterminating results, round exactly at the 12th fractional digit using half-away-from-zero and then trim. For invalid input, emit no stdout, emit exactly `invalid input\\n` on stderr, and exit 2. For division by zero, emit no stdout, emit exactly `division by zero\\n` on stderr, and exit 2.\n\n**Blocking impact:** PSP compilation is blocked until the stakeholder answers this question.\n"
+                    }
+                  }
+                ]
+              },
+              {
+                "name": "lineage",
+                "values": [
+                  {
+                    "identity": {
+                      "id": "DEC-EBHPCWVRSG",
+                      "revision_id": "DEC-EBHPCWVRSG-r00001",
+                      "type": "DEC",
+                      "revision": 1
+                    },
+                    "data": {
+                      "id": "DEC-EBHPCWVRSG",
+                      "revision": 1,
+                      "revision_id": "DEC-EBHPCWVRSG-r00001",
+                      "type": "DEC",
+                      "payload": {
+                        "title": "Command-line calculator product intent",
+                        "rationale": "The attended stakeholder explicitly selected this product behavior and its command-line, operand, operator, output, rounding, and error-handling boundaries.",
+                        "kind": "scope",
+                        "decision": "Build a command-line calculator. Invoke it as `calculator <left> <operator> <right>`. Support only the operators `+`, `-`, `*`, and `/`. Accept operands matching exactly `[+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)`. Emit canonical successful output. For nonterminating results, round exactly at the 12th fractional digit using half-away-from-zero and then trim. For invalid input, emit no stdout, emit exactly `invalid input\\n` on stderr, and exit 2. For division by zero, emit no stdout, emit exactly `division by zero\\n` on stderr, and exit 2.",
+                        "alternatives": [],
+                        "effective_scope": "QST-21219K6RVZ-r00002"
+                      },
+                      "links": [
+                        {
+                          "type": "resolves",
+                          "target": "QST-21219K6RVZ-r00001"
+                        },
+                        {
+                          "type": "resolves",
+                          "target": "QST-21219K6RVZ-r00002"
+                        }
+                      ],
+                      "created_by": {
+                        "scenario": "resolve-question@2",
+                        "prompt_ref": "prompts/resolve-question.md@2",
+                        "process_ref": "mdlm-bootstrap@0.74.0#sha256:ee99e698d36e406a836a796a36fc1db2d2451072ad662c0e06805ab5c20fe5ac",
+                        "loaded_skill_refs": [
+                          "skills/lifecycle-data.md@1",
+                          "skills/clarification-protocol.md@1",
+                          "skills/traceability.md@1",
+                          "skills/author-preflight.md@2"
+                        ],
+                        "policy_refs": [
+                          "question-participation@1",
+                          "review-applicability@1",
+                          "waiver-applicability@1"
+                        ]
+                      },
+                      "body": "# Command-line calculator product intent\n\n## Decision\n\nBuild a command-line calculator. Invoke it as `calculator <left> <operator> <right>`. Support only the operators `+`, `-`, `*`, and `/`. Accept operands matching exactly `[+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)`. Emit canonical successful output. For nonterminating results, round exactly at the 12th fractional digit using half-away-from-zero and then trim. For invalid input, emit no stdout, emit exactly `invalid input\\n` on stderr, and exit 2. For division by zero, emit no stdout, emit exactly `division by zero\\n` on stderr, and exit 2.\n\n## Rationale\n\nThe attended stakeholder explicitly selected this product behavior and its command-line, operand, operator, output, rounding, and error-handling boundaries.\n\n## Alternatives\n\nNone recorded.\n\n## Effective scope\n\n`$proposal.updatedQuestion.revision_id`\n"
+                    }
+                  }
+                ]
+              },
+              {
+                "name": "prior_failed_reviews",
+                "values": []
+              },
+              {
+                "name": "failed_reviews",
+                "values": [
+                  {
+                    "identity": {
+                      "id": "REV-079NVE0Y8M",
+                      "revision_id": "REV-079NVE0Y8M-r00001",
+                      "type": "REV",
+                      "revision": 1
+                    },
+                    "data": {
+                      "id": "REV-079NVE0Y8M",
+                      "revision": 1,
+                      "revision_id": "REV-079NVE0Y8M-r00001",
+                      "type": "REV",
+                      "payload": {
+                        "title": "Contextual review of command-line calculator product intent decision",
+                        "review_kind": "contextual",
+                        "rubric_ref": "policies/rubrics/bootstrap-review.md@3",
+                        "findings": [
+                          {
+                            "id": "F-001",
+                            "target": "DEC-EBHPCWVRSG-r00001",
+                            "relationship": "primary",
+                            "severity": "blocking",
+                            "summary": "Clarify the successful-output canonicalization rule before this decision is used: the decision requires “canonical successful output” but does not define the canonical representation for terminating results or zero.",
+                            "criterion": "Bootstrap review universal clarity and internal-consistency rubric, and the DEC type check requiring exact scope with rationale proportionate to the consequence.",
+                            "evidence": "The decision says only “Emit canonical successful output.” Its rounding-and-trimming rule is expressly limited to nonterminating results. For the valid invocation `calculator 1.0 + 2.0`, both `3\\n` and `3.0\\n` are plausible canonical decimal outputs; for a zero result, `0\\n`, `0.0\\n`, and a signed-zero rendering are likewise not distinguished. These interpretations produce observably different stdout while remaining consistent with the supplied text. The ambiguity is local to DEC-EBHPCWVRSG-r00001 and concerns behavior that the decision itself places in scope.",
+                            "material_consequence": "Downstream requirements and verification cannot derive one expected stdout value for valid terminating calculations, so conforming implementations can disagree observably and the decision cannot be used safely as exact product authority until the stakeholder selects or defines the canonical representation."
+                          },
+                          {
+                            "id": "F-002",
+                            "target": "DEC-EBHPCWVRSG-r00001",
+                            "relationship": "primary",
+                            "severity": "advisory",
+                            "summary": "Regenerate the Markdown projection: its Effective scope is the unresolved token `$proposal.updatedQuestion.revision_id`, while the authoritative payload records `QST-21219K6RVZ-r00002`. The exact payload and links preserve machine-readable scope, so this projection defect is not independently blocking."
+                          }
+                        ],
+                        "correction_authority": "stakeholder",
+                        "outcome": "fail"
+                      },
+                      "links": [
+                        {
+                          "type": "reviews",
+                          "target": "DEC-EBHPCWVRSG-r00001"
+                        },
+                        {
+                          "type": "contextualizes",
+                          "target": "BSL-1CE8ZHP7GS-r00001"
+                        }
+                      ],
+                      "created_by": {
+                        "scenario": "review-datum-in-context@2",
+                        "prompt_ref": "prompts/review-datum-in-context.md@6",
+                        "process_ref": "mdlm-bootstrap@0.74.0#sha256:ee99e698d36e406a836a796a36fc1db2d2451072ad662c0e06805ab5c20fe5ac",
+                        "loaded_skill_refs": [
+                          "skills/lifecycle-data.md@1",
+                          "skills/contextual-artifact-review.md@2",
+                          "skills/traceability.md@1",
+                          "skills/scope-challenge.md@2",
+                          "skills/review-correction-authority.md@1"
+                        ],
+                        "policy_refs": [
+                          "contextual-review-participation@1",
+                          "review-applicability@1",
+                          "waiver-applicability@1"
+                        ]
+                      },
+                      "body": "# Contextual review of command-line calculator product intent decision\n\n**Outcome:** Fail  \n**Review kind:** Contextual  \n**Rubric:** `policies/rubrics/bootstrap-review.md@3`\n\n## Findings\n\n### F-001 — Blocking, primary\n\n**Target:** `DEC-EBHPCWVRSG-r00001`  \n**Criterion:** Bootstrap review universal clarity and internal-consistency rubric, and the DEC type check requiring exact scope with rationale proportionate to the consequence.\n\nThe decision requires “canonical successful output” without defining the canonical representation for terminating results or zero. Its rounding-and-trimming rule is expressly limited to nonterminating results. For `calculator 1.0 + 2.0`, both `3\\n` and `3.0\\n` are plausible; zero also admits materially different renderings. These interpretations change observable stdout while remaining consistent with the supplied text.\n\n**Material consequence:** Downstream requirements and verification cannot derive one expected stdout value for valid terminating calculations. The decision cannot be used safely as exact product authority until the stakeholder selects or defines the canonical representation.\n\n### F-002 — Advisory, primary\n\n**Target:** `DEC-EBHPCWVRSG-r00001`\n\nRegenerate the Markdown projection: its Effective scope is the unresolved token `$proposal.updatedQuestion.revision_id`, while the authoritative payload records `QST-21219K6RVZ-r00002`. The exact payload and links preserve machine-readable scope, so this is not independently blocking.\n\n## Correction authority\n\nStakeholder judgment is required because resolving F-001 requires selecting stakeholder-visible output behavior.\n"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "drillDownCommands": [
+      "mdlm next",
+      "mdlm assignment show bdb9ffc9-3491-443b-88b0-80d5dc800781 --json",
+      "mdlm loose-ends --json",
+      "mdlm phase status phase-0-wayfinding --json",
+      "mdlm doctor --json",
+      "mdlm process show --json"
+    ],
+    "diagnostics": []
+  },
+  "diagnosis": {
+    "ok": true,
+    "command": "doctor",
+    "package": {
+      "id": "mdlm-bootstrap",
+      "version": "0.74.0",
+      "reference": "mdlm-bootstrap@0.74.0",
+      "language": "mdlm-expression@1",
+      "digest": "sha256:ee99e698d36e406a836a796a36fc1db2d2451072ad662c0e06805ab5c20fe5ac"
+    },
+    "baselineRepositoryVerification": {
+      "verifiedBaselines": 3,
+      "processDrift": 0
+    },
+    "index": {
+      "rebuilt": false,
+      "data": 8,
+      "path": ".lifecycle/generated/indexes/data.json"
+    },
+    "report": {
+      "rebuilt": false,
+      "data": 7,
+      "path": ".lifecycle/generated/reports/lifecycle.json"
+    },
+    "diagnostics": []
+  },
+  "journal": {
+    "present": false,
+    "path": "/home/ubuntu/git/mdlm-successor-demos/evidence/issue-212-final/calculator-post214/private-state/assignments/bdb9ffc9-3491-443b-88b0-80d5dc800781-622b1ddf8c21/transaction.json"
+  },
+  "piJournal": {
+    "present": false,
+    "path": "/home/ubuntu/git/mdlm-successor-demos/issue-212/calculator-post214-resumable-20260825T0050Z/.git/mdlm-pi/run.json"
+  },
+  "provenance": {
+    "source": {
+      "repository": "/home/ubuntu/git/mdlm-successor-demos/.source-516f9e0",
+      "expectedCommit": "516f9e0ef52bb5fcc47cce56282a44075c5af4f2",
+      "expectedTree": "623575c22b53bd6a2a21c73c4420ca5f26aaa172",
+      "observedCommit": "516f9e0ef52bb5fcc47cce56282a44075c5af4f2",
+      "observedTree": "623575c22b53bd6a2a21c73c4420ca5f26aaa172",
+      "clean": true,
+      "matches": true,
+      "commands": {
+        "commit": {
+          "argv": [
+            "git",
+            "rev-parse",
+            "HEAD^{commit}"
+          ],
+          "cwd": "/home/ubuntu/git/mdlm-successor-demos/.source-516f9e0",
+          "startedAt": "2026-08-25T04:19:22.598Z",
+          "completedAt": "2026-08-25T04:19:22.605Z",
+          "timeoutMs": 900000,
+          "timedOut": false,
+          "outputLimitExceeded": false,
+          "observedOutputBytes": 41,
+          "exitStatus": 0,
+          "signal": null,
+          "spawnError": null,
+          "stdoutBase64": "NTE2ZjllMGVmNTJiYjVmY2M0N2NjZTU2MjgyYTQ0MDc1YzVhZjRmMgo=",
+          "stderrBase64": "",
+          "stdoutSha256": "sha256:41d3cd8052295235f95e41ab64de39b85e9f1d90b183ee0b25b0a9d468a27a8b",
+          "stderrSha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "tree": {
+          "argv": [
+            "git",
+            "rev-parse",
+            "HEAD^{tree}"
+          ],
+          "cwd": "/home/ubuntu/git/mdlm-successor-demos/.source-516f9e0",
+          "startedAt": "2026-08-25T04:19:22.605Z",
+          "completedAt": "2026-08-25T04:19:22.621Z",
+          "timeoutMs": 900000,
+          "timedOut": false,
+          "outputLimitExceeded": false,
+          "observedOutputBytes": 41,
+          "exitStatus": 0,
+          "signal": null,
+          "spawnError": null,
+          "stdoutBase64": "NjIzNTc1YzIyYjUzYmQ2YTJhMjFjNzNjNDQyMGNhNWYyNmFhYTE3Mgo=",
+          "stderrBase64": "",
+          "stdoutSha256": "sha256:5cbd3f08c4f91389ccd555262c46ea9cf2b9bf610707b4245a1b2d753c49f6a8",
+          "stderrSha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "status": {
+          "argv": [
+            "git",
+            "status",
+            "--porcelain=v1",
+            "-z",
+            "--untracked-files=all"
+          ],
+          "cwd": "/home/ubuntu/git/mdlm-successor-demos/.source-516f9e0",
+          "startedAt": "2026-08-25T04:19:22.621Z",
+          "completedAt": "2026-08-25T04:19:22.683Z",
+          "timeoutMs": 900000,
+          "timedOut": false,
+          "outputLimitExceeded": false,
+          "observedOutputBytes": 0,
+          "exitStatus": 0,
+          "signal": null,
+          "spawnError": null,
+          "stdoutBase64": "",
+          "stderrBase64": "",
+          "stdoutSha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderrSha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      }
+    },
+    "package": {
+      "path": "/home/ubuntu/git/mdlm-successor-demos/.packages/0.74.0/mdlm-0.0.0.tgz",
+      "realpath": "/home/ubuntu/git/mdlm-successor-demos/.packages/0.74.0/mdlm-0.0.0.tgz",
+      "pathKind": "file",
+      "digest": "sha256:8f7eb4b7d4e04a053713c72debc2a4a71d7878a0a9ed084ade8c964e9eef6cf7",
+      "bytes": 3713899,
+      "expectedDigest": "sha256:8f7eb4b7d4e04a053713c72debc2a4a71d7878a0a9ed084ade8c964e9eef6cf7",
+      "matches": true
+    },
+    "piPackage": {
+      "path": "/home/ubuntu/git/mdlm-successor-demos/.packages/0.74.0/mdlm-pi-0.0.0.tgz",
+      "realpath": "/home/ubuntu/git/mdlm-successor-demos/.packages/0.74.0/mdlm-pi-0.0.0.tgz",
+      "pathKind": "file",
+      "digest": "sha256:d3e99c2ebd13f1167ac2041f586b9bbe8fa738388020d9103cad10b90f17df3b",
+      "bytes": 80659,
+      "expectedDigest": "sha256:d3e99c2ebd13f1167ac2041f586b9bbe8fa738388020d9103cad10b90f17df3b",
+      "matches": true
+    },
+    "tooling": {
+      "root": "/home/ubuntu/git/mdlm-successor-demos/.tooling-issue-214",
+      "contract": "mdlm-demo-tooling-tree@1",
+      "digest": "sha256:a16e6aeeb1ee082a500e11494d5c924f29a44f71736d4681e2895ee653f4c5f0",
+      "entries": 17276,
+      "files": 15741,
+      "symlinks": 12,
+      "bytes": 124184736,
+      "expectedDigest": "sha256:a16e6aeeb1ee082a500e11494d5c924f29a44f71736d4681e2895ee653f4c5f0",
+      "lock": {
+        "path": "/home/ubuntu/git/mdlm-successor-demos/.tooling-issue-214/package-lock.json",
+        "realpath": "/home/ubuntu/git/mdlm-successor-demos/.tooling-issue-214/package-lock.json",
+        "pathKind": "file",
+        "digest": "sha256:028cb194bc2b0bfdaf8e631cd03cd3bf3aeadb64e2284eaad7e19061da90b294",
+        "bytes": 77148,
+        "expectedDigest": "sha256:028cb194bc2b0bfdaf8e631cd03cd3bf3aeadb64e2284eaad7e19061da90b294",
+        "matches": true
+      },
+      "containedTools": true,
+      "matches": true
+    },
+    "tools": {
+      "mdlm": {
+        "path": "/home/ubuntu/git/mdlm-successor-demos/.tooling-issue-214/node_modules/.bin/mdlm",
+        "realpath": "/home/ubuntu/git/mdlm-successor-demos/.tooling-issue-214/node_modules/mdlm/dist/mdlm.js",
+        "pathKind": "symbolic-link",
+        "digest": "sha256:c8117c43233d3735ee3cdc39d6ceba3aaf2cb3b395e93a67429513d816c82b2f",
+        "bytes": 998,
+        "expectedDigest": "sha256:c8117c43233d3735ee3cdc39d6ceba3aaf2cb3b395e93a67429513d816c82b2f",
+        "matches": true
+      },
+      "mdlmPi": {
+        "path": "/home/ubuntu/git/mdlm-successor-demos/.tooling-issue-214/node_modules/.bin/mdlm-pi",
+        "realpath": "/home/ubuntu/git/mdlm-successor-demos/.tooling-issue-214/node_modules/mdlm-pi/dist/cli.js",
+        "pathKind": "symbolic-link",
+        "digest": "sha256:843bf59b780a7e89fc022cc5b168ad90814ef223d8f8a17e32b895335c1d6c43",
+        "bytes": 5765,
+        "expectedDigest": "sha256:843bf59b780a7e89fc022cc5b168ad90814ef223d8f8a17e32b895335c1d6c43",
+        "matches": true
+      }
+    },
+    "qualificationHarness": {
+      "repository": "/home/ubuntu/git/mdlm-phase1-qualification-harness",
+      "expectedCommit": "79c87627aaf48ca3261a3476aa82c52524f3c938",
+      "expectedTree": "e7311ce6e36df8df6fa840ea2df70ff00fe316c1",
+      "observedCommit": "79c87627aaf48ca3261a3476aa82c52524f3c938",
+      "observedTree": "e7311ce6e36df8df6fa840ea2df70ff00fe316c1",
+      "clean": true,
+      "matches": true,
+      "commands": {
+        "commit": {
+          "argv": [
+            "git",
+            "rev-parse",
+            "HEAD^{commit}"
+          ],
+          "cwd": "/home/ubuntu/git/mdlm-phase1-qualification-harness",
+          "startedAt": "2026-08-25T04:19:22.683Z",
+          "completedAt": "2026-08-25T04:19:22.696Z",
+          "timeoutMs": 900000,
+          "timedOut": false,
+          "outputLimitExceeded": false,
+          "observedOutputBytes": 41,
+          "exitStatus": 0,
+          "signal": null,
+          "spawnError": null,
+          "stdoutBase64": "NzljODc2MjdhYWY0OGNhMzI2MWEzNDc2YWE4MmM1MjUyNGYzYzkzOAo=",
+          "stderrBase64": "",
+          "stdoutSha256": "sha256:7a0730db1e16196831bb4216c6fa80845b25418a4a768fb76b81e8f74ada5cd3",
+          "stderrSha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "tree": {
+          "argv": [
+            "git",
+            "rev-parse",
+            "HEAD^{tree}"
+          ],
+          "cwd": "/home/ubuntu/git/mdlm-phase1-qualification-harness",
+          "startedAt": "2026-08-25T04:19:22.696Z",
+          "completedAt": "2026-08-25T04:19:22.760Z",
+          "timeoutMs": 900000,
+          "timedOut": false,
+          "outputLimitExceeded": false,
+          "observedOutputBytes": 41,
+          "exitStatus": 0,
+          "signal": null,
+          "spawnError": null,
+          "stdoutBase64": "ZTczMTFjZTZlMzZkZjhkZjZmYTg0MGVhMmRmNzBmZjAwZmUzMTZjMQo=",
+          "stderrBase64": "",
+          "stdoutSha256": "sha256:aa4e82ad46eeb5fe3b08a3e703de57c0f1fe41de31c7705454bfedea711bb802",
+          "stderrSha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "status": {
+          "argv": [
+            "git",
+            "status",
+            "--porcelain=v1",
+            "-z",
+            "--untracked-files=all"
+          ],
+          "cwd": "/home/ubuntu/git/mdlm-phase1-qualification-harness",
+          "startedAt": "2026-08-25T04:19:22.760Z",
+          "completedAt": "2026-08-25T04:19:22.769Z",
+          "timeoutMs": 900000,
+          "timedOut": false,
+          "outputLimitExceeded": false,
+          "observedOutputBytes": 0,
+          "exitStatus": 0,
+          "signal": null,
+          "spawnError": null,
+          "stdoutBase64": "",
+          "stderrBase64": "",
+          "stdoutSha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderrSha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "manifest": {
+        "path": "/home/ubuntu/git/mdlm-phase1-qualification-harness/manifest.json",
+        "realpath": "/home/ubuntu/git/mdlm-phase1-qualification-harness/manifest.json",
+        "pathKind": "file",
+        "digest": "sha256:21c5d54714928894d0d280f913856a02972c831fdaffcffc26f51e8f6b309c8c",
+        "bytes": 4519,
+        "expectedDigest": "sha256:21c5d54714928894d0d280f913856a02972c831fdaffcffc26f51e8f6b309c8c",
+        "matches": true
+      },
+      "repositoryLocator": "https://github.com/taylorrowser/mdlm-phase1-qualification-harness.git"
+    },
+    "valid": true
+  },
+  "environmentPolicy": {
+    "contract": "mdlm-demo-environment-policy@1",
+    "inherited": [
+      "HOME",
+      "PATH",
+      "TMPDIR",
+      "ANTHROPIC_API_KEY",
+      "OPENAI_API_KEY",
+      "GOOGLE_API_KEY",
+      "GEMINI_API_KEY",
+      "AWS_ACCESS_KEY_ID",
+      "AWS_SECRET_ACCESS_KEY",
+      "AWS_SESSION_TOKEN",
+      "AWS_REGION",
+      "AWS_DEFAULT_REGION"
+    ],
+    "removed": [
+      "BASH_ENV",
+      "CDPATH",
+      "ENV",
+      "GIT_DIR",
+      "GIT_WORK_TREE",
+      "GIT_CONFIG",
+      "GIT_CONFIG_COUNT",
+      "GIT_CONFIG_GLOBAL",
+      "GIT_CONFIG_NOSYSTEM",
+      "GIT_CONFIG_SYSTEM",
+      "GIT_OBJECT_DIRECTORY",
+      "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+      "IFS",
+      "NODE_CHANNEL_FD",
+      "NODE_COMPILE_CACHE",
+      "NODE_EXTRA_CA_CERTS",
+      "NODE_OPTIONS",
+      "NODE_PATH",
+      "NODE_REPL_EXTERNAL_MODULE",
+      "NODE_UNIQUE_ID",
+      "NPM_CONFIG_PREFIX",
+      "SHELLOPTS"
+    ],
+    "fixed": {
+      "LANG": "C.UTF-8",
+      "LC_ALL": "C.UTF-8",
+      "GIT_TERMINAL_PROMPT": "0"
+    },
+    "gitConfigIsolation": true
+  },
+  "commandFailure": null
+}

@@ -1,0 +1,123 @@
+✖ ordinary Assignments invoke mdlm-pi with exact argv and request-bound timeout environment (1011.168893ms)
+✖ run and resume require safe explicit mdlm-pi timeout policy before snapshotting (1048.919048ms)
+✖ resume rejects mdlm-pi timeout drift without invoking mdlm-pi (1214.490053ms)
+✖ exact run-008 typed operational failure becomes recoverable only after a clean unchanged post-run boundary (935.995678ms)
+✖ typed operational failure stays nonrecoverable when post-run evidence changed or became ambiguous (1290.1797ms)
+✖ mdlm-pi exit codes and typed results distinguish lifecycle outcomes from operational failures (1438.310571ms)
+ℹ tests 6
+ℹ suites 0
+ℹ pass 0
+ℹ fail 6
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 7661.458938
+
+✖ failing tests:
+
+test at test/run.test.mjs:312:1
+✖ ordinary Assignments invoke mdlm-pi with exact argv and request-bound timeout environment (1011.168893ms)
+  AssertionError [ERR_ASSERTION]: {"contract":"mdlm-demo-error@1","error":"run request.mdlmPiCommandTimeoutMs is unsupported"}
+  
+  
+  1 !== 0
+  
+      at TestContext.<anonymous> (file:///home/ubuntu/git/mdlm-demo-orchestrator/test/run.test.mjs:324:10)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 1,
+    expected: 0,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/run.test.mjs:368:1
+✖ run and resume require safe explicit mdlm-pi timeout policy before snapshotting (1048.919048ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /timeout|positive safe integer|safety reserve/. Input:
+  
+  'run request.mdlmPiAssignmentTimeoutMs is unsupported'
+  
+      at TestContext.<anonymous> (file:///home/ubuntu/git/mdlm-demo-orchestrator/test/run.test.mjs:386:14)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'run request.mdlmPiAssignmentTimeoutMs is unsupported',
+    expected: /timeout|positive safe integer|safety reserve/,
+    operator: 'match',
+    diff: 'simple'
+  }
+
+test at test/run.test.mjs:444:1
+✖ resume rejects mdlm-pi timeout drift without invoking mdlm-pi (1214.490053ms)
+  AssertionError [ERR_ASSERTION]: {"contract":"mdlm-demo-error@1","error":"run request.mdlmPiCommandTimeoutMs is unsupported"}
+  
+  
+  1 !== 0
+  
+      at TestContext.<anonymous> (file:///home/ubuntu/git/mdlm-demo-orchestrator/test/run.test.mjs:450:10)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 1,
+    expected: 0,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/run.test.mjs:649:1
+✖ exact run-008 typed operational failure becomes recoverable only after a clean unchanged post-run boundary (935.995678ms)
+  AssertionError [ERR_ASSERTION]: {"contract":"mdlm-demo-error@1","error":"run request.mdlmPiCommandTimeoutMs is unsupported"}
+  
+  
+  1 !== 0
+  
+      at TestContext.<anonymous> (file:///home/ubuntu/git/mdlm-demo-orchestrator/test/run.test.mjs:675:10)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 1,
+    expected: 0,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/run.test.mjs:702:1
+✖ typed operational failure stays nonrecoverable when post-run evidence changed or became ambiguous (1290.1797ms)
+  AssertionError [ERR_ASSERTION]: repository change: {"contract":"mdlm-demo-error@1","error":"run request.mdlmPiCommandTimeoutMs is unsupported"}
+  
+  
+  1 !== 0
+  
+      at TestContext.<anonymous> (file:///home/ubuntu/git/mdlm-demo-orchestrator/test/run.test.mjs:720:12)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 1,
+    expected: 0,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/run.test.mjs:730:1
+✖ mdlm-pi exit codes and typed results distinguish lifecycle outcomes from operational failures (1438.310571ms)
+  AssertionError [ERR_ASSERTION]: {"contract":"mdlm-demo-error@1","error":"run request.mdlmPiCommandTimeoutMs is unsupported"}
+  
+  
+  1 !== 0
+  
+      at TestContext.<anonymous> (file:///home/ubuntu/git/mdlm-demo-orchestrator/test/run.test.mjs:745:12)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 1,
+    expected: 0,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

@@ -89,7 +89,8 @@ else {process.stderr.write('unexpected '+JSON.stringify(a));process.exit(8)}
   await writeFile(piPackageArtifact, 'mdlm-pi package\n');
   const request = {
     contract: 'mdlm-demo-run-request@1', repository,
-    stateDirectory: path.join(scratch, 'state'), evidenceDirectory: path.join(scratch, 'evidence'), timeoutMs: 10_000,
+    stateDirectory: path.join(scratch, 'state'), evidenceDirectory: path.join(scratch, 'evidence'), timeoutMs: 900_000,
+    mdlmPiCommandTimeoutMs: 600_000, mdlmPiAssignmentTimeoutMs: 840_000,
     signal: 'adapter-failure-before-submission', assignmentId: assignment, adapterInputsPath,
     operator: { provider: 'openai-codex', model: 'gpt-5.6-sol', thinking: 'high' },
     commands: { mdlm, mdlmPi },
@@ -109,6 +110,8 @@ else {process.stderr.write('unexpected '+JSON.stringify(a));process.exit(8)}
 }
 
 const run003CheckpointFixture = path.join(root, 'test', 'fixtures', 'calculator-run-003-checkpoint');
+const run008OperationalFailureDirectory = path.join(root, 'test', 'fixtures', 'calculator-run-008-operational-failure');
+const run008OperationalFailureFixture = path.join(run008OperationalFailureDirectory, 'result.json');
 const run003AssignmentA = '0110fb6b-5a0d-4228-9867-58ed3e27a4a4';
 const run003AssignmentB = '6db7bda7-7043-446b-a38a-2daab6c6df3e';
 
@@ -307,13 +310,17 @@ test('run and resume submit and commit an external Assignment exactly once', asy
   assert.equal(calls.filter(a => a[0] === 'scenario' && a[1] === 'submit').length, 1);
 });
 
-test('ordinary Assignments invoke mdlm-pi with the exact operator provider, model, and thinking argv', async () => {
+test('ordinary Assignments invoke mdlm-pi with exact argv and request-bound timeout environment', async () => {
   const argvPath = path.join(os.tmpdir(), `mdlm-demo-operator-argv-${process.pid}-${Date.now()}`);
-  const piScript = `#!/usr/bin/env node\nrequire('node:fs').writeFileSync(${JSON.stringify(argvPath)}, JSON.stringify(process.argv.slice(2))); console.log('{"status":"process-dead-end"}'); process.exit(2);\n`;
+  const piScript = `#!/usr/bin/env node\nrequire('node:fs').writeFileSync(${JSON.stringify(argvPath)}, JSON.stringify({argv:process.argv.slice(2),commandTimeout:process.env.MDLM_PI_COMMAND_TIMEOUT_MS,assignmentTimeout:process.env.MDLM_PI_ASSIGNMENT_TIMEOUT_MS})); console.log('{"status":"process-dead-end"}'); process.exit(2);\n`;
   const value = await fixture({ scenarioReference: 'ordinary@1', piScript });
   value.request.signal = 'clean-interrupted-command';
 
-  const execution = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
+  const execution = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request), {
+    ...process.env,
+    MDLM_PI_COMMAND_TIMEOUT_MS: '1',
+    MDLM_PI_ASSIGNMENT_TIMEOUT_MS: '2',
+  });
 
   assert.equal(execution.status, 0, execution.stderr);
   const output = JSON.parse(execution.stdout);
@@ -324,8 +331,15 @@ test('ordinary Assignments invoke mdlm-pi with the exact operator provider, mode
     '--model', 'gpt-5.6-sol',
     '--thinking', 'high',
   ];
-  assert.deepEqual(JSON.parse(await readFile(argvPath, 'utf8')), expected);
+  assert.deepEqual(JSON.parse(await readFile(argvPath, 'utf8')), {
+    argv: expected,
+    commandTimeout: '600000',
+    assignmentTimeout: '840000',
+  });
   assert.deepEqual(output.process.argv, [value.mdlmPi, ...expected]);
+  const identity = JSON.parse(await readFile(path.join(value.repository, '.git', 'mdlm-demo-orchestrator', 'run-identity.json'), 'utf8'));
+  assert.equal(identity.mdlmPiCommandTimeoutMs, 600_000);
+  assert.equal(identity.mdlmPiAssignmentTimeoutMs, 840_000);
 });
 
 test('run and resume reject missing or unsafe operator configuration before snapshots or lifecycle commands', async () => {
@@ -348,6 +362,30 @@ test('run and resume reject missing or unsafe operator configuration before snap
       assert.equal(await stat(value.request.evidenceDirectory).then(() => true, () => false), false);
       assert.equal(await stat(path.join(value.scratch, 'calls.log')).then(() => true, () => false), false);
       assert.equal(await stat(path.join(value.scratch, 'submit-count')).then(() => true, () => false), false);
+    }
+  }
+});
+
+test('run and resume require safe explicit mdlm-pi timeout policy before snapshotting', async () => {
+  const updates = [
+    request => { delete request.mdlmPiCommandTimeoutMs; },
+    request => { delete request.mdlmPiAssignmentTimeoutMs; },
+    request => { request.mdlmPiCommandTimeoutMs = 0; },
+    request => { request.mdlmPiAssignmentTimeoutMs = 1.5; },
+    request => { request.mdlmPiCommandTimeoutMs = request.timeoutMs - 59_999; },
+    request => { request.mdlmPiAssignmentTimeoutMs = request.timeoutMs; },
+  ];
+  for (const mode of ['run', 'resume']) {
+    for (const update of updates) {
+      const value = await fixture();
+      value.request.contract = mode === 'run' ? 'mdlm-demo-run-request@1' : 'mdlm-demo-resume-request@1';
+      update(value.request);
+
+      const execution = exec(process.execPath, [cli, mode], root, JSON.stringify(value.request));
+
+      assert.equal(execution.status, 1, `${mode}: ${execution.stderr}`);
+      assert.match(JSON.parse(execution.stderr).error, /timeout|positive safe integer|safety reserve/);
+      assert.equal(await stat(value.request.evidenceDirectory).then(() => true, () => false), false);
     }
   }
 });
@@ -402,6 +440,58 @@ test('resume rejects provider, model, or thinking drift without invoking mdlm-pi
     assert.equal(JSON.parse(resumed.stdout).reason, 'run-identity-drift');
   }
   assert.equal((await readFile(argvLog, 'utf8')).trim().split('\n').length, 1);
+});
+
+test('resume rejects mdlm-pi timeout drift without invoking mdlm-pi', async () => {
+  const argvLog = path.join(os.tmpdir(), `mdlm-demo-timeout-resume-${process.pid}-${Date.now()}`);
+  const piScript = `#!/usr/bin/env node\nrequire('node:fs').appendFileSync(${JSON.stringify(argvLog)}, 'called\\n'); console.log('{"status":"process-dead-end"}'); process.exit(2);\n`;
+  const value = await fixture({ scenarioReference: 'ordinary@1', piScript });
+  value.request.signal = 'clean-interrupted-command';
+  const first = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
+  assert.equal(first.status, 0, first.stderr);
+
+  for (const timeoutDrift of [
+    { mdlmPiCommandTimeoutMs: 599_999 },
+    { mdlmPiAssignmentTimeoutMs: 839_999 },
+  ]) {
+    const resumed = exec(process.execPath, [cli, 'resume'], root, JSON.stringify({
+      ...value.request,
+      contract: 'mdlm-demo-resume-request@1',
+      ...timeoutDrift,
+    }));
+    assert.equal(resumed.status, 0, resumed.stderr);
+    assert.equal(JSON.parse(resumed.stdout).reason, 'run-identity-drift');
+  }
+  assert.equal((await readFile(argvLog, 'utf8')).trim().split('\n').length, 1);
+});
+
+test('a new run binds explicit timeouts when upgrading a legacy run identity, while resume refuses to invent them', async () => {
+  const piScript = '#!/bin/sh\nprintf \'{"status":"process-dead-end"}\\n\'\nexit 2\n';
+  const value = await fixture({ scenarioReference: 'ordinary@1', piScript });
+  value.request.signal = 'clean-interrupted-command';
+  const first = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
+  assert.equal(first.status, 0, first.stderr);
+  const identityPath = path.join(value.repository, '.git', 'mdlm-demo-orchestrator', 'run-identity.json');
+  const legacy = JSON.parse(await readFile(identityPath, 'utf8'));
+  legacy.contract = 'mdlm-demo-run-identity@4';
+  delete legacy.mdlmPiCommandTimeoutMs;
+  delete legacy.mdlmPiAssignmentTimeoutMs;
+  await writeFile(identityPath, `${JSON.stringify(legacy, null, 2)}\n`);
+
+  const refusedResume = exec(process.execPath, [cli, 'resume'], root, JSON.stringify({
+    ...value.request,
+    contract: 'mdlm-demo-resume-request@1',
+  }));
+  assert.equal(refusedResume.status, 0, refusedResume.stderr);
+  assert.equal(JSON.parse(refusedResume.stdout).reason, 'run-identity-drift');
+
+  const upgradedRun = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
+  assert.equal(upgradedRun.status, 0, upgradedRun.stderr);
+  assert.notEqual(JSON.parse(upgradedRun.stdout).reason, 'run-identity-drift');
+  const upgraded = JSON.parse(await readFile(identityPath, 'utf8'));
+  assert.equal(upgraded.contract, 'mdlm-demo-run-identity@5');
+  assert.equal(upgraded.mdlmPiCommandTimeoutMs, 600_000);
+  assert.equal(upgraded.mdlmPiAssignmentTimeoutMs, 840_000);
 });
 
 test('an uncertain submission is never repeated on resume', async () => {
@@ -586,6 +676,114 @@ test('ordinary mdlm-pi submitting journal resumes through its controller without
   assert.equal(await readFile(inputPath, 'utf8'), '');
 });
 
+test('exact run-008 typed operational failure becomes recoverable only after a clean unchanged post-run boundary', async () => {
+  const fixtureBytes = await readFile(run008OperationalFailureFixture);
+  assert.equal(createHash('sha256').update(fixtureBytes).digest('hex'), '940cd1d5ee4d332907ff4d92af5b0d1789e66cb8687c60bb909324d71ad76523');
+  const run008 = JSON.parse(fixtureBytes);
+  const exactInitialManifest = await readFile(path.join(run008OperationalFailureDirectory, 'initial-snapshot', 'manifest.json'));
+  const exactPostManifest = await readFile(path.join(run008OperationalFailureDirectory, 'post-snapshot', 'manifest.json'));
+  assert.equal(`sha256:${createHash('sha256').update(exactInitialManifest).digest('hex')}`, run008.snapshot.digest);
+  assert.equal(`sha256:${createHash('sha256').update(exactPostManifest).digest('hex')}`, run008.postRunSnapshot.digest);
+  const exactInitial = JSON.parse(await readFile(path.join(run008OperationalFailureDirectory, 'initial-snapshot', 'snapshot.json')));
+  const exactPost = JSON.parse(await readFile(path.join(run008OperationalFailureDirectory, 'post-snapshot', 'snapshot.json')));
+  assert.deepEqual(exactPost.lifecycleRepository, exactInitial.lifecycleRepository);
+  assert.deepEqual(exactPost.assignment, exactInitial.assignment);
+  assert.equal(exactInitial.assignment.id, 'bdb9ffc9-3491-443b-88b0-80d5dc800781');
+  assert.equal(exactInitial.lifecycleRepository.clean, true);
+  assert.equal(exactInitial.journal.present, false);
+  assert.equal(exactPost.journal.present, false);
+  assert.equal(exactInitial.piJournal.present, false);
+  assert.equal(exactPost.piJournal.present, false);
+  const failureBytes = Buffer.from(run008.process.stderrBase64, 'base64');
+  const attemptsPath = path.join(os.tmpdir(), `mdlm-demo-run008-attempts-${process.pid}-${Date.now()}`);
+  const inputPath = path.join(os.tmpdir(), `mdlm-demo-run008-input-${process.pid}-${Date.now()}`);
+  const piScript = `#!/usr/bin/env node
+const fs=require('node:fs'); let input=''; process.stdin.on('data',chunk=>input+=chunk); process.stdin.on('end',()=>{fs.appendFileSync(${JSON.stringify(inputPath)},input); const attempts=fs.existsSync(${JSON.stringify(attemptsPath)})?Number(fs.readFileSync(${JSON.stringify(attemptsPath)},'utf8')):0; fs.writeFileSync(${JSON.stringify(attemptsPath)},String(attempts+1)); if(attempts===0){process.stderr.write(Buffer.from(${JSON.stringify(failureBytes.toString('base64'))},'base64')); process.exit(1);} console.log('{"status":"lifecycle-complete"}');});
+`;
+  const value = await fixture({ scenarioReference: 'revise-question-decision-after-review@1', piScript });
+  const wording = 'Print zero as `0`; otherwise print ordinary decimal notation without trailing fractional zeros.';
+  const decisionCatalogPath = path.join(value.scratch, 'decisions.json');
+  const wordingDigest = `sha256:${createHash('sha256').update(wording).digest('hex')}`;
+  await writeFile(decisionCatalogPath, JSON.stringify({ contract: 'mdlm-demo-decision-catalog@1', decisions: [{
+    assignment: value.assignment,
+    wording,
+    origin: 'operator-selected',
+    authorityBasis: 'Standing authorization permits this bounded correction.',
+    digest: wordingDigest,
+  }] }));
+  value.request.signal = 'attended-review-correction';
+  value.request.decisionCatalogPath = decisionCatalogPath;
+
+  const first = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
+
+  assert.equal(first.status, 0, first.stderr);
+  const recovered = JSON.parse(first.stdout);
+  assert.equal(recovered.status, 'stopped');
+  assert.equal(recovered.reason, 'pre-submission-operational-failure');
+  assert.equal(recovered.outcome, 'pre-submission-operational-failure');
+  assert.equal(recovered.recoverable, true);
+  assert.equal(recovered.detail, run008.detail);
+  assert.deepEqual(recovered.mdlmPi.document, run008.mdlmPi.document);
+  assert.equal(recovered.operationalFailureRecovery.verified, true);
+  const initial = JSON.parse(await readFile(path.join(recovered.snapshot.snapshotDirectory, 'snapshot.json'), 'utf8'));
+  const post = JSON.parse(await readFile(path.join(recovered.postRunSnapshot.snapshotDirectory, 'snapshot.json'), 'utf8'));
+  assert.deepEqual(post.lifecycleRepository, initial.lifecycleRepository);
+  assert.equal(initial.journal.present, false);
+  assert.equal(post.journal.present, false);
+  assert.equal(initial.piJournal.present, false);
+  assert.equal(post.piJournal.present, false);
+
+  const second = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
+  assert.equal(second.status, 0, second.stderr);
+  assert.equal(JSON.parse(second.stdout).status, 'completed');
+  assert.equal(await readFile(attemptsPath, 'utf8'), '2');
+  assert.equal(await readFile(inputPath, 'utf8'), `${wording}\n${wording}\n`);
+  const calls = (await readFile(path.join(value.scratch, 'calls.log'), 'utf8')).trim().split('\n').map(JSON.parse);
+  assert.equal(calls.filter(args => args[0] === 'scenario' && args[1] === 'prepare' && args[2] === value.assignment).length, 2);
+  assert.equal(calls.some(args => args[0] === 'scenario' && args[1] === 'submit'), false);
+});
+
+test('typed operational failure stays nonrecoverable when post-run evidence changed or became ambiguous', async () => {
+  const run008 = JSON.parse(await readFile(run008OperationalFailureFixture));
+  const failureBase64 = run008.process.stderrBase64;
+  const mutations = {
+    'repository change': "fs.writeFileSync(path.join(process.cwd(),'untracked-publication.json'),'uncertain\\n');",
+    'runner transaction journal': "fs.writeFileSync(path.join(path.dirname(configPath),'..','transaction.json'),'{}\\n');",
+    'mdlm-pi journal': "fs.mkdirSync(path.join(process.cwd(),'.git','mdlm-pi'),{recursive:true}); fs.writeFileSync(path.join(process.cwd(),'.git','mdlm-pi','run.json'),'{}\\n');",
+    'private checkpoint evidence': "fs.mkdirSync(config.stopDirectory,{recursive:true}); fs.writeFileSync(path.join(config.stopDirectory,'ambiguous.json'),'{}\\n');",
+  };
+  for (const [name, mutation] of Object.entries(mutations)) {
+    const piScript = `#!/usr/bin/env node
+const fs=require('node:fs'),path=require('node:path'); const configPath=process.env.MDLM_DEMO_SHIM_CONFIG; const config=JSON.parse(fs.readFileSync(configPath,'utf8')); ${mutation} process.stderr.write(Buffer.from('${failureBase64}','base64')); process.exit(1);
+`;
+    const value = await fixture({ scenarioReference: 'ordinary@1', piScript });
+    value.request.signal = 'clean-interrupted-command';
+
+    const execution = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
+
+    assert.equal(execution.status, 0, `${name}: ${execution.stderr}`);
+    const output = JSON.parse(execution.stdout);
+    assert.equal(output.status, 'stopped', name);
+    assert.equal(output.reason, 'mdlm-pi-operational-failure', name);
+    assert.equal(output.recoverable, false, name);
+    assert.deepEqual(output.mdlmPi.document, run008.mdlmPi.document, name);
+    assert.equal(output.operationalFailureRecovery?.verified ?? false, false, name);
+  }
+
+  const piScript = `#!/usr/bin/env node\nprocess.stderr.write(Buffer.from('${failureBase64}','base64')); process.exit(1);\n`;
+  const value = await fixture({ scenarioReference: 'ordinary@1', piScript });
+  value.request.signal = 'clean-interrupted-command';
+  const preexistingStops = path.join(assignmentDirectory(value.request), 'shim', 'stops');
+  await mkdir(preexistingStops, { recursive: true });
+  await writeFile(path.join(preexistingStops, 'preexisting.json'), '{}\n');
+  const execution = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
+  assert.equal(execution.status, 0, execution.stderr);
+  const output = JSON.parse(execution.stdout);
+  assert.equal(output.reason, 'mdlm-pi-operational-failure');
+  assert.equal(output.recoverable, false);
+  assert.match(output.operationalFailureRecovery.uncertainty, /pre-run evidence/);
+});
+
 test('mdlm-pi exit codes and typed results distinguish lifecycle outcomes from operational failures', async () => {
   const cases = [
     [0, 'lifecycle-complete', 'completed', 'lifecycle-complete', false],
@@ -594,7 +792,7 @@ test('mdlm-pi exit codes and typed results distinguish lifecycle outcomes from o
     [3, 'invalid', 'stopped', 'invalid', false],
     [4, 'assignment-exhausted', 'stopped', 'assignment-exhausted', false],
     [5, 'lock-conflict', 'stopped', 'lock-conflict', true],
-    [1, 'operational-failure', 'stopped', 'mdlm-pi-operational-failure', false],
+    [1, 'operational-failure', 'stopped', 'mdlm-pi-contract-failure', false],
   ];
   for (const [exitCode, piStatus, expectedStatus, expectedReason, recoverable] of cases) {
     const piScript = `#!/bin/sh\nprintf '%s\\n' '${JSON.stringify({ status: piStatus })}'\nexit ${exitCode}\n`;

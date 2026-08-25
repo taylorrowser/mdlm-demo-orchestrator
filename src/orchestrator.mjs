@@ -17,6 +17,8 @@ const executionIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]
 const operatorScalarPattern = /^[A-Za-z0-9][A-Za-z0-9._/@:+-]{0,255}$/;
 const thinkingLevels = new Set(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
 const assignmentCheckpointEvidence = Symbol('assignmentCheckpointEvidence');
+const operationalFailureEvidence = Symbol('operationalFailureEvidence');
+const outerTimeoutSafetyReserveMs = 60_000;
 
 export async function run(request, mode) {
   requireContract(request, mode === 'resume' ? 'mdlm-demo-resume-request@1' : 'mdlm-demo-run-request@1');
@@ -37,7 +39,7 @@ export async function run(request, mode) {
     let output;
     try {
       output = initial.status === 'complete'
-        ? await executeRun(request, context, assignmentDirectory, journalPath, initial)
+        ? await executeRun(request, context, assignmentDirectory, journalPath, initial, mode)
         : initial.status === 'provenance-failure'
           ? stopped('provenance-violation', 'initial snapshot contains provenance drift', initial, assignmentId)
           : stopped('command-failure', 'initial snapshot contains a failed or malformed command', initial, assignmentId, { failures: initial.failures });
@@ -48,6 +50,7 @@ export async function run(request, mode) {
     const postAssignmentId = output[assignmentCheckpointEvidence]?.packet.assignment.id ?? assignmentId;
     const postRunSnapshot = await snapshotRequest(request, context.repository, postDirectory, postAssignmentId, journalPath, piJournalPath, true);
     output = await finalizeAssignmentCheckpoint(output, postRunSnapshot, assignmentId);
+    output = await finalizeOperationalFailure(output, initial, postRunSnapshot, context, assignmentDirectory);
     output.postRunSnapshot = postRunSnapshot;
     await finishTrustedRun(context, assignmentDirectory, journalPath, assignmentId, output, postRunSnapshot);
     return output;
@@ -63,7 +66,7 @@ async function snapshotRequest(request, repository, snapshotDirectory, assignmen
   });
 }
 
-async function executeRun(request, context, assignmentDirectory, journalPath, snapshotResult) {
+async function executeRun(request, context, assignmentDirectory, journalPath, snapshotResult, mode) {
   const assignmentId = request.assignmentId;
   const captured = JSON.parse(await readFile(path.join(snapshotResult.snapshotDirectory, 'snapshot.json'), 'utf8'));
   if (!sameConfiguredPath(request.commands?.mdlm, request.provenance?.tools?.mdlm?.path) ||
@@ -84,9 +87,9 @@ async function executeRun(request, context, assignmentDirectory, journalPath, sn
   const status = captured.status;
   const processPackage = reconcileProcessPackage(status.package, assignment.package, captured.diagnosis.package);
   if (processPackage === null) return stopped('package-drift', 'doctor, status, and Assignment Process Package identities differ', snapshotResult, assignmentId);
-  const runIdentity = observedRunIdentity(captured.provenance, processPackage, request.operator);
-  const identityMatch = await pinRunIdentity(context.identityDirectory, runIdentity);
-  if (!identityMatch) return stopped('run-identity-drift', 'operator, artifact, installed Process Package, executable target, source, or harness identity changed', snapshotResult, assignmentId);
+  const runIdentity = observedRunIdentity(captured.provenance, processPackage, request.operator, request);
+  const identityMatch = await pinRunIdentity(context.identityDirectory, runIdentity, mode === 'run');
+  if (!identityMatch) return stopped('run-identity-drift', 'operator, mdlm-pi timeout policy, artifact, installed Process Package, executable target, source, or harness identity changed', snapshotResult, assignmentId);
 
   const journal = await optionalJson(journalPath);
   const checkpointRecovery = captured.lifecycleRepository.clean === true
@@ -233,6 +236,11 @@ async function runPiAssignment(request, context, assignmentDirectory, assignment
   if (attended && decision === null) return stopped('operator-decision-unavailable', 'no valid operator-selected decision matches the attended Assignment', snapshotResult, assignmentId);
   const shimDirectory = path.join(assignmentDirectory, 'shim');
   const shimConfigPath = path.join(shimDirectory, 'config.json');
+  const privateEvidenceBefore = await inspectOperationalPrivateEvidence(
+    assignmentDirectory,
+    path.join(context.gitDirectory, 'mdlm-pi', 'run.json'),
+    path.join(shimDirectory, 'stops'),
+  );
   await mkdir(shimDirectory, { recursive: true, mode: 0o700 });
   await writeOnceOrMatch(shimConfigPath, Buffer.from(`${JSON.stringify({
     contract: 'mdlm-demo-shim-config@1', realMdlm: request.commands.mdlm, allowedAssignment: assignmentId,
@@ -246,7 +254,11 @@ async function runPiAssignment(request, context, assignmentDirectory, assignment
     '--model', request.operator.model,
     '--thinking', request.operator.thinking,
   ];
-  const environment = controlledEnvironment({ MDLM_DEMO_SHIM_CONFIG: shimConfigPath });
+  const environment = controlledEnvironment({
+    MDLM_DEMO_SHIM_CONFIG: shimConfigPath,
+    MDLM_PI_COMMAND_TIMEOUT_MS: String(request.mdlmPiCommandTimeoutMs),
+    MDLM_PI_ASSIGNMENT_TIMEOUT_MS: String(request.mdlmPiAssignmentTimeoutMs),
+  });
   const processResult = await invoke(
     assignmentDirectory, request.commands.mdlmPi, args, context.repository, request.timeoutMs,
     decision === null ? undefined : Buffer.from(`${decision.wording}\n`), environment,
@@ -291,7 +303,11 @@ async function runPiAssignment(request, context, assignmentDirectory, assignment
   if (decoded.kind === 'interruption') {
     return result('stopped', snapshotResult, { ...common, recoverable: true, reason: decoded.status, outcome: 'operational-interruption' });
   }
-  return stopped(decoded.status, decoded.detail, snapshotResult, assignmentId, common);
+  const output = stopped(decoded.status, decoded.detail, snapshotResult, assignmentId, common);
+  if (decoded.kind === 'operational-failure') {
+    output[operationalFailureEvidence] = { privateEvidenceBefore, shimDirectory };
+  }
+  return output;
 }
 
 function decodeMdlmPiResult(processResult) {
@@ -314,11 +330,29 @@ function decodeMdlmPiResult(processResult) {
     return { kind: 'terminal', status, successful: false, document };
   }
   if (processResult.exitStatus === 5 && status === 'lock-conflict') return { kind: 'interruption', status, document };
+  if (isTypedOperationalFailure(processResult, stdout, stderr)) {
+    return {
+      kind: 'operational-failure', status: 'mdlm-pi-operational-failure',
+      detail: `mdlm-pi exit ${processResult.exitStatus} and result status '${status}' disagree`,
+      document,
+    };
+  }
   return {
-    kind: 'failure', status: status === 'operational-failure' ? 'mdlm-pi-operational-failure' : 'mdlm-pi-contract-failure',
+    kind: 'failure', status: 'mdlm-pi-contract-failure',
     detail: document === null ? `mdlm-pi exit ${processResult.exitStatus} did not end with a typed JSON result` : `mdlm-pi exit ${processResult.exitStatus} and result status '${status}' disagree`,
     document,
   };
+}
+
+function isTypedOperationalFailure(processResult, stdout, stderr) {
+  if (processResult.exitStatus !== 1 || processResult.timedOut || processResult.signal !== null ||
+      processResult.outputLimitExceeded || processResult.spawnError !== null || processResult.stdout.length !== 0 ||
+      stdout !== null || stderr?.status !== 'operational-failure') return false;
+  if (!sameJson(Object.keys(stderr).sort(), ['details', 'error', 'status'])) return false;
+  if (typeof stderr.error !== 'string' || stderr.error.length === 0 || !stderr.details ||
+      typeof stderr.details !== 'object' || Array.isArray(stderr.details)) return false;
+  try { return sameJson(JSON.parse(processResult.stderr.toString('utf8')), stderr); }
+  catch { return false; }
 }
 
 function trailingJson(bytes) {
@@ -410,6 +444,134 @@ async function finalizeAssignmentCheckpoint(output, postSnapshot, completedAssig
   }
 }
 
+async function finalizeOperationalFailure(output, initialSnapshot, postSnapshot, context, assignmentDirectory) {
+  const evidence = output[operationalFailureEvidence];
+  if (evidence === undefined) return output;
+  delete output[operationalFailureEvidence];
+  try {
+    if (initialSnapshot.status !== 'complete' || postSnapshot.status !== 'complete') {
+      throw new Error('initial or post-run snapshot is incomplete');
+    }
+    const initial = JSON.parse(await readFile(path.join(initialSnapshot.snapshotDirectory, 'snapshot.json'), 'utf8'));
+    const post = JSON.parse(await readFile(path.join(postSnapshot.snapshotDirectory, 'snapshot.json'), 'utf8'));
+    if (initial.postRun !== false || post.postRun !== true || initial.repository !== post.repository ||
+        initial.repository !== context.repository) {
+      throw new Error('snapshot repository or phase is ambiguous');
+    }
+    if (initial.lifecycleRepository?.clean !== true || post.lifecycleRepository?.clean !== true ||
+        !sameJson(initial.lifecycleRepository, post.lifecycleRepository)) {
+      throw new Error('lifecycle repository bytes or identity changed');
+    }
+    for (const name of ['head', 'tree', 'status', 'stagedDiff', 'worktreeDiff']) {
+      requireExactCommandBoundary(initial.git?.[name], post.git?.[name], `git ${name}`);
+    }
+    for (const name of ['doctor', 'status', 'assignment']) {
+      requireExactCommandBoundary(initial.commands?.[name], post.commands?.[name], `mdlm ${name}`);
+    }
+    if (!sameJson(initial.assignment, post.assignment) || initial.assignment?.id !== output.assignmentId ||
+        initial.assignment?.selected !== true || initial.assignment?.disposition !== 'active' ||
+        !statusHasActiveAssignment(initial.status, output.assignmentId) ||
+        !statusHasActiveAssignment(post.status, output.assignmentId)) {
+      throw new Error('selected active Assignment changed or is ambiguous');
+    }
+    for (const snapshot of [initial, post]) {
+      if (!sameProcessPackageIdentity(snapshot.status?.package, snapshot.assignment?.package) ||
+          !sameProcessPackageIdentity(snapshot.status?.package, snapshot.diagnosis?.package)) {
+        throw new Error('Process Package identity changed or is ambiguous');
+      }
+      requireCertainJournalAbsence(snapshot.journal, 'runner transaction journal');
+      requireCertainJournalAbsence(snapshot.piJournal, 'mdlm-pi journal');
+    }
+    if (!evidence.privateEvidenceBefore.safe) {
+      throw new Error(`private pre-run evidence is uncertain: ${evidence.privateEvidenceBefore.detail}`);
+    }
+    const privateEvidenceAfter = await inspectOperationalPrivateEvidence(
+      assignmentDirectory,
+      path.join(context.gitDirectory, 'mdlm-pi', 'run.json'),
+      path.join(evidence.shimDirectory, 'stops'),
+    );
+    if (!privateEvidenceAfter.safe) {
+      throw new Error(`private post-run evidence is uncertain: ${privateEvidenceAfter.detail}`);
+    }
+    output.reason = 'pre-submission-operational-failure';
+    output.outcome = 'pre-submission-operational-failure';
+    output.recoverable = true;
+    output.trustedRepositoryAdvance = false;
+    output.operationalFailureRecovery = {
+      verified: true,
+      assignmentId: output.assignmentId,
+      retryCommand: 'run',
+      resumeAllowed: false,
+    };
+  } catch (error) {
+    output.recoverable = false;
+    output.operationalFailureRecovery = {
+      verified: false,
+      uncertainty: error instanceof Error ? error.message : String(error),
+    };
+  }
+  return output;
+}
+
+function requireExactCommandBoundary(initial, post, label) {
+  const fields = [
+    'argv', 'cwd', 'timeoutMs', 'timedOut', 'outputLimitExceeded', 'observedOutputBytes', 'exitStatus',
+    'signal', 'spawnError', 'stdoutBase64', 'stderrBase64', 'stdoutSha256', 'stderrSha256',
+  ];
+  if (!initial || !post || !sameJson(
+    Object.fromEntries(fields.map(field => [field, initial[field]])),
+    Object.fromEntries(fields.map(field => [field, post[field]])),
+  )) throw new Error(`${label} bytes or command identity changed`);
+  for (const record of [initial, post]) {
+    if (record.exitStatus !== 0 || record.timedOut !== false || record.outputLimitExceeded !== false ||
+        record.signal !== null || record.spawnError !== null) throw new Error(`${label} did not complete exactly`);
+    for (const stream of ['stdout', 'stderr']) {
+      const base64 = record[`${stream}Base64`];
+      if (typeof base64 !== 'string') throw new Error(`${label} has uncertain ${stream} bytes`);
+      const bytes = Buffer.from(base64, 'base64');
+      if (bytes.toString('base64') !== base64 || sha256(bytes) !== record[`${stream}Sha256`]) {
+        throw new Error(`${label} has inconsistent ${stream} bytes`);
+      }
+    }
+    const observed = Buffer.from(record.stdoutBase64, 'base64').length + Buffer.from(record.stderrBase64, 'base64').length;
+    if (record.observedOutputBytes !== observed) throw new Error(`${label} has uncertain retained bytes`);
+  }
+}
+
+function requireCertainJournalAbsence(value, label) {
+  if (!value || value.present !== false || typeof value.path !== 'string' || value.error !== undefined) {
+    throw new Error(`${label} is present or uncertain`);
+  }
+}
+
+async function inspectOperationalPrivateEvidence(assignmentDirectory, piJournalPath, stopsDirectory) {
+  try {
+    const present = [];
+    for (const [label, file] of [
+      ['runner transaction journal', path.join(assignmentDirectory, 'transaction.json')],
+      ['mdlm-pi journal', piJournalPath],
+    ]) {
+      try { await lstat(file); present.push(label); }
+      catch (error) { if (error.code !== 'ENOENT') throw error; }
+    }
+    try {
+      const information = await lstat(stopsDirectory);
+      if (!information.isDirectory() || information.isSymbolicLink()) {
+        throw new Error('private checkpoint path is not a canonical directory');
+      }
+      const entries = await readdir(stopsDirectory);
+      if (entries.length > 0) present.push(`private checkpoint evidence (${entries.sort().join(', ')})`);
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
+    return present.length === 0
+      ? { safe: true, detail: 'no transaction, private publication, mdlm-pi journal, or checkpoint evidence' }
+      : { safe: false, detail: present.join('; ') };
+  } catch (error) {
+    return { safe: false, detail: error instanceof Error ? error.message : String(error) };
+  }
+}
+
 async function inspectCorrectionContext(context, assignment, resultDocument) {
   const journalPath = path.join(context.gitDirectory, 'mdlm-pi', 'run.json');
   let journal;
@@ -461,12 +623,14 @@ async function selectedDecision(file, assignmentId) {
   return { wording: selected.wording, evidence: { origin: selected.origin, authorityBasis: selected.authorityBasis, digest: selected.digest } };
 }
 
-function observedRunIdentity(provenance, processPackage, operator) {
+function observedRunIdentity(provenance, processPackage, operator, request) {
   const gitIdentity = value => ({ repository: value.repository, commit: value.observedCommit, tree: value.observedTree });
   const file = value => ({ realpath: value.realpath, digest: value.digest, bytes: value.bytes });
   return {
-    contract: 'mdlm-demo-run-identity@4',
+    contract: 'mdlm-demo-run-identity@5',
     operator: { provider: operator.provider, model: operator.model, thinking: operator.thinking },
+    mdlmPiCommandTimeoutMs: request.mdlmPiCommandTimeoutMs,
+    mdlmPiAssignmentTimeoutMs: request.mdlmPiAssignmentTimeoutMs,
     processPackage,
     source: gitIdentity(provenance.source),
     packageArtifact: file(provenance.package),
@@ -484,11 +648,21 @@ function observedRunIdentity(provenance, processPackage, operator) {
     },
   };
 }
-async function pinRunIdentity(identityDirectory, current) {
+async function pinRunIdentity(identityDirectory, current, allowTimeoutMigration) {
   const file = path.join(identityDirectory, 'run-identity.json');
   const previous = await optionalJson(file);
   if (previous === null) { await durableWriteJson(file, current); return true; }
-  return sameJson(previous, current);
+  if (sameJson(previous, current)) return true;
+  if (allowTimeoutMigration && previous.contract === 'mdlm-demo-run-identity@4') {
+    const legacyCurrent = { ...current, contract: 'mdlm-demo-run-identity@4' };
+    delete legacyCurrent.mdlmPiCommandTimeoutMs;
+    delete legacyCurrent.mdlmPiAssignmentTimeoutMs;
+    if (sameJson(previous, legacyCurrent)) {
+      await durableWriteJson(file, current);
+      return true;
+    }
+  }
+  return false;
 }
 function reconcileProcessPackage(statusPackage, assignmentPackage, doctorPackage) {
   try {
@@ -1246,10 +1420,19 @@ function required(value, label) { if (typeof value !== 'string' || value.length 
 function validateRunRequest(value) {
   const allowed = new Set([
     'adapterInputsPath', 'assignmentId', 'checkpointRecovery', 'commands', 'contract', 'decisionCatalogPath',
-    'evidenceDirectory', 'harness', 'operator', 'provenance', 'repository', 'signal', 'stateDirectory', 'timeoutMs',
+    'evidenceDirectory', 'harness', 'mdlmPiAssignmentTimeoutMs', 'mdlmPiCommandTimeoutMs', 'operator', 'provenance',
+    'repository', 'signal', 'stateDirectory', 'timeoutMs',
   ]);
   for (const key of Object.keys(value)) {
     if (!allowed.has(key)) throw new Error(`run request.${key} is unsupported`);
+  }
+  requirePositiveSafeInteger(value.timeoutMs, 'timeoutMs');
+  if (value.timeoutMs > 900_000) throw new Error('timeoutMs must not exceed 900000');
+  for (const name of ['mdlmPiCommandTimeoutMs', 'mdlmPiAssignmentTimeoutMs']) {
+    requirePositiveSafeInteger(value[name], name);
+    if (value[name] > value.timeoutMs - outerTimeoutSafetyReserveMs) {
+      throw new Error(`${name} must leave at least ${outerTimeoutSafetyReserveMs}ms safety reserve below timeoutMs`);
+    }
   }
   if (value.checkpointRecovery !== undefined) {
     const recovery = value.checkpointRecovery;
@@ -1263,6 +1446,9 @@ function validateRunRequest(value) {
       throw new Error('checkpointRecovery.digest must be sha256:<64 lowercase hex>');
     }
   }
+}
+function requirePositiveSafeInteger(value, label) {
+  if (!Number.isSafeInteger(value) || value < 1) throw new Error(`${label} must be a positive safe integer`);
 }
 function validateOperator(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('operator must be an object');

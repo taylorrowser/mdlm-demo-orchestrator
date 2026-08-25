@@ -1,0 +1,21 @@
+{
+  "argv": [
+    "git",
+    "rev-parse",
+    "HEAD^{tree}"
+  ],
+  "cwd": "/home/ubuntu/git/mdlm-successor-demos/issue-212/calculator-post214-resumable-20260825T0050Z",
+  "startedAt": "2026-08-25T04:18:18.865Z",
+  "completedAt": "2026-08-25T04:18:19.006Z",
+  "timeoutMs": 900000,
+  "timedOut": false,
+  "outputLimitExceeded": false,
+  "observedOutputBytes": 41,
+  "exitStatus": 0,
+  "signal": null,
+  "spawnError": null,
+  "stdoutBase64": "OGJlNDVmNjBiZDc5N2M2NzIzZmJkZWVhNDA3MjM2OThjN2EwYTM5Ywo=",
+  "stderrBase64": "",
+  "stdoutSha256": "sha256:e492b8e327f160278e867329eb61aa598e9f5c35823b9f6b6226108b0bb26b51",
+  "stderrSha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

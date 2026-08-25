@@ -1,0 +1,319 @@
+{
+  "ok": true,
+  "command": "status",
+  "contract": "mdlm-status@1",
+  "package": {
+    "id": "mdlm-bootstrap",
+    "version": "0.74.0",
+    "reference": "mdlm-bootstrap@0.74.0",
+    "language": "mdlm-expression@1",
+    "digest": "sha256:ee99e698d36e406a836a796a36fc1db2d2451072ad662c0e06805ab5c20fe5ac"
+  },
+  "profile": {
+    "reference": "bootstrap@38",
+    "status": "experimental",
+    "description": "Complete bootstrap profile with proportional grouped system definition, reviewed intent, qualification/pilot, exact accepted-STK and shared-SYS change control, and a reviewed expansion Decision."
+  },
+  "integrity": {
+    "status": "valid",
+    "diagnostics": []
+  },
+  "activePhase": {
+    "reference": "phase-0-wayfinding@5",
+    "name": "Wayfinding bootstrap",
+    "purpose": "Establish reviewed, scope-challenged product intent and stakeholder commitments for explicit user approval.",
+    "coverage": "bootstrap-subset"
+  },
+  "omittedCoverage": {
+    "profile": [
+      "component and design decomposition lifecycle types",
+      "formal verification execution",
+      "component and design implementation lifecycle types"
+    ],
+    "phase": [
+      "VSP and environment profiles"
+    ]
+  },
+  "recentTransaction": {
+    "available": true,
+    "id": "a37129d2-5a47-4aad-b190-6893fdd01ea7",
+    "status": "completed",
+    "scenario": "review-datum-in-context@2"
+  },
+  "unresolvedWork": {
+    "total": 6,
+    "dispatchable": 2,
+    "byStatus": {
+      "awaiting-review": 1,
+      "blocked": 3,
+      "failed": 1,
+      "ready": 1
+    }
+  },
+  "currentOutcome": {
+    "outcome": "attention-required",
+    "assignment": {
+      "allocation": "active",
+      "id": "bdb9ffc9-3491-443b-88b0-80d5dc800781"
+    },
+    "authorityRequirement": {
+      "mode": "attended",
+      "authority": "stakeholder",
+      "delegationAllowed": false
+    },
+    "attentionSchedule": {
+      "timing": "immediate",
+      "checkpoint": null,
+      "consolidationGroup": null
+    },
+    "explanation": "The exact failed Decision findings are ready for renewed stakeholder judgment.",
+    "attentionContext": {
+      "invocations": [
+        {
+          "inputs": [
+            {
+              "name": "decision",
+              "values": [
+                {
+                  "identity": {
+                    "id": "DEC-EBHPCWVRSG",
+                    "revision_id": "DEC-EBHPCWVRSG-r00001",
+                    "type": "DEC",
+                    "revision": 1
+                  },
+                  "data": {
+                    "id": "DEC-EBHPCWVRSG",
+                    "revision": 1,
+                    "revision_id": "DEC-EBHPCWVRSG-r00001",
+                    "type": "DEC",
+                    "payload": {
+                      "title": "Command-line calculator product intent",
+                      "rationale": "The attended stakeholder explicitly selected this product behavior and its command-line, operand, operator, output, rounding, and error-handling boundaries.",
+                      "kind": "scope",
+                      "decision": "Build a command-line calculator. Invoke it as `calculator <left> <operator> <right>`. Support only the operators `+`, `-`, `*`, and `/`. Accept operands matching exactly `[+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)`. Emit canonical successful output. For nonterminating results, round exactly at the 12th fractional digit using half-away-from-zero and then trim. For invalid input, emit no stdout, emit exactly `invalid input\\n` on stderr, and exit 2. For division by zero, emit no stdout, emit exactly `division by zero\\n` on stderr, and exit 2.",
+                      "alternatives": [],
+                      "effective_scope": "QST-21219K6RVZ-r00002"
+                    },
+                    "links": [
+                      {
+                        "type": "resolves",
+                        "target": "QST-21219K6RVZ-r00001"
+                      },
+                      {
+                        "type": "resolves",
+                        "target": "QST-21219K6RVZ-r00002"
+                      }
+                    ],
+                    "created_by": {
+                      "scenario": "resolve-question@2",
+                      "prompt_ref": "prompts/resolve-question.md@2",
+                      "process_ref": "mdlm-bootstrap@0.74.0#sha256:ee99e698d36e406a836a796a36fc1db2d2451072ad662c0e06805ab5c20fe5ac",
+                      "loaded_skill_refs": [
+                        "skills/lifecycle-data.md@1",
+                        "skills/clarification-protocol.md@1",
+                        "skills/traceability.md@1",
+                        "skills/author-preflight.md@2"
+                      ],
+                      "policy_refs": [
+                        "question-participation@1",
+                        "review-applicability@1",
+                        "waiver-applicability@1"
+                      ]
+                    },
+                    "body": "# Command-line calculator product intent\n\n## Decision\n\nBuild a command-line calculator. Invoke it as `calculator <left> <operator> <right>`. Support only the operators `+`, `-`, `*`, and `/`. Accept operands matching exactly `[+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)`. Emit canonical successful output. For nonterminating results, round exactly at the 12th fractional digit using half-away-from-zero and then trim. For invalid input, emit no stdout, emit exactly `invalid input\\n` on stderr, and exit 2. For division by zero, emit no stdout, emit exactly `division by zero\\n` on stderr, and exit 2.\n\n## Rationale\n\nThe attended stakeholder explicitly selected this product behavior and its command-line, operand, operator, output, rounding, and error-handling boundaries.\n\n## Alternatives\n\nNone recorded.\n\n## Effective scope\n\n`$proposal.updatedQuestion.revision_id`\n"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "question",
+              "values": [
+                {
+                  "identity": {
+                    "id": "QST-21219K6RVZ",
+                    "revision_id": "QST-21219K6RVZ-r00002",
+                    "type": "QST",
+                    "revision": 2
+                  },
+                  "data": {
+                    "id": "QST-21219K6RVZ",
+                    "revision": 2,
+                    "revision_id": "QST-21219K6RVZ-r00002",
+                    "type": "QST",
+                    "payload": {
+                      "title": "Product intent",
+                      "kind": "preferential",
+                      "intent_scope": "product",
+                      "question": "What product do you currently intend to build?",
+                      "attended_answer": "Build a command-line calculator. Invoke it as `calculator <left> <operator> <right>`. Support only the operators `+`, `-`, `*`, and `/`. Accept operands matching exactly `[+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)`. Emit canonical successful output. For nonterminating results, round exactly at the 12th fractional digit using half-away-from-zero and then trim. For invalid input, emit no stdout, emit exactly `invalid input\\n` on stderr, and exit 2. For division by zero, emit no stdout, emit exactly `division by zero\\n` on stderr, and exit 2.",
+                      "state": "answered",
+                      "blocking_impact": "PSP compilation is blocked until the stakeholder answers this question."
+                    },
+                    "links": [],
+                    "created_by": {
+                      "scenario": "resolve-question@2",
+                      "prompt_ref": "prompts/resolve-question.md@2",
+                      "process_ref": "mdlm-bootstrap@0.74.0#sha256:ee99e698d36e406a836a796a36fc1db2d2451072ad662c0e06805ab5c20fe5ac",
+                      "loaded_skill_refs": [
+                        "skills/lifecycle-data.md@1",
+                        "skills/clarification-protocol.md@1",
+                        "skills/traceability.md@1",
+                        "skills/author-preflight.md@2"
+                      ],
+                      "policy_refs": [
+                        "question-participation@1",
+                        "review-applicability@1",
+                        "waiver-applicability@1"
+                      ]
+                    },
+                    "body": "# Product intent\n\n**Question:** What product do you currently intend to build?\n\n**Kind:** Preferential  \n**State:** Answered\n\n## Attended answer\n\nBuild a command-line calculator. Invoke it as `calculator <left> <operator> <right>`. Support only the operators `+`, `-`, `*`, and `/`. Accept operands matching exactly `[+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)`. Emit canonical successful output. For nonterminating results, round exactly at the 12th fractional digit using half-away-from-zero and then trim. For invalid input, emit no stdout, emit exactly `invalid input\\n` on stderr, and exit 2. For division by zero, emit no stdout, emit exactly `division by zero\\n` on stderr, and exit 2.\n\n**Blocking impact:** PSP compilation is blocked until the stakeholder answers this question.\n"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "lineage",
+              "values": [
+                {
+                  "identity": {
+                    "id": "DEC-EBHPCWVRSG",
+                    "revision_id": "DEC-EBHPCWVRSG-r00001",
+                    "type": "DEC",
+                    "revision": 1
+                  },
+                  "data": {
+                    "id": "DEC-EBHPCWVRSG",
+                    "revision": 1,
+                    "revision_id": "DEC-EBHPCWVRSG-r00001",
+                    "type": "DEC",
+                    "payload": {
+                      "title": "Command-line calculator product intent",
+                      "rationale": "The attended stakeholder explicitly selected this product behavior and its command-line, operand, operator, output, rounding, and error-handling boundaries.",
+                      "kind": "scope",
+                      "decision": "Build a command-line calculator. Invoke it as `calculator <left> <operator> <right>`. Support only the operators `+`, `-`, `*`, and `/`. Accept operands matching exactly `[+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)`. Emit canonical successful output. For nonterminating results, round exactly at the 12th fractional digit using half-away-from-zero and then trim. For invalid input, emit no stdout, emit exactly `invalid input\\n` on stderr, and exit 2. For division by zero, emit no stdout, emit exactly `division by zero\\n` on stderr, and exit 2.",
+                      "alternatives": [],
+                      "effective_scope": "QST-21219K6RVZ-r00002"
+                    },
+                    "links": [
+                      {
+                        "type": "resolves",
+                        "target": "QST-21219K6RVZ-r00001"
+                      },
+                      {
+                        "type": "resolves",
+                        "target": "QST-21219K6RVZ-r00002"
+                      }
+                    ],
+                    "created_by": {
+                      "scenario": "resolve-question@2",
+                      "prompt_ref": "prompts/resolve-question.md@2",
+                      "process_ref": "mdlm-bootstrap@0.74.0#sha256:ee99e698d36e406a836a796a36fc1db2d2451072ad662c0e06805ab5c20fe5ac",
+                      "loaded_skill_refs": [
+                        "skills/lifecycle-data.md@1",
+                        "skills/clarification-protocol.md@1",
+                        "skills/traceability.md@1",
+                        "skills/author-preflight.md@2"
+                      ],
+                      "policy_refs": [
+                        "question-participation@1",
+                        "review-applicability@1",
+                        "waiver-applicability@1"
+                      ]
+                    },
+                    "body": "# Command-line calculator product intent\n\n## Decision\n\nBuild a command-line calculator. Invoke it as `calculator <left> <operator> <right>`. Support only the operators `+`, `-`, `*`, and `/`. Accept operands matching exactly `[+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)`. Emit canonical successful output. For nonterminating results, round exactly at the 12th fractional digit using half-away-from-zero and then trim. For invalid input, emit no stdout, emit exactly `invalid input\\n` on stderr, and exit 2. For division by zero, emit no stdout, emit exactly `division by zero\\n` on stderr, and exit 2.\n\n## Rationale\n\nThe attended stakeholder explicitly selected this product behavior and its command-line, operand, operator, output, rounding, and error-handling boundaries.\n\n## Alternatives\n\nNone recorded.\n\n## Effective scope\n\n`$proposal.updatedQuestion.revision_id`\n"
+                  }
+                }
+              ]
+            },
+            {
+              "name": "prior_failed_reviews",
+              "values": []
+            },
+            {
+              "name": "failed_reviews",
+              "values": [
+                {
+                  "identity": {
+                    "id": "REV-079NVE0Y8M",
+                    "revision_id": "REV-079NVE0Y8M-r00001",
+                    "type": "REV",
+                    "revision": 1
+                  },
+                  "data": {
+                    "id": "REV-079NVE0Y8M",
+                    "revision": 1,
+                    "revision_id": "REV-079NVE0Y8M-r00001",
+                    "type": "REV",
+                    "payload": {
+                      "title": "Contextual review of command-line calculator product intent decision",
+                      "review_kind": "contextual",
+                      "rubric_ref": "policies/rubrics/bootstrap-review.md@3",
+                      "findings": [
+                        {
+                          "id": "F-001",
+                          "target": "DEC-EBHPCWVRSG-r00001",
+                          "relationship": "primary",
+                          "severity": "blocking",
+                          "summary": "Clarify the successful-output canonicalization rule before this decision is used: the decision requires “canonical successful output” but does not define the canonical representation for terminating results or zero.",
+                          "criterion": "Bootstrap review universal clarity and internal-consistency rubric, and the DEC type check requiring exact scope with rationale proportionate to the consequence.",
+                          "evidence": "The decision says only “Emit canonical successful output.” Its rounding-and-trimming rule is expressly limited to nonterminating results. For the valid invocation `calculator 1.0 + 2.0`, both `3\\n` and `3.0\\n` are plausible canonical decimal outputs; for a zero result, `0\\n`, `0.0\\n`, and a signed-zero rendering are likewise not distinguished. These interpretations produce observably different stdout while remaining consistent with the supplied text. The ambiguity is local to DEC-EBHPCWVRSG-r00001 and concerns behavior that the decision itself places in scope.",
+                          "material_consequence": "Downstream requirements and verification cannot derive one expected stdout value for valid terminating calculations, so conforming implementations can disagree observably and the decision cannot be used safely as exact product authority until the stakeholder selects or defines the canonical representation."
+                        },
+                        {
+                          "id": "F-002",
+                          "target": "DEC-EBHPCWVRSG-r00001",
+                          "relationship": "primary",
+                          "severity": "advisory",
+                          "summary": "Regenerate the Markdown projection: its Effective scope is the unresolved token `$proposal.updatedQuestion.revision_id`, while the authoritative payload records `QST-21219K6RVZ-r00002`. The exact payload and links preserve machine-readable scope, so this projection defect is not independently blocking."
+                        }
+                      ],
+                      "correction_authority": "stakeholder",
+                      "outcome": "fail"
+                    },
+                    "links": [
+                      {
+                        "type": "reviews",
+                        "target": "DEC-EBHPCWVRSG-r00001"
+                      },
+                      {
+                        "type": "contextualizes",
+                        "target": "BSL-1CE8ZHP7GS-r00001"
+                      }
+                    ],
+                    "created_by": {
+                      "scenario": "review-datum-in-context@2",
+                      "prompt_ref": "prompts/review-datum-in-context.md@6",
+                      "process_ref": "mdlm-bootstrap@0.74.0#sha256:ee99e698d36e406a836a796a36fc1db2d2451072ad662c0e06805ab5c20fe5ac",
+                      "loaded_skill_refs": [
+                        "skills/lifecycle-data.md@1",
+                        "skills/contextual-artifact-review.md@2",
+                        "skills/traceability.md@1",
+                        "skills/scope-challenge.md@2",
+                        "skills/review-correction-authority.md@1"
+                      ],
+                      "policy_refs": [
+                        "contextual-review-participation@1",
+                        "review-applicability@1",
+                        "waiver-applicability@1"
+                      ]
+                    },
+                    "body": "# Contextual review of command-line calculator product intent decision\n\n**Outcome:** Fail  \n**Review kind:** Contextual  \n**Rubric:** `policies/rubrics/bootstrap-review.md@3`\n\n## Findings\n\n### F-001 — Blocking, primary\n\n**Target:** `DEC-EBHPCWVRSG-r00001`  \n**Criterion:** Bootstrap review universal clarity and internal-consistency rubric, and the DEC type check requiring exact scope with rationale proportionate to the consequence.\n\nThe decision requires “canonical successful output” without defining the canonical representation for terminating results or zero. Its rounding-and-trimming rule is expressly limited to nonterminating results. For `calculator 1.0 + 2.0`, both `3\\n` and `3.0\\n` are plausible; zero also admits materially different renderings. These interpretations change observable stdout while remaining consistent with the supplied text.\n\n**Material consequence:** Downstream requirements and verification cannot derive one expected stdout value for valid terminating calculations. The decision cannot be used safely as exact product authority until the stakeholder selects or defines the canonical representation.\n\n### F-002 — Advisory, primary\n\n**Target:** `DEC-EBHPCWVRSG-r00001`\n\nRegenerate the Markdown projection: its Effective scope is the unresolved token `$proposal.updatedQuestion.revision_id`, while the authoritative payload records `QST-21219K6RVZ-r00002`. The exact payload and links preserve machine-readable scope, so this is not independently blocking.\n\n## Correction authority\n\nStakeholder judgment is required because resolving F-001 requires selecting stakeholder-visible output behavior.\n"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "drillDownCommands": [
+    "mdlm next",
+    "mdlm assignment show bdb9ffc9-3491-443b-88b0-80d5dc800781 --json",
+    "mdlm loose-ends --json",
+    "mdlm phase status phase-0-wayfinding --json",
+    "mdlm doctor --json",
+    "mdlm process show --json"
+  ],
+  "diagnostics": []
+}

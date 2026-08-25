@@ -40,6 +40,7 @@ Every `run` and `resume` first resolves the lifecycle repository and worktree-pr
 | Attended Review correction, active Assignment, matching fingerprints | Continue the same Assignment |
 | Lost correction worker session with an authentic durable `mdlm-pi` journal | Resume only if the installed controller exposes an authentic journal-resume operation; otherwise stop without stdin replay or Assignment restart |
 | Clean command interruption before submission starts | Continue the same Assignment |
+| Typed `mdlm-pi` operational failure with an exact unchanged clean post-run boundary and no transaction, controller journal, checkpoint, or private publication evidence before or after | Return `pre-submission-operational-failure`; a later new `run` may use the same operator-selected input |
 | External adapter stop before submission | Re-run the adapter against the same packet bytes |
 | Authenticated A-to-B checkpoint with active B at the exact clean packet boundary | Complete A, advance repository identity once, and return B pre-submission |
 | Later B run with an old-runner A-to-B checkpoint still retained under A's private state | Require the operator-pinned post-run snapshot, reconcile the checkpoint once, complete A, then continue B without invoking A |
@@ -54,7 +55,11 @@ Every `run` and `resume` first resolves the lifecycle repository and worktree-pr
 | Accepted execution with missing, mismatched, or ambiguous Git publication evidence | Stop as uncertain publication; never retry automatically |
 | Explicit terminal, invalid, dead-end, boundary, abandoned, or complete outcome | Record the typed lifecycle outcome; never treat it as a generic retryable command failure |
 
-A failed command is not enough to make a retry safe. The journal must still say that submission never started. Once the journal reaches `submitting`, only exact accepted-execution evidence can settle the transaction. Journal replacement uses a unique temporary file, file `fsync`, parent-directory `fsync`, atomic rename, and a second parent-directory `fsync`.
+A failed command is not enough to make a retry safe. For typed `mdlm-pi` operational failures, finalization compares the initial and post-run Git and MDLM command bytes, lifecycle identity, selected active Assignment, and Process Package. Both boundaries must be clean and exact. Runner and `mdlm-pi` journals must be absent in both snapshots with no read error. The Assignment-private stop directory must contain no checkpoint evidence before or after the child process. Changed or uncertain bytes, any journal, private checkpoint evidence, an untyped exit, or an ambiguous result remains nonrecoverable.
+
+A recoverable `pre-submission-operational-failure` does not authorize `resume`. Start a new `run` for the same active Assignment and supply the same operator-selected input. The failed attempt accepted no Scenario, so the new run does not replay an accepted Scenario.
+
+Once a journal reaches `submitting`, only exact accepted-execution evidence can settle the transaction. Journal replacement uses a unique temporary file, file `fsync`, parent-directory `fsync`, atomic rename, and a second parent-directory `fsync`.
 
 A clean unrelated lifecycle-repository commit is drift, not recovery. Expected values supplied by a later request cannot bless changes to source, harness, artifact, executable target, installed Process Package, or an existing Assignment boundary. Successive ordinary Assignments get separate immutable directories beneath `stateDirectory/assignments`; repository identity and locking remain repository-wide.
 
@@ -81,6 +86,8 @@ Normal A-to-B checkpoints authenticated during the same runner invocation do not
 - `manifest.json` with byte lengths and SHA-256 values
 
 `test/fixtures/calculator-run-003-checkpoint` retains the real run-003 A identity, both command triplets, shim configuration, and B stop packet byte for byte. `test/fixtures/calculator-run-003-post-snapshot` retains the authoritative post-run snapshot whose manifest digest is `sha256:8bf25285f59b0deddfbbaaabbea617da6682d2f66ef239c0ff9665203da2838e`. The process tests assert the fixture digests before deriving scratch-repository boundaries from them.
+
+`test/fixtures/calculator-run-008-operational-failure` retains the exact run result and both immutable snapshots for the real 30000 ms `mdlm status --json` failure. Its tests bind the original manifest digests, unchanged clean lifecycle and Assignment boundaries, absent journals, typed error, and exact details before exercising recovery against a scratch repository.
 
 Every command record includes spawn errors and output-limit state as well as exit/signal/deadline evidence. Nonzero commands, malformed JSON, and semantic contract violations produce a complete immutable snapshot whose result is `command-failure`; evidence capture does not substitute an exception for the failed command. `mdlm doctor --json` is checked against the shape the CLI emits: command `doctor`, boolean `ok`, safe diagnostics, Process Package identity, baseline verification counts, and generated projection summaries. Doctor output has no contract discriminator. Status and Assignment JSON must retain their exact versioned contract and command discriminators, supported outcome/allocation/disposition, Process Package, repository fingerprint, and Assignment shapes before the runner exposes semantic state. Every run also returns a post-run snapshot.
 
@@ -149,7 +156,9 @@ The runner records the origin, authority basis, and digest. It does not label th
   "assignmentId": "ASSIGNMENT_UUID",
   "stateDirectory": "/absolute/path/to/private-run-state",
   "evidenceDirectory": "/absolute/path/to/immutable-evidence",
-  "timeoutMs": 30000,
+  "timeoutMs": 900000,
+  "mdlmPiCommandTimeoutMs": 600000,
+  "mdlmPiAssignmentTimeoutMs": 840000,
   "signal": "clean-interrupted-command",
   "checkpointRecovery": {
     "snapshotDirectory": "/absolute/path/to/preserved/post-run-snapshot",
@@ -221,6 +230,8 @@ The runner records the origin, authority basis, and digest. It does not label th
 The `checkpointRecovery` object is optional except for after-the-fact reconciliation of a checkpoint retained by an older runner. It accepts exactly `snapshotDirectory` and `digest`. Preserve the prior run result before upgrading, then copy its `postRunSnapshot.snapshotDirectory` and `postRunSnapshot.digest` values into the recovery request. Do not derive the requested digest from the checkpoint packet, current repository, or mutable private state.
 
 The `operator` object is mandatory for `run` and `resume`. Provider and model are safe nonempty scalar tokens. Thinking is one of `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`. The runner validates these values before resolving or snapshotting the lifecycle repository, pins them in durable run identity, rejects exact drift on resume, and passes them to `mdlm-pi` as explicit `--provider`, `--model`, and `--thinking` arguments.
+
+Every run and resume request must include positive safe integers for `timeoutMs`, `mdlmPiCommandTimeoutMs`, and `mdlmPiAssignmentTimeoutMs`. Each `mdlm-pi` timeout must leave at least 60000 ms below the outer timeout so the runner can terminate the child and capture its post-run snapshot. The issue #212 policy is 900000 ms outer, 600000 ms per MDLM command, and 840000 ms per Assignment. The runner passes the inner values only through `MDLM_PI_COMMAND_TIMEOUT_MS` and `MDLM_PI_ASSIGNMENT_TIMEOUT_MS` in its allowlisted child environment. Ambient values cannot override the request. Both values are part of durable run identity, and resume rejects drift. A new `run` may upgrade a matching legacy identity once by binding the explicit values.
 
 Each archive digest is the SHA-256 of its configured file bytes. Archive identities, installed-tree identity, lock identity, executable identities, and the MDLM Process Package identity remain separate. The installed-tree digest is independent of its absolute root and covers neighboring dependencies as well as `mdlm` and `mdlm-pi`; both configured executables and the lockfile must resolve within that tree. Configured paths and resolved real paths are recorded where applicable. The runner compares the Process Package identity across status, Assignment state, and packet data. It does not claim that a tarball digest equals the Process Package digest unless the operator supplies evidence for that relationship.
 
