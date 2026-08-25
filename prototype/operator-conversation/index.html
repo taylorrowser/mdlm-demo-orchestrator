@@ -1,0 +1,701 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MDLM operator conversation prototype</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-synthesis: none;
+      --ink: #17202a;
+      --muted: #66716f;
+      --line: #d8ded9;
+      --paper: #f7f6f1;
+      --white: #ffffff;
+      --green: #176649;
+      --green-soft: #e6f1eb;
+      --amber: #9a5b16;
+      --amber-soft: #fff0d7;
+      --red: #9b3c35;
+      --blue: #244b78;
+      --focus: #285f4b;
+    }
+
+    * { box-sizing: border-box; }
+    html { min-height: 100%; }
+    body {
+      min-width: 320px;
+      min-height: 100vh;
+      margin: 0;
+      color: var(--ink);
+      background: var(--paper);
+    }
+    button { font: inherit; }
+    button:focus-visible, [tabindex]:focus-visible { outline: 3px solid #73a7ff; outline-offset: 3px; }
+    .mono { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; }
+    .caps { font-size: 11px; font-weight: 750; letter-spacing: .11em; text-transform: uppercase; }
+    .muted { color: var(--muted); }
+    .throwaway {
+      position: fixed;
+      z-index: 100;
+      top: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 6px 12px 7px;
+      border-radius: 0 0 10px 10px;
+      color: #f6ead1;
+      background: #292216;
+      box-shadow: 0 3px 12px rgba(0,0,0,.18);
+      font: 700 10px/1.2 "SFMono-Regular", Consolas, monospace;
+      letter-spacing: .09em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+    .status-dot {
+      display: inline-block;
+      width: 7px;
+      height: 7px;
+      margin-right: 7px;
+      border-radius: 999px;
+      background: currentColor;
+      vertical-align: 1px;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-height: 26px;
+      padding: 4px 9px;
+      border: 1px solid currentColor;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 720;
+      letter-spacing: .03em;
+      white-space: nowrap;
+    }
+    .pill.green { color: var(--green); background: var(--green-soft); border-color: #b7d7c6; }
+    .pill.amber { color: var(--amber); background: var(--amber-soft); border-color: #edcc96; }
+    .pill.gray { color: #58615f; background: #f1f2ef; border-color: #d4d8d4; }
+    .confirm-button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 9px;
+      min-height: 45px;
+      padding: 10px 16px;
+      border: 0;
+      border-radius: 8px;
+      color: #fff;
+      background: #1d5f48;
+      box-shadow: 0 2px 0 #0d3f2d;
+      font-size: 13px;
+      font-weight: 760;
+      cursor: pointer;
+    }
+    .confirm-button:hover { background: #164f3b; }
+    .confirm-button.confirmed { color: #dff4e8; background: #174533; box-shadow: none; }
+    .fine-print { font-size: 11px; line-height: 1.5; color: var(--muted); }
+    .decision-id { font: 650 11px/1.4 "SFMono-Regular", Consolas, monospace; color: #67716e; }
+    .exact-wording { quotes: "\201C" "\201D"; }
+    .exact-wording::before { content: open-quote; }
+    .exact-wording::after { content: close-quote; }
+
+    /* Variant A: conversation first */
+    .variant-a { min-height: 100vh; padding-bottom: 118px; background: #f6f4ed; }
+    .a-header {
+      min-height: 79px;
+      padding: 28px 38px 15px;
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 24px;
+      border-bottom: 1px solid #d8d5ca;
+      background: rgba(250,249,245,.93);
+    }
+    .a-brand { display: flex; align-items: center; gap: 13px; }
+    .a-mark {
+      display: grid;
+      width: 32px;
+      height: 32px;
+      place-items: center;
+      border: 1px solid #203c35;
+      border-radius: 50%;
+      color: #203c35;
+      font: 800 12px/1 Georgia, serif;
+    }
+    .a-brand h1 { margin: 0 0 2px; font: 720 16px/1.2 Georgia, serif; }
+    .a-brand p { margin: 0; font-size: 11px; color: #747973; }
+    .a-runstate { display: flex; align-items: center; gap: 16px; font-size: 12px; }
+    .a-progress {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(90px, 1fr));
+      gap: 0;
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 18px 28px 17px;
+    }
+    .a-step { position: relative; padding-top: 14px; border-top: 2px solid #d6d9d2; color: #8a908c; font-size: 11px; }
+    .a-step::before { content: ""; position: absolute; width: 7px; height: 7px; top: -5px; left: 0; border: 2px solid #f6f4ed; border-radius: 50%; background: #c5cbc5; }
+    .a-step.done { color: #44685a; border-color: #729482; }
+    .a-step.done::before { background: #267054; }
+    .a-step.active { color: #875417; border-color: #d3a35e; font-weight: 750; }
+    .a-step.active::before { width: 9px; height: 9px; top: -6px; background: #c47c25; }
+    .a-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 720px) 290px;
+      gap: 34px;
+      width: min(1080px, calc(100% - 44px));
+      margin: 17px auto 0;
+      align-items: start;
+    }
+    .a-conversation {
+      overflow: hidden;
+      border: 1px solid #d9d6cc;
+      border-radius: 14px;
+      background: #fcfbf7;
+      box-shadow: 0 12px 36px rgba(36,43,36,.06);
+    }
+    .a-conversation-title { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 18px 22px; border-bottom: 1px solid #e4e1d8; }
+    .a-conversation-title h2 { margin: 2px 0 0; font: 700 18px/1.25 Georgia, serif; }
+    .a-thread { padding: 24px 24px 26px; }
+    .a-boundary { display: flex; gap: 10px; align-items: center; margin-bottom: 24px; color: #966421; font-size: 11px; font-weight: 740; }
+    .a-boundary::before, .a-boundary::after { content: ""; height: 1px; flex: 1; background: #ead9bc; }
+    .message { display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 12px; margin: 0 0 23px; }
+    .message.user { grid-template-columns: minmax(0, 1fr) 32px; margin-left: 74px; }
+    .message.user .message-body { grid-column: 1; grid-row: 1; padding: 15px 17px; border: 1px solid #cdd8d2; border-radius: 12px 3px 12px 12px; background: #edf3ef; }
+    .message.user .avatar { grid-column: 2; }
+    .avatar { display: grid; width: 32px; height: 32px; place-items: center; border-radius: 50%; background: #213e36; color: white; font-size: 10px; font-weight: 800; }
+    .avatar.user-avatar { color: #25473c; background: #d2e0d8; }
+    .message-name { margin: 0 0 6px; font-size: 11px; font-weight: 800; color: #5b6762; }
+    .message-text { margin: 0; font-size: 15px; line-height: 1.55; color: #202c28; }
+    .normalization { margin-left: 44px; padding: 19px; border: 1px solid #cfcabf; border-radius: 3px 12px 12px; background: #fff; }
+    .normalization-top { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 13px; }
+    .normalization h3 { margin: 0; font: 700 16px/1.3 Georgia, serif; }
+    .normalization blockquote { margin: 0 0 16px; padding-left: 16px; border-left: 3px solid #417b64; font-size: 14px; line-height: 1.65; color: #1c2e28; }
+    .clause-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 18px; }
+    .clause { padding: 5px 8px; border-radius: 5px; color: #52605b; background: #f1f3f0; font-size: 10px; font-weight: 680; }
+    .normalization-actions { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding-top: 16px; border-top: 1px solid #eceae4; }
+    .normalization-actions p { max-width: 300px; margin: 0; }
+    .confirmed-banner { display: none; margin: 14px 0 0 44px; padding: 13px 15px; border: 1px solid #bcd7c7; border-radius: 8px; color: #194b37; background: #eaf4ee; font-size: 12px; line-height: 1.5; }
+    body[data-confirmed="true"] .confirmed-banner { display: block; }
+    .a-sidebar { display: grid; gap: 15px; }
+    .a-sidebox { padding: 17px; border-top: 3px solid #253c35; background: #edece6; }
+    .a-sidebox h3 { margin: 4px 0 12px; font: 720 15px/1.3 Georgia, serif; }
+    .a-sidebox p { margin: 0; font-size: 12px; line-height: 1.55; }
+    .quiet-line { display: flex; gap: 10px; align-items: flex-start; margin-top: 13px; padding-top: 13px; border-top: 1px solid #d3d3cd; }
+    .quiet-line .status-dot { margin-top: 5px; flex: none; color: #b27123; }
+    .history-list { list-style: none; padding: 0; margin: 0; }
+    .history-list li { position: relative; padding: 0 0 16px 21px; font-size: 11px; line-height: 1.45; color: #46504d; }
+    .history-list li::before { content: ""; position: absolute; left: 2px; top: 4px; width: 6px; height: 6px; border-radius: 50%; background: #668176; }
+    .history-list li::after { content: ""; position: absolute; left: 4.5px; top: 13px; bottom: 3px; width: 1px; background: #c2c7c2; }
+    .history-list li:last-child { padding-bottom: 0; }
+    .history-list li:last-child::after { display: none; }
+    .history-list time { display: block; margin-bottom: 2px; color: #858b87; font: 10px/1.3 "SFMono-Regular", Consolas, monospace; }
+    .review-note { border-top-color: #aa7130; background: #f4eee3; }
+    .outcome-stack { display: grid; gap: 7px; }
+    .outcome-mini { display: flex; align-items: baseline; gap: 8px; font-size: 10px; color: #68706d; }
+    .outcome-mini strong { width: 91px; color: #3b4642; font-size: 9px; letter-spacing: .06em; }
+
+    /* Variant B: decision ledger */
+    .variant-b { min-height: 100vh; padding-bottom: 106px; color: #202120; background: #e8e8e4; }
+    .b-shell { display: grid; min-height: calc(100vh - 106px); grid-template-columns: 245px minmax(500px, 1fr) 310px; }
+    .b-rail { padding: 58px 22px 30px; color: #e8e8df; background: #1d2322; }
+    .b-logo { display: flex; justify-content: space-between; align-items: center; padding-bottom: 22px; border-bottom: 1px solid #3a4240; }
+    .b-logo strong { font: 700 17px/1 Georgia, serif; letter-spacing: .02em; }
+    .b-logo span { color: #9ba9a3; font-size: 10px; }
+    .b-run-title { margin: 24px 0 5px; font-size: 13px; font-weight: 740; }
+    .b-run-id { color: #89958f; font-size: 10px; }
+    .b-meter { height: 4px; margin: 22px 0 26px; background: #3d4542; }
+    .b-meter span { display: block; width: 52%; height: 100%; background: #d79b49; }
+    .b-phases { list-style: none; margin: 0; padding: 0; }
+    .b-phases li { display: grid; grid-template-columns: 23px 1fr; gap: 9px; padding: 11px 0; border-bottom: 1px solid #303735; color: #89958f; font-size: 11px; line-height: 1.35; }
+    .b-phases .phase-number { font: 10px/1.4 "SFMono-Regular", Consolas, monospace; }
+    .b-phases li.done { color: #b9c8c1; }
+    .b-phases li.active { color: #ffd69b; }
+    .b-phases li.active .phase-number { color: #edae58; }
+    .b-rail-footer { margin-top: 28px; padding: 14px; border: 1px solid #46504c; color: #aab5b0; font-size: 10px; line-height: 1.5; }
+    .b-document { padding: 60px clamp(30px, 5vw, 74px) 50px; background: #f7f7f3; box-shadow: 8px 0 28px rgba(0,0,0,.07); }
+    .b-dochead { display: flex; justify-content: space-between; gap: 24px; padding-bottom: 22px; border-bottom: 3px solid #242b29; }
+    .b-dochead h1 { max-width: 570px; margin: 7px 0 0; font: 750 clamp(28px, 3vw, 42px)/1.06 Georgia, serif; letter-spacing: -.025em; }
+    .b-docstate { text-align: right; }
+    .b-docstate p { margin: 9px 0 0; font-size: 10px; color: #6e7471; }
+    .b-meta { display: grid; grid-template-columns: repeat(3, 1fr); margin: 0 0 28px; border-bottom: 1px solid #cdcfca; }
+    .b-meta > div { min-height: 66px; padding: 14px 12px 12px 0; }
+    .b-meta > div + div { padding-left: 16px; border-left: 1px solid #cdcfca; }
+    .b-meta dt { margin-bottom: 5px; color: #777d79; font-size: 9px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+    .b-meta dd { margin: 0; font-size: 11px; line-height: 1.4; }
+    .b-section { display: grid; grid-template-columns: 125px 1fr; gap: 22px; padding: 22px 0; border-bottom: 1px solid #d9dad5; }
+    .b-section-label { padding-top: 3px; color: #6d736f; font-size: 9px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+    .b-question { margin: 0 0 13px; font: 700 18px/1.35 Georgia, serif; }
+    .b-response { margin: 0; padding: 14px 16px; border-left: 3px solid #aeb5b0; color: #3d4542; background: #ededE9; font-size: 12px; line-height: 1.6; }
+    .b-exact { margin: 0; font: 700 17px/1.55 Georgia, serif; color: #183a2e; }
+    .b-extraction { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; margin-top: 19px; background: #d1d4cf; border: 1px solid #d1d4cf; }
+    .b-extraction div { min-height: 56px; padding: 12px; background: #f7f7f3; }
+    .b-extraction b { display: block; margin-bottom: 4px; font-size: 10px; }
+    .b-extraction span { color: #626965; font-size: 10px; line-height: 1.4; }
+    .b-signoff { display: flex; justify-content: space-between; align-items: center; gap: 25px; padding-top: 22px; }
+    .b-signoff-copy strong { display: block; margin-bottom: 4px; font: 700 15px/1.3 Georgia, serif; }
+    .b-signoff-copy span { display: block; max-width: 430px; color: #666d69; font-size: 10px; line-height: 1.45; }
+    .b-aside { padding: 58px 24px 36px; background: #dedfda; }
+    .b-aside h2 { margin: 0 0 19px; font: 730 16px/1.3 Georgia, serif; }
+    .b-event { padding: 15px 0; border-top: 1px solid #bec2bd; }
+    .b-event time { color: #747b77; font: 9px/1 "SFMono-Regular", Consolas, monospace; }
+    .b-event h3 { margin: 6px 0 5px; font-size: 11px; }
+    .b-event p { margin: 0; color: #59615d; font-size: 10px; line-height: 1.5; }
+    .b-event.correction { margin: 7px -10px 0; padding: 15px 10px; border: 1px solid #caa676; background: #eee2d0; }
+    .b-outcomes { margin-top: 25px; padding-top: 20px; border-top: 3px solid #303735; }
+    .b-outcomes h2 { margin-bottom: 12px; }
+    .b-outcome { display: grid; grid-template-columns: 76px 1fr; gap: 8px; padding: 8px 0; border-top: 1px solid #c5c8c3; font-size: 9px; line-height: 1.4; }
+    .b-outcome strong { letter-spacing: .06em; }
+
+    /* Variant C: attention over a quiet run map */
+    .variant-c { min-height: 100vh; padding: 0 0 108px; color: #e8eef0; background: #11181e; }
+    .c-topbar { display: flex; align-items: center; justify-content: space-between; gap: 20px; height: 78px; padding: 24px 32px 14px; border-bottom: 1px solid #29353c; }
+    .c-identity { display: flex; align-items: center; gap: 14px; }
+    .c-symbol { width: 27px; height: 27px; border: 1px solid #91a6aa; transform: rotate(45deg); }
+    .c-identity h1 { margin: 0 0 3px; font-size: 13px; letter-spacing: .02em; }
+    .c-identity p { margin: 0; color: #74868d; font-size: 10px; }
+    .c-status { color: #d9a659; font: 650 10px/1.3 "SFMono-Regular", Consolas, monospace; }
+    .c-map { padding: 28px 32px 25px; }
+    .c-maphead { display: flex; align-items: end; justify-content: space-between; gap: 20px; margin-bottom: 25px; }
+    .c-maphead h2 { margin: 4px 0 0; font: 680 24px/1.1 Georgia, serif; }
+    .c-maphead p { max-width: 450px; margin: 0; color: #7f9299; font-size: 10px; line-height: 1.5; text-align: right; }
+    .c-track { display: grid; grid-template-columns: 110px repeat(5, minmax(100px, 1fr)); min-height: 83px; border-top: 1px solid #2b373d; }
+    .c-track:last-child { border-bottom: 1px solid #2b373d; }
+    .c-track-label { padding: 18px 14px 15px 0; color: #72848b; font-size: 9px; font-weight: 780; letter-spacing: .08em; text-transform: uppercase; }
+    .c-track-cell { position: relative; padding: 16px 12px; border-left: 1px solid #263239; color: #66787f; font-size: 9px; line-height: 1.4; }
+    .c-track-cell b { display: block; margin-bottom: 4px; color: #9cacb1; font-size: 10px; }
+    .c-track-cell.complete::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: #376d5a; }
+    .c-track-cell.attended { color: #c59856; background: #1d2020; }
+    .c-track-cell.attended b { color: #efbd72; }
+    .c-track-cell.correction { background: #1f2425; }
+    .c-hidden-events { display: inline-block; margin-top: 25px; padding: 7px 10px; border: 1px solid #2d3b42; border-radius: 999px; color: #74868c; font: 9px/1.3 "SFMono-Regular", Consolas, monospace; }
+    .c-attention {
+      position: relative;
+      z-index: 2;
+      display: grid;
+      grid-template-columns: .8fr 1.2fr;
+      width: min(1140px, calc(100% - 50px));
+      margin: 5px auto 0;
+      border: 1px solid #50636a;
+      border-radius: 2px;
+      color: #1e292b;
+      background: #f1f0e9;
+      box-shadow: 0 22px 70px rgba(0,0,0,.38);
+    }
+    .c-question { padding: 28px; border-right: 1px solid #c9ccc7; background: #e2e4df; }
+    .c-attention-label { color: #9a671f; font: 780 9px/1.3 "SFMono-Regular", Consolas, monospace; letter-spacing: .09em; text-transform: uppercase; }
+    .c-question h2 { margin: 13px 0 20px; font: 750 26px/1.15 Georgia, serif; letter-spacing: -.015em; }
+    .c-quote { margin: 0; padding: 13px 0 0; border-top: 1px solid #bdc2bd; color: #4d5b57; font-size: 11px; line-height: 1.6; }
+    .c-quote b { display: block; margin-bottom: 5px; color: #283632; font-size: 9px; letter-spacing: .07em; text-transform: uppercase; }
+    .c-decision { padding: 28px 30px 24px; }
+    .c-decision-head { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 17px; }
+    .c-decision h3 { margin: 0 0 10px; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
+    .c-decision-wording { margin: 0; font: 700 16px/1.55 Georgia, serif; color: #1c3b31; }
+    .c-ruleline { display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; margin: 19px 0; }
+    .c-ruleline div { min-height: 50px; padding: 9px; border: 1px solid #d2d4cf; color: #5b6662; background: #f8f8f4; font-size: 9px; line-height: 1.35; }
+    .c-ruleline b { display: block; margin-bottom: 4px; color: #26332f; }
+    .c-actionrow { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding-top: 17px; border-top: 1px solid #d2d4ce; }
+    .c-actionrow p { max-width: 350px; margin: 0; }
+    .c-below { display: grid; grid-template-columns: 1.3fr .7fr; gap: 1px; width: min(1140px, calc(100% - 50px)); margin: 1px auto 0; background: #354249; }
+    .c-review, .c-terminal { padding: 16px 19px; background: #192229; }
+    .c-review { display: flex; gap: 14px; align-items: flex-start; }
+    .c-review strong { color: #dfb36e; font-size: 9px; letter-spacing: .07em; white-space: nowrap; }
+    .c-review p { margin: 0; color: #8fa0a5; font-size: 9px; line-height: 1.5; }
+    .c-terminal { display: flex; justify-content: flex-end; gap: 12px; }
+    .c-terminal span { align-self: center; color: #71848a; font-size: 8px; font-weight: 760; letter-spacing: .07em; }
+    .c-terminal b { padding: 5px 7px; border: 1px solid #415058; color: #a5b2b6; font-size: 8px; letter-spacing: .05em; }
+    .c-terminal small { display: none; }
+
+    /* Shared prototype switcher */
+    .prototype-switcher {
+      position: fixed;
+      z-index: 200;
+      left: 50%;
+      bottom: 20px;
+      display: grid;
+      grid-template-columns: 42px minmax(190px, auto) 42px;
+      align-items: center;
+      transform: translateX(-50%);
+      overflow: hidden;
+      border: 1px solid rgba(255,255,255,.22);
+      border-radius: 999px;
+      color: #f7f6f1;
+      background: #15191a;
+      box-shadow: 0 8px 30px rgba(0,0,0,.3);
+    }
+    .prototype-switcher button { height: 42px; border: 0; color: inherit; background: transparent; font-size: 18px; cursor: pointer; }
+    .prototype-switcher button:hover { background: #303637; }
+    .prototype-label { padding: 0 15px; border-left: 1px solid #363c3d; border-right: 1px solid #363c3d; text-align: center; }
+    .prototype-label strong { display: block; font-size: 11px; line-height: 1.3; }
+    .prototype-label span { display: block; margin-top: 1px; color: #9aa3a3; font-size: 8px; letter-spacing: .08em; text-transform: uppercase; }
+
+    @media (max-width: 1000px) {
+      .a-layout { grid-template-columns: 1fr; }
+      .a-sidebar { grid-template-columns: repeat(3, 1fr); }
+      .b-shell { grid-template-columns: 205px minmax(480px, 1fr); }
+      .b-aside { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 18px; padding: 25px; }
+      .b-aside > h2 { grid-column: 1 / -1; margin: 0; }
+      .b-outcomes { margin-top: 0; }
+      .c-ruleline { grid-template-columns: repeat(3, 1fr); }
+    }
+    @media (max-width: 740px) {
+      .throwaway { top: auto; bottom: 0; border-radius: 10px 10px 0 0; }
+      .a-header { padding: 18px 18px 13px; align-items: center; }
+      .a-runstate .decision-id { display: none; }
+      .a-progress { overflow-x: auto; padding-inline: 18px; }
+      .a-layout { width: calc(100% - 24px); margin-top: 6px; }
+      .a-thread { padding: 18px 14px 22px; }
+      .message.user { margin-left: 20px; }
+      .normalization, .confirmed-banner { margin-left: 0; }
+      .normalization-actions, .b-signoff, .c-actionrow { align-items: stretch; flex-direction: column; }
+      .a-sidebar { grid-template-columns: 1fr; }
+      .b-shell { display: block; }
+      .b-rail { padding: 38px 20px 18px; }
+      .b-phases { display: flex; overflow-x: auto; }
+      .b-phases li { min-width: 135px; border-right: 1px solid #303735; }
+      .b-rail-footer { display: none; }
+      .b-document { padding: 25px 20px 35px; }
+      .b-dochead { flex-direction: column; }
+      .b-docstate { text-align: left; }
+      .b-section { grid-template-columns: 1fr; gap: 8px; }
+      .b-extraction { grid-template-columns: 1fr; }
+      .b-aside { display: block; }
+      .c-topbar, .c-map { padding-inline: 18px; }
+      .c-map { overflow-x: auto; }
+      .c-maphead { min-width: 700px; }
+      .c-track { min-width: 700px; }
+      .c-attention { grid-template-columns: 1fr; width: calc(100% - 24px); }
+      .c-question { border-right: 0; border-bottom: 1px solid #c9ccc7; }
+      .c-ruleline { grid-template-columns: 1fr 1fr; }
+      .c-below { grid-template-columns: 1fr; width: calc(100% - 24px); }
+      .prototype-switcher { bottom: 29px; }
+    }
+  </style>
+</head>
+<body data-confirmed="false">
+  <div class="throwaway">Throwaway UI prototype · static issue #212 data</div>
+  <main id="app"></main>
+  <div id="switcher"></div>
+
+  <script type="module">
+    // Three variants of a new operator conversation page, switchable via ?variant=.
+    // Static mock data only. No MDLM command, repository mutation, persistence, or model call exists here.
+    const variants = {
+      A: "Guided conversation",
+      B: "Decision ledger",
+      C: "Quiet attention layer",
+    };
+
+    const exactDecision = "For division by zero, preserve the previous numeric display; show the inline message \"Cannot divide by zero\"; do not enter an error mode; the next numeric input starts a new calculation; mouse and keyboard input follow the same behavior.";
+    const userResponse = "Keep the last number on screen. Put \"Cannot divide by zero\" underneath it, and don't make it a special mode. The next digit should just start a new calculation. Same thing whether I click ÷ and = or use the keyboard.";
+    const question = "How should divide-by-zero behave in the calculator?";
+    const digest = "sha256:9d2c…b6e1";
+    let decisionConfirmed = false;
+
+    function confirmationButton() {
+      return `<button class="confirm-button ${decisionConfirmed ? "confirmed" : ""}" data-confirm-decision type="button">
+        ${decisionConfirmed ? "✓ Recorded for this preview" : "Confirm exact decision"}
+      </button>`;
+    }
+
+    function confirmationPill() {
+      return decisionConfirmed
+        ? `<span class="pill green"><span class="status-dot"></span>Decision D-03 confirmed</span>`
+        : `<span class="pill amber"><span class="status-dot"></span>Waiting for exact confirmation</span>`;
+    }
+
+    function VariantA() {
+      return `<div class="variant-a">
+        <header class="a-header">
+          <div class="a-brand">
+            <span class="a-mark">M</span>
+            <div><h1>Calculator demo</h1><p>Issue #212 · attended run</p></div>
+          </div>
+          <div class="a-runstate">
+            <span class="decision-id">run CALC-212-014</span>
+            ${confirmationPill()}
+          </div>
+        </header>
+
+        <nav class="a-progress" aria-label="Run progress">
+          <div class="a-step done">1 · Scope</div>
+          <div class="a-step done">2 · Decimal policy</div>
+          <div class="a-step active">3 · Zero division</div>
+          <div class="a-step">4 · Build and review</div>
+          <div class="a-step">5 · Terminal outcome</div>
+        </nav>
+
+        <div class="a-layout">
+          <section class="a-conversation" aria-labelledby="a-conversation-title">
+            <div class="a-conversation-title">
+              <div><span class="caps muted">Needs your attention</span><h2 id="a-conversation-title">One product choice</h2></div>
+              <span class="pill gray">Autonomy paused here</span>
+            </div>
+            <div class="a-thread">
+              <div class="a-boundary"><span>Attended boundary · 09:41</span></div>
+              <div class="message">
+                <span class="avatar">M</span>
+                <div class="message-body">
+                  <p class="message-name">MDLM root</p>
+                  <p class="message-text">${question}</p>
+                </div>
+              </div>
+              <div class="message user">
+                <div class="message-body">
+                  <p class="message-name">You · captured response</p>
+                  <p class="message-text">${userResponse}</p>
+                </div>
+                <span class="avatar user-avatar">TR</span>
+              </div>
+              <div class="normalization">
+                <div class="normalization-top">
+                  <div><span class="caps muted">Root normalization preview</span><h3>This is what MDLM will remember</h3></div>
+                  <span class="decision-id">D-03 · exact wording</span>
+                </div>
+                <blockquote class="exact-wording">${exactDecision}</blockquote>
+                <div class="clause-row" aria-label="Extracted clauses">
+                  <span class="clause">display preserved</span><span class="clause">exact message</span><span class="clause">no error mode</span><span class="clause">next digit resets</span><span class="clause">input parity</span>
+                </div>
+                <div class="normalization-actions">
+                  <p class="fine-print">Confirm the sentence, not the summary chips. MDLM stores these exact UTF-8 bytes with ${digest}.</p>
+                  ${confirmationButton()}
+                </div>
+              </div>
+              <div class="confirmed-banner"><strong>Decision D-03 recorded.</strong> The attended boundary is closed. MDLM can continue build and review work without keeping this conversation open.</div>
+            </div>
+          </section>
+
+          <aside class="a-sidebar" aria-label="Run context">
+            <section class="a-sidebox">
+              <span class="caps muted">Run pulse</span>
+              <h3>${decisionConfirmed ? "Working quietly" : "Paused, not stalled"}</h3>
+              <p>${decisionConfirmed ? "Build and independent review can proceed. The next alert appears only if another durable product choice or a terminal stop needs you." : "The root finished everything it could before this decision. No worker output is streaming into the conversation."}</p>
+              <div class="quiet-line"><span class="status-dot"></span><p>${decisionConfirmed ? "Phase 4 of 5 · implementation" : "Phase 3 of 5 · attended decision"}<br><span class="muted">17 routine events hidden</span></p></div>
+            </section>
+
+            <section class="a-sidebox review-note">
+              <span class="caps muted">Independent review · accepted</span>
+              <h3>One correction, resolved</h3>
+              <p>Review found the keyboard path cleared the previous display. The root required both <span class="mono">Enter</span> and the <span class="mono">=</span> button to use <span class="mono">evaluateOperation</span>. Review 2 accepted the correction.</p>
+            </section>
+
+            <section class="a-sidebox">
+              <span class="caps muted">Meaningful history</span>
+              <h3>4 events</h3>
+              <ol class="history-list">
+                <li><time>09:12</time>Scope accepted for calculator Phase 1.</li>
+                <li><time>09:26</time>Decision D-02 confirmed: up to 8 significant digits.</li>
+                <li><time>09:34</time>Independent review correction accepted.</li>
+                <li><time>09:41</time>Root opened decision D-03.</li>
+              </ol>
+            </section>
+
+            <section class="a-sidebox">
+              <span class="caps muted">Explicit terminal outcomes</span>
+              <h3>How this run can end</h3>
+              <div class="outcome-stack">
+                <div class="outcome-mini"><strong>COMPLETE</strong><span>Accepted and published</span></div>
+                <div class="outcome-mini"><strong>STOPPED</strong><span>Declined or abandoned</span></div>
+                <div class="outcome-mini"><strong>NEEDS ATTENTION</strong><span>Evidence required</span></div>
+              </div>
+            </section>
+          </aside>
+        </div>
+      </div>`;
+    }
+
+    function VariantB() {
+      return `<div class="variant-b">
+        <div class="b-shell">
+          <aside class="b-rail">
+            <div class="b-logo"><strong>MDLM</strong><span>operator record</span></div>
+            <div class="b-run-title">Calculator acceptance</div>
+            <div class="b-run-id mono">CALC-212-014 · issue #212</div>
+            <div class="b-meter" aria-label="52 percent through run"><span></span></div>
+            <ol class="b-phases">
+              <li class="done"><span class="phase-number">01 ✓</span><span>Scope accepted<br><small>09:12</small></span></li>
+              <li class="done"><span class="phase-number">02 ✓</span><span>Decimal decision<br><small>D-02 durable</small></span></li>
+              <li class="active"><span class="phase-number">03</span><span>Zero division<br><small>confirmation due</small></span></li>
+              <li><span class="phase-number">04</span><span>Build and independent review</span></li>
+              <li><span class="phase-number">05</span><span>Terminal outcome</span></li>
+            </ol>
+            <div class="b-rail-footer"><span class="status-dot" style="color:#d79b49"></span>${decisionConfirmed ? "Autonomous work resumed" : "Root is waiting for one exact decision"}<br><br>Routine worker events stay out of this record. 17 hidden.</div>
+          </aside>
+
+          <article class="b-document">
+            <header class="b-dochead">
+              <div><span class="caps muted">Proposed durable decision · D-03</span><h1>Division by zero behavior</h1></div>
+              <div class="b-docstate">${confirmationPill()}<p>Process package <span class="mono">calculator-demo@4</span></p></div>
+            </header>
+            <dl class="b-meta">
+              <div><dt>Authority</dt><dd>User confirmation<br>required</dd></div>
+              <div><dt>Assignment</dt><dd class="mono">behavior-spec<br>91a7…42c0</dd></div>
+              <div><dt>Record identity</dt><dd class="mono">${digest}<br>UTF-8 exact bytes</dd></div>
+            </dl>
+
+            <section class="b-section">
+              <div class="b-section-label">Attended prompt</div>
+              <div><p class="b-question">${question}</p><p class="b-response"><b>Your conversational answer</b><br>${userResponse}</p></div>
+            </section>
+
+            <section class="b-section">
+              <div class="b-section-label">Exact record</div>
+              <div>
+                <p class="b-exact exact-wording">${exactDecision}</p>
+                <div class="b-extraction">
+                  <div><b>Visible display</b><span>Keep the previous numeric value.</span></div>
+                  <div><b>Message copy</b><span>Use &quot;Cannot divide by zero&quot;.</span></div>
+                  <div><b>Recovery</b><span>Next numeric input starts fresh.</span></div>
+                  <div><b>Input paths</b><span>Mouse and keyboard must match.</span></div>
+                </div>
+              </div>
+            </section>
+
+            <section class="b-section">
+              <div class="b-section-label">Root note</div>
+              <div><p class="fine-print" style="font-size:12px;color:#46514d;margin:0">The root removed conversational phrasing but did not add a timeout, reset control, or logging rule. Only the five stated product constraints enter the durable record.</p></div>
+            </section>
+
+            <div class="b-signoff">
+              <div class="b-signoff-copy"><strong>${decisionConfirmed ? "Decision D-03 is confirmed" : "Sign the exact record"}</strong><span>${decisionConfirmed ? "The root can now hand this wording to autonomous implementation and independent review." : "This local prototype records nothing. The control only lets you judge the confirmed state."}</span></div>
+              ${confirmationButton()}
+            </div>
+          </article>
+
+          <aside class="b-aside">
+            <h2>Run ledger</h2>
+            <section class="b-event"><time>09:12:08</time><h3>Scope accepted</h3><p>Four-function calculator, keyboard parity, no persistence.</p></section>
+            <section class="b-event"><time>09:26:31</time><h3>D-02 confirmed</h3><p>Display up to 8 significant digits. Exact wording and digest retained.</p></section>
+            <section class="b-event correction"><time>09:34:17 · REVIEW 1</time><h3>Correction applied and accepted</h3><p>Keyboard Enter had bypassed the common operation path. Root required one path and added the <span class="mono">8 ÷ 0</span> acceptance example. Review 2 accepted.</p></section>
+            <section class="b-event"><time>09:41:02</time><h3>D-03 opened</h3><p>One attended product question. Autonomous work paused at a clean boundary.</p></section>
+            <section class="b-outcomes">
+              <h2>Terminal contract</h2>
+              <div class="b-outcome"><strong>COMPLETE</strong><span>Accepted execution published. No open assignment.</span></div>
+              <div class="b-outcome"><strong>STOPPED</strong><span>User declined or root reached a typed dead end. No retry.</span></div>
+              <div class="b-outcome"><strong>NEEDS ATTENTION</strong><span>Integrity mismatch or uncertain publication. Operator evidence required.</span></div>
+            </section>
+          </aside>
+        </div>
+      </div>`;
+    }
+
+    function VariantC() {
+      return `<div class="variant-c">
+        <header class="c-topbar">
+          <div class="c-identity"><span class="c-symbol"></span><div><h1>Calculator / issue #212</h1><p class="mono">run CALC-212-014 · process calculator-demo@4</p></div></div>
+          <div class="c-status"><span class="status-dot"></span>${decisionConfirmed ? "AUTONOMOUS WORK · RUNNING QUIETLY" : "ATTENDED BOUNDARY · INPUT READY"}</div>
+        </header>
+
+        <section class="c-map" aria-label="Quiet run map">
+          <div class="c-maphead">
+            <div><span class="caps muted">Run map</span><h2>Only boundaries stay visible</h2></div>
+            <p>Command output, worker tokens, and routine file events are collapsed. This map keeps durable decisions, review corrections, and terminal states.</p>
+          </div>
+          <div class="c-track">
+            <div class="c-track-label">Product</div>
+            <div class="c-track-cell complete"><b>Scope</b>accepted</div>
+            <div class="c-track-cell complete"><b>D-02</b>decimal policy</div>
+            <div class="c-track-cell attended"><b>D-03</b>${decisionConfirmed ? "confirmed" : "attention"}</div>
+            <div class="c-track-cell"><b>Acceptance</b>pending</div>
+            <div class="c-track-cell"><b>Outcome</b>pending</div>
+          </div>
+          <div class="c-track">
+            <div class="c-track-label">Autonomous</div>
+            <div class="c-track-cell complete"><b>Plan</b>6 tasks</div>
+            <div class="c-track-cell complete"><b>Build 1</b>published</div>
+            <div class="c-track-cell correction complete"><b>Review 1</b>correction</div>
+            <div class="c-track-cell"><b>Build 2</b>${decisionConfirmed ? "working" : "held clean"}</div>
+            <div class="c-track-cell"><b>Review 2</b>queued</div>
+          </div>
+          <span class="c-hidden-events">17 routine events hidden · last meaningful change 09:41:02</span>
+        </section>
+
+        <section class="c-attention" aria-labelledby="c-question-title">
+          <div class="c-question">
+            <span class="c-attention-label">Attention 1 of 1 · product authority</span>
+            <h2 id="c-question-title">${question}</h2>
+            <p class="c-quote"><b>Your captured answer</b>${userResponse}</p>
+          </div>
+          <div class="c-decision">
+            <div class="c-decision-head"><h3>Root normalization · exact durable wording</h3>${confirmationPill()}</div>
+            <p class="c-decision-wording exact-wording">${exactDecision}</p>
+            <div class="c-ruleline">
+              <div><b>01 Display</b>Preserve value</div>
+              <div><b>02 Message</b>Exact copy</div>
+              <div><b>03 Mode</b>No error lock</div>
+              <div><b>04 Next input</b>Fresh calculation</div>
+              <div><b>05 Parity</b>Mouse = keys</div>
+            </div>
+            <div class="c-actionrow">
+              <p class="fine-print">You confirm the sentence above. MDLM binds the exact bytes to D-03 and closes this attended boundary. No hidden interpretation is accepted.</p>
+              ${confirmationButton()}
+            </div>
+          </div>
+        </section>
+
+        <div class="c-below">
+          <section class="c-review"><strong>REVIEW CORRECTION · ACCEPTED</strong><p>Review 1 found keyboard Enter cleared the display. The root routed Enter and the = button through <span class="mono">evaluateOperation</span>, added the <span class="mono">8 ÷ 0</span> acceptance example, and independent Review 2 accepted the change.</p></section>
+          <section class="c-terminal" aria-label="Terminal outcomes"><span>TERMINAL</span><b title="Accepted and published">COMPLETE<small> · accepted and published</small></b><b title="Declined or abandoned, no retry">STOPPED<small> · no retry</small></b><b title="Operator evidence required">NEEDS ATTENTION<small> · evidence required</small></b></section>
+        </div>
+      </div>`;
+    }
+
+    const components = { A: VariantA, B: VariantB, C: VariantC };
+
+    function currentVariant() {
+      const requested = new URLSearchParams(location.search).get("variant")?.toUpperCase();
+      return requested in variants ? requested : "A";
+    }
+
+    function PrototypeSwitcher(current) {
+      return `<nav class="prototype-switcher" aria-label="Throwaway prototype variants">
+        <button type="button" data-cycle="-1" aria-label="Previous variant">←</button>
+        <div class="prototype-label"><strong>${current} · ${variants[current]}</strong><span>Prototype variant · arrow keys</span></div>
+        <button type="button" data-cycle="1" aria-label="Next variant">→</button>
+      </nav>`;
+    }
+
+    function render() {
+      const current = currentVariant();
+      document.body.dataset.confirmed = String(decisionConfirmed);
+      document.querySelector("#app").innerHTML = components[current]();
+      const localPrototype = ["127.0.0.1", "localhost"].includes(location.hostname) || location.protocol === "file:";
+      document.querySelector("#switcher").innerHTML = localPrototype ? PrototypeSwitcher(current) : "";
+      document.title = `MDLM prototype ${current} · ${variants[current]}`;
+    }
+
+    function cycleVariant(direction) {
+      const keys = Object.keys(variants);
+      const next = (keys.indexOf(currentVariant()) + direction + keys.length) % keys.length;
+      const url = new URL(location.href);
+      url.searchParams.set("variant", keys[next]);
+      history.replaceState({}, "", url);
+      render();
+    }
+
+    document.addEventListener("click", (event) => {
+      const cycle = event.target.closest("[data-cycle]");
+      if (cycle) cycleVariant(Number(cycle.dataset.cycle));
+
+      const confirmation = event.target.closest("[data-confirm-decision]");
+      if (confirmation) {
+        decisionConfirmed = true;
+        render();
+      }
+    });
+
+    document.addEventListener("keydown", (event) => {
+      const editable = event.target.closest("input, textarea, [contenteditable]");
+      if (editable) return;
+      if (event.key === "ArrowLeft") cycleVariant(-1);
+      if (event.key === "ArrowRight") cycleVariant(1);
+    });
+
+    window.addEventListener("popstate", render);
+    render();
+  </script>
+</body>
+</html>
