@@ -88,23 +88,15 @@ async function executeRun(request, context, assignmentDirectory, journalPath, sn
   const processPackage = reconcileProcessPackage(status.package, assignment.package, captured.diagnosis.package);
   if (processPackage === null) return stopped('package-drift', 'doctor, status, and Assignment Process Package identities differ', snapshotResult, assignmentId);
   const runIdentity = observedRunIdentity(captured.provenance, processPackage, request.operator, request);
-  let legacyMigration = null;
-  let legacyMarkerAwaitingRun = false;
   try {
     const hasRecoveryHistory = await operationalRecoveryHistoryExists(context, assignmentId);
     if (!hasRecoveryHistory) {
-      legacyMigration = await migrateLegacyOperationalFailure({
+      await migrateLegacyOperationalFailure({
         request, context, assignmentDirectory, captured, snapshotResult, processPackage, runIdentity,
       });
-    } else {
-      legacyMarkerAwaitingRun = (await optionalJson(path.join(context.identityDirectory, 'run-identity.json')))?.contract === 'mdlm-demo-run-identity@4';
     }
   } catch (error) {
     return stopped('operational-recovery-marker-invalid', error instanceof Error ? error.message : String(error), snapshotResult, assignmentId);
-  }
-  if (!((legacyMigration !== null || legacyMarkerAwaitingRun) && mode === 'resume')) {
-    const identityMatch = await pinRunIdentity(context.identityDirectory, runIdentity, mode === 'run');
-    if (!identityMatch) return stopped('run-identity-drift', 'operator, mdlm-pi timeout policy, artifact, installed Process Package, executable target, source, or harness identity changed', snapshotResult, assignmentId);
   }
 
   const recoveryGate = await inspectOperationalRecovery({
@@ -122,6 +114,9 @@ async function executeRun(request, context, assignmentDirectory, journalPath, sn
       { recoverable: true, requiredNextMode: recoveryGate.requiredNextMode, operationalFailureRecovery: recoveryGate.recovery },
     );
   }
+
+  const identityMatch = await pinRunIdentity(context.identityDirectory, runIdentity, mode === 'run');
+  if (!identityMatch) return stopped('run-identity-drift', 'operator, mdlm-pi timeout policy, artifact, installed Process Package, executable target, source, or harness identity changed', snapshotResult, assignmentId);
 
   const journal = await optionalJson(journalPath);
   const checkpointRecovery = captured.lifecycleRepository.clean === true
@@ -646,7 +641,30 @@ async function inspectOperationalRecovery({ request, mode, context, assignmentDi
     });
     const active = history.markers.filter(marker => !history.transitions.has(marker.index));
     if (active.length > 1) throw new Error('more than one operational failure marker requires recovery');
-    if (active.length === 0) return { ok: true, requiredNextMode: null };
+    let pendingLegacyUpgrade = null;
+    for (const marker of history.markers) {
+      if (marker.document.source === 'legacy-command-evidence-migration' && history.transitions.has(marker.index) &&
+          await legacyMarkerIdentityVersion(context, marker.document, runIdentity) === 4) {
+        if (pendingLegacyUpgrade !== null) throw new Error('more than one legacy run identity upgrade is pending');
+        pendingLegacyUpgrade = marker;
+      }
+    }
+    if (active.length === 0) {
+      if (pendingLegacyUpgrade === null) return { ok: true, requiredNextMode: null };
+      requireActiveOperationalBoundary(pendingLegacyUpgrade.document, captured, request.assignmentId);
+      if (mode !== 'run') {
+        return {
+          ok: true,
+          requiredNextMode: 'run',
+          recovery: {
+            marker: { path: pendingLegacyUpgrade.path, digest: pendingLegacyUpgrade.digest },
+            source: pendingLegacyUpgrade.document.source,
+          },
+        };
+      }
+      await upgradeLegacyRunIdentity(context, pendingLegacyUpgrade.document, runIdentity);
+      return { ok: true, requiredNextMode: null };
+    }
     const marker = active[0];
     requireActiveOperationalBoundary(marker.document, captured, request.assignmentId);
     if (mode !== marker.document.requiredNextMode) {
@@ -668,6 +686,9 @@ async function inspectOperationalRecovery({ request, mode, context, assignmentDi
     };
     const transitionPath = path.join(directory, `retry-${String(marker.index).padStart(6, '0')}.json`);
     await durableCreateJson(transitionPath, transition, 'operational-recovery-retry');
+    if (marker.document.source === 'legacy-command-evidence-migration') {
+      await upgradeLegacyRunIdentity(context, marker.document, runIdentity);
+    }
     return { ok: true, requiredNextMode: null };
   } catch (error) {
     return { ok: false, detail: error instanceof Error ? error.message : String(error) };
@@ -770,7 +791,8 @@ async function readOperationalRecoveryHistory({ directory, request, context, ass
     const evidence = await immutableFileEvidence(file);
     const document = JSON.parse(evidence.bytes.toString('utf8'));
     await validateOperationalFailureMarker({
-      document, index: item.index, request, context, assignmentDirectory, processPackage, runIdentity,
+      document, index: item.index, transitioned: retryEntries.has(item.index),
+      request, context, assignmentDirectory, processPackage, runIdentity,
     });
     markers.push({ index: item.index, path: evidence.path, digest: evidence.digest, document });
   }
@@ -794,7 +816,7 @@ async function readOperationalRecoveryHistory({ directory, request, context, ass
   return { markers, transitions: retryEntries };
 }
 
-async function validateOperationalFailureMarker({ document, index, request, context, assignmentDirectory, processPackage, runIdentity }) {
+async function validateOperationalFailureMarker({ document, index, transitioned, request, context, assignmentDirectory, processPackage, runIdentity }) {
   const keys = [
     'assignmentDirectory', 'assignmentId', 'contract', 'failure', 'initialBoundary', 'postBoundary',
     'processPackage', 'requiredNextMode', 'runIdentity', 'source', 'timeoutIdentity',
@@ -816,18 +838,22 @@ async function validateOperationalFailureMarker({ document, index, request, cont
   if (!sameJson(document.timeoutIdentity, timeoutIdentity)) throw new Error('operational failure marker timeout identity differs');
   const runIdentityPath = path.join(context.identityDirectory, 'run-identity.json');
   if (document.source === 'legacy-command-evidence-migration') {
-    const legacy = { ...runIdentity, contract: 'mdlm-demo-run-identity@4' };
-    delete legacy.mdlmPiCommandTimeoutMs;
-    delete legacy.mdlmPiAssignmentTimeoutMs;
-    const bytes = Buffer.from(`${JSON.stringify(legacy, null, 2)}\n`);
-    if (!sameJson(document.runIdentity, { path: path.resolve(runIdentityPath), bytes: bytes.length, digest: sha256(bytes) })) {
+    const legacyBytes = serializedLegacyRunIdentity(runIdentity);
+    if (!sameJson(document.runIdentity, {
+      path: path.resolve(runIdentityPath), bytes: legacyBytes.length, digest: sha256(legacyBytes),
+    })) {
       throw new Error('legacy operational failure marker run identity differs');
+    }
+    const observed = await immutableFileEvidence(runIdentityPath);
+    const currentBytes = serializedRunIdentity(runIdentity);
+    if (!observed.bytes.equals(legacyBytes) && !(transitioned && observed.bytes.equals(currentBytes))) {
+      throw new Error('legacy operational failure marker requires its byte-exact @4 run identity');
     }
   } else {
     const observedRunIdentity = await immutableFileEvidence(runIdentityPath);
     if (!sameJson(document.runIdentity, {
       path: observedRunIdentity.path, bytes: observedRunIdentity.bytes.length, digest: observedRunIdentity.digest,
-    }) || sha256(Buffer.from(`${JSON.stringify(runIdentity, null, 2)}\n`)) !== observedRunIdentity.digest) {
+    }) || !observedRunIdentity.bytes.equals(serializedRunIdentity(runIdentity))) {
       throw new Error('operational failure marker run identity differs');
     }
   }
@@ -861,6 +887,38 @@ async function validateOperationalFailureMarker({ document, index, request, cont
   if (!sameJson(failure.document, expectedDocument)) throw new Error('operational failure marker typed command document differs');
 }
 
+function serializedRunIdentity(runIdentity) {
+  return Buffer.from(`${JSON.stringify(runIdentity, null, 2)}\n`);
+}
+
+function serializedLegacyRunIdentity(runIdentity) {
+  const legacy = { ...runIdentity, contract: 'mdlm-demo-run-identity@4' };
+  delete legacy.mdlmPiCommandTimeoutMs;
+  delete legacy.mdlmPiAssignmentTimeoutMs;
+  return serializedRunIdentity(legacy);
+}
+
+async function legacyMarkerIdentityVersion(context, marker, runIdentity) {
+  const identityPath = path.join(context.identityDirectory, 'run-identity.json');
+  const observed = await immutableFileEvidence(identityPath);
+  if (observed.path !== marker.runIdentity.path) {
+    throw new Error('legacy operational failure marker run identity path differs');
+  }
+  if (observed.bytes.equals(serializedLegacyRunIdentity(runIdentity))) return 4;
+  if (observed.bytes.equals(serializedRunIdentity(runIdentity))) return 5;
+  throw new Error('legacy operational failure marker requires its byte-exact @4 run identity or recorded @5 upgrade');
+}
+
+async function upgradeLegacyRunIdentity(context, marker, runIdentity) {
+  if (await legacyMarkerIdentityVersion(context, marker, runIdentity) === 5) return;
+  const identityPath = path.join(context.identityDirectory, 'run-identity.json');
+  await durableWriteJson(identityPath, runIdentity, 'legacy-run-identity-upgrade');
+  const upgraded = await immutableFileEvidence(identityPath);
+  if (!upgraded.bytes.equals(serializedRunIdentity(runIdentity))) {
+    throw new Error('legacy run identity upgrade did not publish the exact @5 identity');
+  }
+}
+
 async function validateOperationalBoundary(boundary, expectedPostRun) {
   if (!boundary || !sameJson(Object.keys(boundary).sort(), [
     'assignmentRepository', 'digest', 'lifecycleRepository', 'snapshotDirectory',
@@ -890,7 +948,12 @@ function requireActiveOperationalBoundary(marker, captured, assignmentId) {
 
 async function migrateLegacyOperationalFailure({ request, context, assignmentDirectory, captured, snapshotResult, processPackage, runIdentity }) {
   const identityPath = path.join(context.identityDirectory, 'run-identity.json');
-  const legacyIdentity = await optionalJson(identityPath);
+  let identityEvidence;
+  try { identityEvidence = await immutableFileEvidence(identityPath); }
+  catch (error) { if (error.code === 'ENOENT') return null; throw error; }
+  let legacyIdentity;
+  try { legacyIdentity = JSON.parse(identityEvidence.bytes.toString('utf8')); }
+  catch { throw new Error('legacy run identity is not valid JSON'); }
   if (legacyIdentity?.contract !== 'mdlm-demo-run-identity@4') return null;
   const commandDirectory = path.join(assignmentDirectory, 'command-evidence');
   let names;
@@ -977,8 +1040,9 @@ async function migrateLegacyOperationalFailure({ request, context, assignmentDir
   const currentAsLegacy = { ...runIdentity, contract: 'mdlm-demo-run-identity@4' };
   delete currentAsLegacy.mdlmPiCommandTimeoutMs;
   delete currentAsLegacy.mdlmPiAssignmentTimeoutMs;
-  if (!sameJson(legacyIdentity, expectedLegacyIdentity) || !sameJson(legacyIdentity, currentAsLegacy)) {
-    throw new Error('legacy run identity is not the exact operator, artifact, package, tool, source, and harness identity');
+  if (!sameJson(legacyIdentity, expectedLegacyIdentity) || !sameJson(legacyIdentity, currentAsLegacy) ||
+      !identityEvidence.bytes.equals(serializedRunIdentity(expectedLegacyIdentity))) {
+    throw new Error('legacy run identity is not the byte-exact operator, artifact, package, tool, source, and harness identity');
   }
 
   const expectedNames = ['command-000001.json', 'command-000001.stderr', 'command-000001.stdout',
