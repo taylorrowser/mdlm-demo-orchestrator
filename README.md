@@ -61,7 +61,11 @@ A recoverable `pre-submission-operational-failure` does not authorize `resume`. 
 
 Every later `run` or `resume` validates the complete marker history before Scenario prepare or `mdlm-pi` starts. An active marker returns typed `wrong-recovery-mode` for `resume`. A matching `run` writes an immutable retry transition, then retries with the same operator-selected input. Neither the marker nor its transition is deleted. Modified, duplicate, or ambiguous history stops as `operational-recovery-marker-invalid` before worker or model invocation. Preserve the Assignment state, command evidence, snapshots, and worktree-private recovery history.
 
-The run-008 compatibility path handles the one real attempt made before markers existed. It examines only the latest complete Assignment command-evidence triplet. Migration requires the exact `mdlm-pi run` argv and timeout, an exit-1 strictly typed operational-failure document, the immediately preceding authenticated Scenario prepare, the pinned Assignment and run identities, an exact clean current boundary, and certain absence of runner, controller, or checkpoint journals. It writes the same run-only marker before deciding the requested mode. Arbitrary terminal output or incomplete command files do not authorize migration.
+The run-008 compatibility path handles the one real attempt made before markers existed. It requires `operationalFailureRecovery` with operator-pinned paths and digests for the preserved result, initial snapshot, and post-run snapshot. The runner resolves canonical paths, rejects symlinks and non-regular files, verifies both complete manifests and every file, and requires the result to reference those exact pins. The result must name Assignment `bdb9ffc9-3491-443b-88b0-80d5dc800781`, the exact typed 30000 ms `mdlm status --json` failure, and the matching private command bytes.
+
+Both snapshots must prove the same clean active Assignment, repository, Process Package, and absent journals. The current boundary must still equal the post-run boundary. Private state must contain the exact Scenario prepare and `mdlm-pi run` command pair, the matching Assignment identity and shim configuration, no checkpoint evidence, and an exact `mdlm-demo-run-identity@4` for the pinned operator, artifacts, tools, source, harness, and Process Package. That identity has no timeout fields. Missing pins, extra commands, changed bytes, another Assignment, another identity version, or a self-consistent substitute failure cannot migrate.
+
+After verification, the runner writes the durable run-only marker. `resume` stops before prepare or `mdlm-pi` starts and leaves the `@4` identity unchanged. `run` atomically upgrades it to `mdlm-demo-run-identity@5` with 600000 ms command, 840000 ms Assignment, and 900000 ms outer timeouts before one retry. Existing native `@5` marker recovery is unchanged.
 
 Once a journal reaches `submitting`, only exact accepted-execution evidence can settle the transaction. Journal replacement uses a unique temporary file, file `fsync`, parent-directory `fsync`, atomic rename, and a second parent-directory `fsync`.
 
@@ -91,7 +95,7 @@ Normal A-to-B checkpoints authenticated during the same runner invocation do not
 
 `test/fixtures/calculator-run-003-checkpoint` retains the real run-003 A identity, both command triplets, shim configuration, and B stop packet byte for byte. `test/fixtures/calculator-run-003-post-snapshot` retains the authoritative post-run snapshot whose manifest digest is `sha256:8bf25285f59b0deddfbbaaabbea617da6682d2f66ef239c0ff9665203da2838e`. The process tests assert the fixture digests before deriving scratch-repository boundaries from them.
 
-`test/fixtures/calculator-run-008-operational-failure` retains the exact run result and both immutable snapshots for the real 30000 ms `mdlm status --json` failure. Its tests bind the original manifest digests, unchanged clean lifecycle and Assignment boundaries, absent journals, typed error, and exact details before exercising recovery against a scratch repository.
+`test/fixtures/calculator-run-008-operational-failure` retains the exact run result, both immutable snapshots, Assignment identity, shim configuration, and both private command-evidence triplets for the real 30000 ms `mdlm status --json` failure. Tests bind their original digests before deriving an isolated run-009 regression. The regression begins from markerless `@4` state. It does not create a native marker and delete it.
 
 Every command record includes spawn errors and output-limit state as well as exit/signal/deadline evidence. Nonzero commands, malformed JSON, and semantic contract violations produce a complete immutable snapshot whose result is `command-failure`; evidence capture does not substitute an exception for the failed command. `mdlm doctor --json` is checked against the shape the CLI emits: command `doctor`, boolean `ok`, safe diagnostics, Process Package identity, baseline verification counts, and generated projection summaries. Doctor output has no contract discriminator. Status and Assignment JSON must retain their exact versioned contract and command discriminators, supported outcome/allocation/disposition, Process Package, repository fingerprint, and Assignment shapes before the runner exposes semantic state. Every run also returns a post-run snapshot.
 
@@ -168,6 +172,14 @@ The runner records the origin, authority basis, and digest. It does not label th
     "snapshotDirectory": "/absolute/path/to/preserved/post-run-snapshot",
     "digest": "sha256:POST_RUN_MANIFEST_SHA256_FROM_PRESERVED_RUN_RESULT"
   },
+  "operationalFailureRecovery": {
+    "resultPath": "/home/ubuntu/git/mdlm-successor-demos/evidence/issue-212-final/calculator-post214/run-008.runner.stdout",
+    "resultDigest": "sha256:940cd1d5ee4d332907ff4d92af5b0d1789e66cb8687c60bb909324d71ad76523",
+    "initialSnapshotDirectory": "/home/ubuntu/git/mdlm-successor-demos/evidence/issue-212-final/calculator-post214/run-008-snapshot/snapshot-000001",
+    "initialSnapshotDigest": "sha256:fe25aabb438387d7a6828e1bf4c168b75bb0b8d517c627c7ceb57334e6865b7f",
+    "postSnapshotDirectory": "/home/ubuntu/git/mdlm-successor-demos/evidence/issue-212-final/calculator-post214/run-008-snapshot/snapshot-000002",
+    "postSnapshotDigest": "sha256:e44d04e03e803736581ba95ecb4f95cae92d390de24921d76ce8c07a1225a817"
+  },
   "operator": {
     "provider": "openai-codex",
     "model": "gpt-5.6-sol",
@@ -232,6 +244,8 @@ The runner records the origin, authority basis, and digest. It does not label th
 ```
 
 The `checkpointRecovery` object is optional except for after-the-fact reconciliation of a checkpoint retained by an older runner. It accepts exactly `snapshotDirectory` and `digest`. Preserve the prior run result before upgrading, then copy its `postRunSnapshot.snapshotDirectory` and `postRunSnapshot.digest` values into the recovery request. Do not derive the requested digest from the checkpoint packet, current repository, or mutable private state.
+
+The `operationalFailureRecovery` object is optional except for migration of the markerless run-008 failure. It accepts exactly `resultPath`, `resultDigest`, `initialSnapshotDirectory`, `initialSnapshotDigest`, `postSnapshotDirectory`, and `postSnapshotDigest`. Copy all six values from preserved operator evidence. A digest calculated from mutable private state is not an external pin.
 
 The `operator` object is mandatory for `run` and `resume`. Provider and model are safe nonempty scalar tokens. Thinking is one of `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`. The runner validates these values before resolving or snapshotting the lifecycle repository, pins them in durable run identity, rejects exact drift on resume, and passes them to `mdlm-pi` as explicit `--provider`, `--model`, and `--thinking` arguments.
 

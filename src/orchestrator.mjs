@@ -88,8 +88,24 @@ async function executeRun(request, context, assignmentDirectory, journalPath, sn
   const processPackage = reconcileProcessPackage(status.package, assignment.package, captured.diagnosis.package);
   if (processPackage === null) return stopped('package-drift', 'doctor, status, and Assignment Process Package identities differ', snapshotResult, assignmentId);
   const runIdentity = observedRunIdentity(captured.provenance, processPackage, request.operator, request);
-  const identityMatch = await pinRunIdentity(context.identityDirectory, runIdentity, mode === 'run');
-  if (!identityMatch) return stopped('run-identity-drift', 'operator, mdlm-pi timeout policy, artifact, installed Process Package, executable target, source, or harness identity changed', snapshotResult, assignmentId);
+  let legacyMigration = null;
+  let legacyMarkerAwaitingRun = false;
+  try {
+    const hasRecoveryHistory = await operationalRecoveryHistoryExists(context, assignmentId);
+    if (!hasRecoveryHistory) {
+      legacyMigration = await migrateLegacyOperationalFailure({
+        request, context, assignmentDirectory, captured, snapshotResult, processPackage, runIdentity,
+      });
+    } else {
+      legacyMarkerAwaitingRun = (await optionalJson(path.join(context.identityDirectory, 'run-identity.json')))?.contract === 'mdlm-demo-run-identity@4';
+    }
+  } catch (error) {
+    return stopped('operational-recovery-marker-invalid', error instanceof Error ? error.message : String(error), snapshotResult, assignmentId);
+  }
+  if (!((legacyMigration !== null || legacyMarkerAwaitingRun) && mode === 'resume')) {
+    const identityMatch = await pinRunIdentity(context.identityDirectory, runIdentity, mode === 'run');
+    if (!identityMatch) return stopped('run-identity-drift', 'operator, mdlm-pi timeout policy, artifact, installed Process Package, executable target, source, or harness identity changed', snapshotResult, assignmentId);
+  }
 
   const recoveryGate = await inspectOperationalRecovery({
     request, mode, context, assignmentDirectory, captured, snapshotResult, processPackage, runIdentity,
@@ -615,23 +631,19 @@ function operationalRecoveryDirectory(context, assignmentId) {
   );
 }
 
+async function operationalRecoveryHistoryExists(context, assignmentId) {
+  const directory = operationalRecoveryDirectory(context, assignmentId);
+  try { return (await readdir(directory)).length !== 0; }
+  catch (error) { if (error.code === 'ENOENT') return false; throw error; }
+}
+
 async function inspectOperationalRecovery({ request, mode, context, assignmentDirectory, captured, snapshotResult, processPackage, runIdentity }) {
   try {
     const directory = operationalRecoveryDirectory(context, request.assignmentId);
     await recoverPendingOperationalRecoveryWrites(directory);
-    let history = await readOperationalRecoveryHistory({
+    const history = await readOperationalRecoveryHistory({
       directory, request, context, assignmentDirectory, processPackage, runIdentity,
     });
-    if (history.markers.length === 0) {
-      const migrated = await migrateLegacyOperationalFailure({
-        request, context, assignmentDirectory, captured, snapshotResult, processPackage,
-      });
-      if (migrated !== null) {
-        history = await readOperationalRecoveryHistory({
-          directory, request, context, assignmentDirectory, processPackage, runIdentity,
-        });
-      }
-    }
     const active = history.markers.filter(marker => !history.transitions.has(marker.index));
     if (active.length > 1) throw new Error('more than one operational failure marker requires recovery');
     if (active.length === 0) return { ok: true, requiredNextMode: null };
@@ -674,24 +686,14 @@ async function writeOperationalFailureMarker({
   const command = await commandEvidenceManifest(commandEvidence.prefix, commandEvidence.index);
   const stored = await authenticateStoredCommand(path.dirname(commandEvidence.prefix), String(commandEvidence.index).padStart(6, '0'));
   const document = requireTypedOperationalFailure(stored.record, stored.stdout, stored.stderr);
-  const boundary = captured => ({
-    snapshotDirectory: null,
-    digest: null,
-    lifecycleRepository: captured.lifecycleRepository,
-    assignmentRepository: captured.assignmentRepository,
-  });
   const marker = {
     contract: 'mdlm-demo-operational-failure-marker@1',
     assignmentId,
     requiredNextMode: 'run',
     source,
     assignmentDirectory: path.resolve(assignmentDirectory),
-    initialBoundary: source === 'legacy-command-evidence-migration'
-      ? boundary(initial)
-      : await operationalBoundary(initialSnapshot, initial),
-    postBoundary: source === 'legacy-command-evidence-migration'
-      ? boundary(post)
-      : await operationalBoundary(postSnapshot, post),
+    initialBoundary: await operationalBoundary(initialSnapshot, initial),
+    postBoundary: await operationalBoundary(postSnapshot, post),
     processPackage,
     runIdentity: {
       path: runIdentityEvidence.path,
@@ -813,14 +815,24 @@ async function validateOperationalFailureMarker({ document, index, request, cont
   };
   if (!sameJson(document.timeoutIdentity, timeoutIdentity)) throw new Error('operational failure marker timeout identity differs');
   const runIdentityPath = path.join(context.identityDirectory, 'run-identity.json');
-  const observedRunIdentity = await immutableFileEvidence(runIdentityPath);
-  if (!sameJson(document.runIdentity, {
-    path: observedRunIdentity.path, bytes: observedRunIdentity.bytes.length, digest: observedRunIdentity.digest,
-  }) || sha256(Buffer.from(`${JSON.stringify(runIdentity, null, 2)}\n`)) !== observedRunIdentity.digest) {
-    throw new Error('operational failure marker run identity differs');
+  if (document.source === 'legacy-command-evidence-migration') {
+    const legacy = { ...runIdentity, contract: 'mdlm-demo-run-identity@4' };
+    delete legacy.mdlmPiCommandTimeoutMs;
+    delete legacy.mdlmPiAssignmentTimeoutMs;
+    const bytes = Buffer.from(`${JSON.stringify(legacy, null, 2)}\n`);
+    if (!sameJson(document.runIdentity, { path: path.resolve(runIdentityPath), bytes: bytes.length, digest: sha256(bytes) })) {
+      throw new Error('legacy operational failure marker run identity differs');
+    }
+  } else {
+    const observedRunIdentity = await immutableFileEvidence(runIdentityPath);
+    if (!sameJson(document.runIdentity, {
+      path: observedRunIdentity.path, bytes: observedRunIdentity.bytes.length, digest: observedRunIdentity.digest,
+    }) || sha256(Buffer.from(`${JSON.stringify(runIdentity, null, 2)}\n`)) !== observedRunIdentity.digest) {
+      throw new Error('operational failure marker run identity differs');
+    }
   }
-  await validateOperationalBoundary(document.initialBoundary, document.source);
-  await validateOperationalBoundary(document.postBoundary, document.source);
+  await validateOperationalBoundary(document.initialBoundary, false);
+  await validateOperationalBoundary(document.postBoundary, true);
   const failure = document.failure;
   if (!failure || !sameJson(Object.keys(failure).sort(), ['commandIndex', 'document', 'evidence']) || failure.commandIndex !== index) {
     throw new Error('operational failure marker command identity is malformed');
@@ -849,25 +861,15 @@ async function validateOperationalFailureMarker({ document, index, request, cont
   if (!sameJson(failure.document, expectedDocument)) throw new Error('operational failure marker typed command document differs');
 }
 
-async function validateOperationalBoundary(boundary, source) {
+async function validateOperationalBoundary(boundary, expectedPostRun) {
   if (!boundary || !sameJson(Object.keys(boundary).sort(), [
     'assignmentRepository', 'digest', 'lifecycleRepository', 'snapshotDirectory',
   ])) throw new Error('operational failure marker boundary is malformed');
-  if (source === 'legacy-command-evidence-migration' && boundary.snapshotDirectory === null && boundary.digest === null) return;
   if (typeof boundary.snapshotDirectory !== 'string' || !/^sha256:[0-9a-f]{64}$/.test(boundary.digest ?? '')) {
     throw new Error('operational failure marker snapshot identity is malformed');
   }
-  const manifest = await immutableFileEvidence(path.join(boundary.snapshotDirectory, 'manifest.json'));
-  if (manifest.digest !== boundary.digest) throw new Error('operational failure marker snapshot manifest was tampered');
-  const manifestDocument = JSON.parse(manifest.bytes.toString('utf8'));
-  const snapshotRecord = manifestDocument?.contract === 'mdlm-demo-evidence-manifest@1' && Array.isArray(manifestDocument.files)
-    ? manifestDocument.files.find(item => item?.path === 'snapshot.json')
-    : null;
-  const snapshotEvidence = await immutableFileEvidence(path.join(boundary.snapshotDirectory, 'snapshot.json'));
-  if (!snapshotRecord || snapshotRecord.bytes !== snapshotEvidence.bytes.length || snapshotRecord.sha256 !== snapshotEvidence.digest) {
-    throw new Error('operational failure marker snapshot bytes differ from the bound manifest');
-  }
-  const snapshot = JSON.parse(snapshotEvidence.bytes.toString('utf8'));
+  const verified = await verifySnapshot(boundary.snapshotDirectory, boundary.digest, expectedPostRun);
+  const snapshot = verified.snapshot;
   if (!sameJson(snapshot.lifecycleRepository, boundary.lifecycleRepository) ||
       !sameJson(snapshot.assignmentRepository, boundary.assignmentRepository)) {
     throw new Error('operational failure marker snapshot boundary differs');
@@ -886,76 +888,140 @@ function requireActiveOperationalBoundary(marker, captured, assignmentId) {
   requireCertainJournalAbsence(captured.piJournal, 'mdlm-pi journal');
 }
 
-async function migrateLegacyOperationalFailure({ request, context, assignmentDirectory, captured, snapshotResult, processPackage }) {
+async function migrateLegacyOperationalFailure({ request, context, assignmentDirectory, captured, snapshotResult, processPackage, runIdentity }) {
+  const identityPath = path.join(context.identityDirectory, 'run-identity.json');
+  const legacyIdentity = await optionalJson(identityPath);
+  if (legacyIdentity?.contract !== 'mdlm-demo-run-identity@4') return null;
   const commandDirectory = path.join(assignmentDirectory, 'command-evidence');
   let names;
   try { names = (await readdir(commandDirectory)).sort(); }
   catch (error) { if (error.code === 'ENOENT') return null; throw error; }
-  const indices = names.filter(name => /^command-[0-9]{6}\.json$/.test(name)).map(name => Number(name.slice(8, 14)));
-  if (indices.length === 0) return null;
-  const latest = Math.max(...indices);
-  const index = String(latest).padStart(6, '0');
-  let stored;
-  try { stored = await authenticateStoredCommand(commandDirectory, index); }
-  catch (error) { throw new Error(`legacy operational failure command evidence is ambiguous: ${error.message}`); }
-  let parsed = null;
-  try { parsed = JSON.parse(stored.stderr.toString('utf8')); } catch {}
+  if (!names.includes('command-000002.json')) return null;
   const expectedPi = [
     request.commands.mdlmPi, 'run', context.repository, '--mdlm', mdlmShim,
-    '--provider', request.operator.provider, '--model', request.operator.model,
-    '--thinking', request.operator.thinking,
+    '--provider', request.operator.provider, '--model', request.operator.model, '--thinking', request.operator.thinking,
   ];
-  const looksLikeCandidate = sameJson(stored.record.argv, expectedPi) &&
-    (stored.record.exitStatus === 1 || parsed?.status === 'operational-failure');
-  if (!looksLikeCandidate) return null;
-  requireStoredProcess(stored.record, expectedPi, context.repository, request.timeoutMs, 1);
-  requireTypedOperationalFailure(stored.record, stored.stdout, stored.stderr);
-  const expectedNames = [];
-  for (let current = Math.min(...indices); current <= latest; current++) {
-    const numbered = String(current).padStart(6, '0');
-    expectedNames.push(`command-${numbered}.json`, `command-${numbered}.stderr`, `command-${numbered}.stdout`);
+  let failed;
+  try { failed = await authenticateStoredCommand(commandDirectory, '000002'); }
+  catch (error) { throw new Error(`legacy operational failure command evidence is ambiguous: ${error.message}`); }
+  let possibleFailure = null;
+  try { possibleFailure = JSON.parse(failed.stderr.toString('utf8')); } catch {}
+  if (!sameJson(failed.record.argv, expectedPi) ||
+      (failed.record.exitStatus !== 1 && possibleFailure?.status !== 'operational-failure')) return null;
+  if (request.operationalFailureRecovery === undefined) {
+    throw new Error('operationalFailureRecovery with the operator-pinned run-008 result and both snapshots is required');
   }
-  if (!sameJson(names, expectedNames.sort())) throw new Error('legacy operational failure command evidence is missing or ambiguous');
-  if (latest < 2) throw new Error('legacy operational failure has no authenticated prepare command');
-  const prepareIndex = String(latest - 1).padStart(6, '0');
-  const prepared = await authenticateStoredCommand(commandDirectory, prepareIndex);
-  requireStoredProcess(prepared.record, [request.commands.mdlm, 'scenario', 'prepare', request.assignmentId, '--json'], context.repository, request.timeoutMs, 0);
+  if (request.timeoutMs !== 900_000 || request.mdlmPiCommandTimeoutMs !== 600_000 ||
+      request.mdlmPiAssignmentTimeoutMs !== 840_000) {
+    throw new Error('legacy operational failure recovery requires the exact run-009 timeout policy');
+  }
+  const recovery = request.operationalFailureRecovery;
+  const resultEvidence = await immutableFileEvidence(recovery.resultPath);
+  if (resultEvidence.digest !== recovery.resultDigest) throw new Error('pinned run-008 result digest differs from the operator pin');
+  let priorResult;
+  try { priorResult = JSON.parse(resultEvidence.bytes.toString('utf8')); }
+  catch { throw new Error('pinned run-008 result is not valid JSON'); }
+  const resultKeys = [
+    'assignmentId', 'contract', 'decision', 'detail', 'mdlmPi', 'postRunSnapshot',
+    'process', 'reason', 'recoverable', 'snapshot', 'status',
+  ].sort();
+  if (!priorResult || typeof priorResult !== 'object' || Array.isArray(priorResult) ||
+      !sameJson(Object.keys(priorResult).sort(), resultKeys) || priorResult.contract !== 'mdlm-demo-run-result@2' ||
+      priorResult.status !== 'stopped' || priorResult.assignmentId !== 'bdb9ffc9-3491-443b-88b0-80d5dc800781' ||
+      priorResult.assignmentId !== request.assignmentId || priorResult.recoverable !== false ||
+      priorResult.reason !== 'mdlm-pi-operational-failure' ||
+      priorResult.detail !== "mdlm-pi exit 1 and result status 'operational-failure' disagree" ||
+      !priorResult.decision || !sameJson(Object.keys(priorResult.decision).sort(), ['authorityBasis', 'digest', 'origin']) ||
+      priorResult.decision.origin !== 'operator-selected' ||
+      typeof priorResult.decision.authorityBasis !== 'string' || priorResult.decision.authorityBasis.length === 0 ||
+      !/^sha256:[0-9a-f]{64}$/.test(priorResult.decision.digest ?? '')) {
+    throw new Error('pinned run-008 result does not have the exact legacy operational-failure contract');
+  }
+  const exactSnapshotReference = (actual, directory, digest, label) => {
+    const expected = { contract: 'mdlm-demo-snapshot-created@1', status: 'complete', snapshotDirectory: directory, digest };
+    if (!sameJson(actual, expected)) throw new Error(`pinned run-008 result ${label} reference differs from the operator pin`);
+  };
+  exactSnapshotReference(priorResult.snapshot, recovery.initialSnapshotDirectory, recovery.initialSnapshotDigest, 'initial snapshot');
+  exactSnapshotReference(priorResult.postRunSnapshot, recovery.postSnapshotDirectory, recovery.postSnapshotDigest, 'post-run snapshot');
+  const initialSnapshot = await verifySnapshot(recovery.initialSnapshotDirectory, recovery.initialSnapshotDigest, false);
+  const postSnapshot = await verifySnapshot(recovery.postSnapshotDirectory, recovery.postSnapshotDigest, true);
+  const initial = initialSnapshot.snapshot;
+  const post = postSnapshot.snapshot;
+  const unchanged = sameJson(initial.lifecycleRepository, post.lifecycleRepository) &&
+    sameJson(initial.assignmentRepository, post.assignmentRepository) && sameJson(initial.assignment, post.assignment) &&
+    sameJson(initial.status, post.status) && sameJson(initial.diagnosis, post.diagnosis) &&
+    sameJson(
+      observedRunIdentity(initial.provenance, processPackage, request.operator, request),
+      observedRunIdentity(post.provenance, processPackage, request.operator, request),
+    );
+  if (!unchanged || initial.lifecycleRepository?.clean !== true || post.lifecycleRepository?.clean !== true ||
+      initial.assignment?.id !== request.assignmentId || initial.assignment.selected !== true ||
+      initial.assignment.disposition !== 'active' || !statusHasActiveAssignment(initial.status, request.assignmentId) ||
+      !sameProcessPackageIdentity(initial.status?.package, processPackage) ||
+      !sameRepositoryFingerprint(initial.assignmentRepository, initial.lifecycleRepository)) {
+    throw new Error('pinned run-008 snapshots do not prove one exact unchanged clean active Assignment boundary');
+  }
+  for (const [snapshot, label] of [[initial, 'initial'], [post, 'post-run'], [captured, 'current']]) {
+    requireCertainJournalAbsence(snapshot.journal, `${label} runner transaction journal`);
+    requireCertainJournalAbsence(snapshot.piJournal, `${label} mdlm-pi journal`);
+  }
+  if (!sameJson(captured.lifecycleRepository, post.lifecycleRepository) ||
+      !sameJson(captured.assignmentRepository, post.assignmentRepository) ||
+      !sameJson(captured.assignment, post.assignment) || !sameProcessPackageIdentity(captured.status?.package, post.status?.package)) {
+    throw new Error('current boundary differs from the operator-pinned run-008 post-run snapshot');
+  }
+  const expectedLegacyIdentity = observedRunIdentity(initial.provenance, processPackage, request.operator, request);
+  expectedLegacyIdentity.contract = 'mdlm-demo-run-identity@4';
+  delete expectedLegacyIdentity.mdlmPiCommandTimeoutMs;
+  delete expectedLegacyIdentity.mdlmPiAssignmentTimeoutMs;
+  const currentAsLegacy = { ...runIdentity, contract: 'mdlm-demo-run-identity@4' };
+  delete currentAsLegacy.mdlmPiCommandTimeoutMs;
+  delete currentAsLegacy.mdlmPiAssignmentTimeoutMs;
+  if (!sameJson(legacyIdentity, expectedLegacyIdentity) || !sameJson(legacyIdentity, currentAsLegacy)) {
+    throw new Error('legacy run identity is not the exact operator, artifact, package, tool, source, and harness identity');
+  }
+
+  const expectedNames = ['command-000001.json', 'command-000001.stderr', 'command-000001.stdout',
+    'command-000002.json', 'command-000002.stderr', 'command-000002.stdout'];
+  if (!sameJson(names, expectedNames)) throw new Error('legacy operational failure command evidence is not the exact two-command sequence');
+  const prepared = await authenticateStoredCommand(commandDirectory, '000001');
+  requireStoredProcess(prepared.record, [request.commands.mdlm, 'scenario', 'prepare', request.assignmentId, '--json'], context.repository, 900_000, 0);
   if (prepared.stderr.length !== 0) throw new Error('legacy operational failure prepare command has stderr bytes');
   validateScenarioPrepare(JSON.parse(prepared.stdout.toString('utf8')), {
-    assignmentId: request.assignmentId,
-    package: processPackage,
-    repository: captured.assignmentRepository,
+    assignmentId: request.assignmentId, package: processPackage, repository: initial.assignmentRepository,
   });
+  requireStoredProcess(failed.record, expectedPi, context.repository, 900_000, 1);
+  const failure = requireTypedOperationalFailure(failed.record, failed.stdout, failed.stderr);
+  const exactFailure = { status: 'operational-failure', error: 'MDLM command exceeded 30000ms', details: { arguments: ['status', '--json'] } };
+  if (!sameJson(failure, exactFailure) || !sameJson(priorResult.process, failed.record) ||
+      !sameJson(priorResult.mdlmPi, {
+        kind: 'failure', status: 'mdlm-pi-operational-failure',
+        detail: "mdlm-pi exit 1 and result status 'operational-failure' disagree", document: exactFailure,
+      })) {
+    throw new Error('private run-008 command evidence differs from the operator-pinned result');
+  }
   const identity = await optionalJson(path.join(assignmentDirectory, 'identity.json'));
   const expectedIdentity = {
-    contract: 'mdlm-demo-assignment-identity@1',
-    assignmentId: request.assignmentId,
-    lifecycleRepository: captured.lifecycleRepository,
-    assignmentRepository: captured.assignmentRepository,
+    contract: 'mdlm-demo-assignment-identity@1', assignmentId: request.assignmentId,
+    lifecycleRepository: initial.lifecycleRepository, assignmentRepository: initial.assignmentRepository,
   };
-  if (!sameJson(identity, expectedIdentity) || captured.lifecycleRepository?.clean !== true) {
-    throw new Error('legacy operational failure is not at its exact unchanged Assignment boundary');
-  }
-  requireCertainJournalAbsence(captured.journal, 'runner transaction journal');
-  requireCertainJournalAbsence(captured.piJournal, 'mdlm-pi journal');
+  if (!sameJson(identity, expectedIdentity)) throw new Error('legacy Assignment identity differs from the pinned run-008 boundary');
+  const stopDirectory = path.join(assignmentDirectory, 'shim', 'stops');
+  const shimConfig = await optionalJson(path.join(assignmentDirectory, 'shim', 'config.json'));
+  const expectedShimConfig = {
+    contract: 'mdlm-demo-shim-config@1', realMdlm: request.commands.mdlm,
+    allowedAssignment: request.assignmentId, package: processPackage,
+    repository: initial.assignmentRepository, stopDirectory, timeoutMs: 900_000,
+  };
+  if (!sameJson(shimConfig, expectedShimConfig)) throw new Error('legacy shim configuration differs from the pinned run-008 boundary');
   const privateEvidence = await inspectOperationalPrivateEvidence(
-    assignmentDirectory,
-    path.join(context.gitDirectory, 'mdlm-pi', 'run.json'),
-    path.join(assignmentDirectory, 'shim', 'stops'),
+    assignmentDirectory, path.join(context.gitDirectory, 'mdlm-pi', 'run.json'), stopDirectory,
   );
   if (!privateEvidence.safe) throw new Error(`legacy operational failure has ambiguous private evidence: ${privateEvidence.detail}`);
   return writeOperationalFailureMarker({
-    source: 'legacy-command-evidence-migration',
-    request,
-    context,
-    assignmentDirectory,
-    assignmentId: request.assignmentId,
-    initialSnapshot: { snapshotDirectory: null, digest: null },
-    initial: captured,
-    postSnapshot: { snapshotDirectory: null, digest: null },
-    post: captured,
-    processPackage,
-    commandEvidence: { index: latest, prefix: path.join(commandDirectory, `command-${index}`) },
+    source: 'legacy-command-evidence-migration', request, context, assignmentDirectory,
+    assignmentId: request.assignmentId, initialSnapshot, initial, postSnapshot, post, processPackage,
+    commandEvidence: { index: 2, prefix: path.join(commandDirectory, 'command-000002') },
   });
 }
 
@@ -1894,7 +1960,7 @@ function required(value, label) { if (typeof value !== 'string' || value.length 
 function validateRunRequest(value) {
   const allowed = new Set([
     'adapterInputsPath', 'assignmentId', 'checkpointRecovery', 'commands', 'contract', 'decisionCatalogPath',
-    'evidenceDirectory', 'harness', 'mdlmPiAssignmentTimeoutMs', 'mdlmPiCommandTimeoutMs', 'operator', 'provenance',
+    'evidenceDirectory', 'harness', 'mdlmPiAssignmentTimeoutMs', 'mdlmPiCommandTimeoutMs', 'operationalFailureRecovery', 'operator', 'provenance',
     'repository', 'signal', 'stateDirectory', 'timeoutMs',
   ]);
   for (const key of Object.keys(value)) {
@@ -1918,6 +1984,26 @@ function validateRunRequest(value) {
     if (!path.isAbsolute(recovery.snapshotDirectory)) throw new Error('checkpointRecovery.snapshotDirectory must be an absolute path');
     if (!/^sha256:[0-9a-f]{64}$/.test(recovery.digest ?? '')) {
       throw new Error('checkpointRecovery.digest must be sha256:<64 lowercase hex>');
+    }
+  }
+  if (value.operationalFailureRecovery !== undefined) {
+    const recovery = value.operationalFailureRecovery;
+    const keys = [
+      'initialSnapshotDigest', 'initialSnapshotDirectory', 'postSnapshotDigest',
+      'postSnapshotDirectory', 'resultDigest', 'resultPath',
+    ];
+    if (!recovery || typeof recovery !== 'object' || Array.isArray(recovery) ||
+        !sameJson(Object.keys(recovery).sort(), keys)) {
+      throw new Error(`operationalFailureRecovery must contain exactly ${keys.join(', ')}`);
+    }
+    for (const name of ['resultPath', 'initialSnapshotDirectory', 'postSnapshotDirectory']) {
+      required(recovery[name], `operationalFailureRecovery.${name}`);
+      if (!path.isAbsolute(recovery[name])) throw new Error(`operationalFailureRecovery.${name} must be an absolute path`);
+    }
+    for (const name of ['resultDigest', 'initialSnapshotDigest', 'postSnapshotDigest']) {
+      if (!/^sha256:[0-9a-f]{64}$/.test(recovery[name] ?? '')) {
+        throw new Error(`operationalFailureRecovery.${name} must be sha256:<64 lowercase hex>`);
+      }
     }
   }
 }

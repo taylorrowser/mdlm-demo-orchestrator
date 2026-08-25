@@ -13,7 +13,7 @@ const snapshotManifestPaths = [
   ...commandNames.flatMap(name => ['json', 'stderr', 'stdout'].map(extension => `commands/${name}.${extension}`)),
 ].sort();
 
-export async function verifySnapshot(snapshotDirectory, expectedDigest) {
+export async function verifySnapshot(snapshotDirectory, expectedDigest, expectedPostRun = true) {
   if (typeof snapshotDirectory !== 'string' || !path.isAbsolute(snapshotDirectory)) {
     throw new Error('checkpointRecovery.snapshotDirectory must be an absolute path');
   }
@@ -69,7 +69,7 @@ export async function verifySnapshot(snapshotDirectory, expectedDigest) {
   let record;
   try { record = JSON.parse(evidenceByPath.get('snapshot.json').bytes.toString('utf8')); }
   catch { throw new Error('pinned snapshot record is not valid JSON'); }
-  if (record?.contract !== 'mdlm-demo-snapshot@2' || record.postRun !== true ||
+  if (record?.contract !== 'mdlm-demo-snapshot@2' || record.postRun !== expectedPostRun ||
       record.commandFailure !== null || record.provenance?.valid !== true) {
     throw new Error('pinned snapshot is not a complete post-run snapshot');
   }

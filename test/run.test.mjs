@@ -136,6 +136,135 @@ const fs=require('node:fs'); const attempts=fs.existsSync(${JSON.stringify(attem
   return { ...value, attemptsPath, run008 };
 }
 
+function runIdentityFromSnapshot(snapshot, request) {
+  const gitIdentity = value => ({ repository: value.repository, commit: value.observedCommit, tree: value.observedTree });
+  const file = value => ({ realpath: value.realpath, digest: value.digest, bytes: value.bytes });
+  const processPackage = {
+    reference: snapshot.status.package.reference,
+    digest: snapshot.status.package.digest,
+    language: snapshot.status.package.language,
+  };
+  return {
+    contract: 'mdlm-demo-run-identity@5',
+    operator: request.operator,
+    mdlmPiCommandTimeoutMs: request.mdlmPiCommandTimeoutMs,
+    mdlmPiAssignmentTimeoutMs: request.mdlmPiAssignmentTimeoutMs,
+    processPackage,
+    source: gitIdentity(snapshot.provenance.source),
+    packageArtifact: file(snapshot.provenance.package),
+    piPackageArtifact: file(snapshot.provenance.piPackage),
+    tooling: {
+      contract: snapshot.provenance.tooling.contract,
+      digest: snapshot.provenance.tooling.digest,
+      entries: snapshot.provenance.tooling.entries,
+      files: snapshot.provenance.tooling.files,
+      symlinks: snapshot.provenance.tooling.symlinks,
+      bytes: snapshot.provenance.tooling.bytes,
+      lock: file(snapshot.provenance.tooling.lock),
+    },
+    tools: { mdlm: file(snapshot.provenance.tools.mdlm), mdlmPi: file(snapshot.provenance.tools.mdlmPi) },
+    qualificationHarness: {
+      ...gitIdentity(snapshot.provenance.qualificationHarness),
+      repositoryLocator: snapshot.provenance.qualificationHarness.repositoryLocator,
+      manifest: file(snapshot.provenance.qualificationHarness.manifest),
+    },
+  };
+}
+
+async function legacyRun009Fixture() {
+  const run008 = JSON.parse(await readFile(run008OperationalFailureFixture));
+  const workerLog = path.join(os.tmpdir(), `mdlm-demo-run009-worker-${process.pid}-${Date.now()}-${Math.random()}`);
+  const piScript = `#!/usr/bin/env node\nrequire('node:fs').appendFileSync(${JSON.stringify(workerLog)},'invoke\\n'); console.log('{"status":"lifecycle-complete"}');\n`;
+  const value = await fixture({ scenarioReference: 'ordinary@1', piScript });
+  const assignment = 'bdb9ffc9-3491-443b-88b0-80d5dc800781';
+  value.assignment = assignment;
+  value.request.assignmentId = assignment;
+  value.request.signal = 'clean-interrupted-command';
+  await writeFile(value.assignmentStatePath, assignment);
+
+  const pinnedRoot = path.join(value.scratch, 'preserved-run-008');
+  const initialDirectory = path.join(pinnedRoot, 'snapshot-000001');
+  const postDirectory = path.join(pinnedRoot, 'snapshot-000002');
+  const assignmentStateDirectory = assignmentDirectory(value.request);
+  const snapshotInput = postRun => ({
+    contract: 'mdlm-demo-snapshot-request@1', repository: value.repository,
+    snapshotDirectory: postRun ? postDirectory : initialDirectory,
+    assignmentId: assignment, timeoutMs: value.request.timeoutMs, postRun,
+    journalPath: path.join(assignmentStateDirectory, 'transaction.json'),
+    piJournalPath: path.join(value.repository, '.git', 'mdlm-pi', 'run.json'),
+    provenance: value.request.provenance,
+  });
+  const initialExecution = exec(process.execPath, [cli, 'snapshot'], root, JSON.stringify(snapshotInput(false)));
+  assert.equal(initialExecution.status, 0, initialExecution.stderr);
+  const postExecution = exec(process.execPath, [cli, 'snapshot'], root, JSON.stringify(snapshotInput(true)));
+  assert.equal(postExecution.status, 0, postExecution.stderr);
+  const initialResult = JSON.parse(initialExecution.stdout);
+  const postResult = JSON.parse(postExecution.stdout);
+  const initialSnapshot = JSON.parse(await readFile(path.join(initialDirectory, 'snapshot.json')));
+
+  const evidenceDirectory = path.join(assignmentStateDirectory, 'command-evidence');
+  await mkdir(evidenceDirectory, { recursive: true });
+  const preparedExecution = exec(value.mdlm, ['scenario', 'prepare', assignment, '--json'], value.repository);
+  assert.equal(preparedExecution.status, 0, preparedExecution.stderr);
+  const preparedBytes = Buffer.from(preparedExecution.stdout);
+  const empty = Buffer.alloc(0);
+  const commandTemplate = JSON.parse(await readFile(path.join(
+    run008OperationalFailureDirectory, 'private-assignment-state', 'command-evidence', 'command-000001.json',
+  )));
+  const preparedRecord = commandRecord(commandTemplate, {
+    argv: [value.mdlm, 'scenario', 'prepare', assignment, '--json'], cwd: value.repository,
+    timeoutMs: 900_000, stdout: preparedBytes, stderr: empty, exitStatus: 0,
+  });
+  await writeEvidenceTriplet(evidenceDirectory, '000001', preparedRecord, preparedBytes, empty);
+  const failureBytes = Buffer.from(run008.process.stderrBase64, 'base64');
+  const failedRecord = commandRecord(commandTemplate, {
+    argv: [value.mdlmPi, 'run', value.repository, '--mdlm', path.join(root, 'bin', 'mdlm-demo-mdlm-shim.mjs'),
+      '--provider', 'openai-codex', '--model', 'gpt-5.6-sol', '--thinking', 'high'],
+    cwd: value.repository, timeoutMs: 900_000, stdout: empty, stderr: failureBytes, exitStatus: 1,
+  });
+  await writeEvidenceTriplet(evidenceDirectory, '000002', failedRecord, empty, failureBytes);
+  await writeFile(path.join(assignmentStateDirectory, 'identity.json'), `${JSON.stringify({
+    contract: 'mdlm-demo-assignment-identity@1', assignmentId: assignment,
+    lifecycleRepository: initialSnapshot.lifecycleRepository,
+    assignmentRepository: initialSnapshot.assignmentRepository,
+  }, null, 2)}\n`);
+  const stopDirectory = path.join(assignmentStateDirectory, 'shim', 'stops');
+  await mkdir(path.dirname(stopDirectory), { recursive: true });
+  await writeFile(path.join(assignmentStateDirectory, 'shim', 'config.json'), `${JSON.stringify({
+    contract: 'mdlm-demo-shim-config@1', realMdlm: value.mdlm, allowedAssignment: assignment,
+    package: initialSnapshot.assignment.package, repository: initialSnapshot.assignmentRepository,
+    stopDirectory, timeoutMs: 900_000,
+  }, null, 2)}\n`);
+
+  const resultPath = path.join(pinnedRoot, 'run-008.runner.stdout');
+  const result = {
+    ...run008,
+    snapshot: initialResult,
+    assignmentId: assignment,
+    process: failedRecord,
+    postRunSnapshot: postResult,
+  };
+  await writeFile(resultPath, JSON.stringify(result));
+  const identityDirectory = path.join(value.repository, '.git', 'mdlm-demo-orchestrator');
+  await mkdir(identityDirectory, { recursive: true });
+  const legacyIdentity = runIdentityFromSnapshot(initialSnapshot, value.request);
+  legacyIdentity.contract = 'mdlm-demo-run-identity@4';
+  delete legacyIdentity.mdlmPiCommandTimeoutMs;
+  delete legacyIdentity.mdlmPiAssignmentTimeoutMs;
+  const identityPath = path.join(identityDirectory, 'run-identity.json');
+  await writeFile(identityPath, `${JSON.stringify(legacyIdentity, null, 2)}\n`);
+  value.request.operationalFailureRecovery = {
+    resultPath,
+    resultDigest: `sha256:${createHash('sha256').update(await readFile(resultPath)).digest('hex')}`,
+    initialSnapshotDirectory: initialDirectory,
+    initialSnapshotDigest: initialResult.digest,
+    postSnapshotDirectory: postDirectory,
+    postSnapshotDigest: postResult.digest,
+  };
+  value.request.evidenceDirectory = path.join(value.scratch, 'run-009-snapshot');
+  return { ...value, workerLog, identityPath, legacyIdentity };
+}
+
 function cleanLifecycle(repository) {
   const head = git(['rev-parse', 'HEAD^{commit}'], repository);
   return {
@@ -793,13 +922,49 @@ const fs=require('node:fs'); let input=''; process.stdin.on('data',chunk=>input+
   assert.equal(calls.some(args => args[0] === 'scenario' && args[1] === 'submit'), false);
 });
 
-test('legacy run-008 command evidence migrates to a run-only marker before retry', async () => {
-  const value = await operationalFailureFixture();
-  const first = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
-  assert.equal(first.status, 0, first.stderr);
-  assert.equal(JSON.parse(first.stdout).reason, 'pre-submission-operational-failure');
-  await rm(operationalRecoveryDirectoryForTest(value), { recursive: true });
+test('legacy operational-failure recovery pins use one exact request schema', async () => {
+  const value = await fixture({ scenarioReference: 'ordinary@1' });
+  value.request.signal = 'clean-interrupted-command';
+  value.request.operationalFailureRecovery = {
+    resultPath: path.join(value.scratch, 'run-008.runner.stdout'),
+    resultDigest: `sha256:${'1'.repeat(64)}`,
+    initialSnapshotDirectory: path.join(value.scratch, 'snapshot-000001'),
+    initialSnapshotDigest: `sha256:${'2'.repeat(64)}`,
+    postSnapshotDirectory: path.join(value.scratch, 'snapshot-000002'),
+    postSnapshotDigest: `sha256:${'3'.repeat(64)}`,
+  };
 
+  const accepted = exec(process.execPath, [cli, 'resume'], root, JSON.stringify({
+    ...value.request,
+    contract: 'mdlm-demo-resume-request@1',
+  }));
+  assert.equal(accepted.status, 0, accepted.stderr);
+
+  value.request.operationalFailureRecovery.extra = true;
+  const rejected = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
+  assert.equal(rejected.status, 1);
+  assert.match(rejected.stderr, /operationalFailureRecovery must contain exactly/);
+});
+
+test('the real run-008 evidence and run-009 request recover only through an operator-pinned run', async () => {
+  const fixtureBytes = await readFile(run008OperationalFailureFixture);
+  assert.equal(createHash('sha256').update(fixtureBytes).digest('hex'), '940cd1d5ee4d332907ff4d92af5b0d1789e66cb8687c60bb909324d71ad76523');
+  const privateFixture = path.join(run008OperationalFailureDirectory, 'private-assignment-state');
+  const exactPrivateDigests = {
+    'identity.json': '9ac65f5a170648db741d31c609f7ffbdc15e22b16bc4952b74fdeddb98994b5f',
+    'command-evidence/command-000001.json': 'a4ddefbbcd817a6473d29794857ac40c3f2637be951e20ce557ff8e265f6783a',
+    'command-evidence/command-000001.stdout': '33a70ec41e03544a59d40d9cec3a6365df055f836b95b7b8c48575dfe40b2ad2',
+    'command-evidence/command-000002.json': 'c6eae9e12cdd8a2ea633e1234b9964680dd9b890b86b76d1863878a214baf399',
+    'command-evidence/command-000002.stderr': '25d375f49181145713f6c9bf248c6200f630584bb675236d2ecc7d9622df22e1',
+    'shim/config.json': 'e40adb042520fcfb6ebf15e8a2b6790b930fcc319b70c972d52e8488d6db9865',
+  };
+  for (const [relative, expected] of Object.entries(exactPrivateDigests)) {
+    assert.equal(createHash('sha256').update(await readFile(path.join(privateFixture, relative))).digest('hex'), expected, relative);
+  }
+
+  const value = await legacyRun009Fixture();
+  const legacyBytes = await readFile(value.identityPath);
+  const callsBefore = (await readFile(path.join(value.scratch, 'calls.log'), 'utf8')).trim().split('\n').length;
   const resumed = exec(process.execPath, [cli, 'resume'], root, JSON.stringify({
     ...value.request,
     contract: 'mdlm-demo-resume-request@1',
@@ -807,18 +972,78 @@ test('legacy run-008 command evidence migrates to a run-only marker before retry
 
   assert.equal(resumed.status, 0, resumed.stderr);
   const refused = JSON.parse(resumed.stdout);
-  assert.equal(refused.reason, 'wrong-recovery-mode');
+  assert.equal(refused.reason, 'wrong-recovery-mode', JSON.stringify(refused));
   assert.equal(refused.requiredNextMode, 'run');
   assert.equal(refused.operationalFailureRecovery.source, 'legacy-command-evidence-migration');
-  assert.equal(await readFile(value.attemptsPath, 'utf8'), '1');
-  const migrated = JSON.parse(await readFile(refused.operationalFailureRecovery.marker.path, 'utf8'));
-  assert.equal(migrated.source, 'legacy-command-evidence-migration');
-  assert.equal(migrated.initialBoundary.snapshotDirectory, null);
+  assert.deepEqual(await readFile(value.identityPath), legacyBytes);
+  await assert.rejects(readFile(value.workerLog), error => error.code === 'ENOENT');
+  const callsAfterResume = (await readFile(path.join(value.scratch, 'calls.log'), 'utf8')).trim().split('\n').length;
+  assert.equal(callsAfterResume - callsBefore, 6); // Initial and post snapshots only.
 
-  const retried = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
-  assert.equal(retried.status, 0, retried.stderr);
-  assert.equal(JSON.parse(retried.stdout).status, 'completed');
-  assert.equal(await readFile(value.attemptsPath, 'utf8'), '2');
+  const resumedAgain = exec(process.execPath, [cli, 'resume'], root, JSON.stringify({
+    ...value.request,
+    contract: 'mdlm-demo-resume-request@1',
+  }));
+  assert.equal(resumedAgain.status, 0, resumedAgain.stderr);
+  assert.equal(JSON.parse(resumedAgain.stdout).reason, 'wrong-recovery-mode');
+  assert.deepEqual(await readFile(value.identityPath), legacyBytes);
+  await assert.rejects(readFile(value.workerLog), error => error.code === 'ENOENT');
+
+  const executed = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
+  assert.equal(executed.status, 0, executed.stderr);
+  assert.equal(JSON.parse(executed.stdout).status, 'completed');
+  assert.equal(await readFile(value.workerLog, 'utf8'), 'invoke\n');
+  const migratedIdentity = JSON.parse(await readFile(value.identityPath));
+  assert.equal(migratedIdentity.contract, 'mdlm-demo-run-identity@5');
+  assert.equal(migratedIdentity.mdlmPiCommandTimeoutMs, 600_000);
+  assert.equal(migratedIdentity.mdlmPiAssignmentTimeoutMs, 840_000);
+});
+
+test('legacy migration rejects every unpinned or altered run-008 boundary before worker invocation', async () => {
+  const cases = {
+    'missing operator pin': async value => { delete value.request.operationalFailureRecovery; },
+    'wrong result digest': async value => { value.request.operationalFailureRecovery.resultDigest = `sha256:${'0'.repeat(64)}`; },
+    'wrong snapshot digest': async value => { value.request.operationalFailureRecovery.initialSnapshotDigest = `sha256:${'0'.repeat(64)}`; },
+    'swapped snapshots': async value => {
+      const recovery = value.request.operationalFailureRecovery;
+      [recovery.initialSnapshotDirectory, recovery.postSnapshotDirectory] = [recovery.postSnapshotDirectory, recovery.initialSnapshotDirectory];
+      [recovery.initialSnapshotDigest, recovery.postSnapshotDigest] = [recovery.postSnapshotDigest, recovery.initialSnapshotDigest];
+    },
+    'tampered snapshot bytes': async value => {
+      const file = path.join(value.request.operationalFailureRecovery.postSnapshotDirectory, 'commands', 'status.stdout');
+      await chmod(file, 0o600);
+      await writeFile(file, 'tampered\n');
+    },
+    'non-v4 identity': async value => {
+      const identity = JSON.parse(await readFile(value.identityPath));
+      identity.contract = 'mdlm-demo-run-identity@3';
+      await writeFile(value.identityPath, `${JSON.stringify(identity, null, 2)}\n`);
+    },
+    'wrong result Assignment': async value => {
+      const recovery = value.request.operationalFailureRecovery;
+      const result = JSON.parse(await readFile(recovery.resultPath));
+      result.assignmentId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+      await writeFile(recovery.resultPath, JSON.stringify(result));
+      recovery.resultDigest = `sha256:${createHash('sha256').update(await readFile(recovery.resultPath)).digest('hex')}`;
+    },
+    'arbitrary extra legacy command': async value => {
+      const directory = path.join(assignmentDirectory(value.request), 'command-evidence');
+      for (const extension of ['json', 'stderr', 'stdout']) {
+        await writeFile(path.join(directory, `command-000003.${extension}`), await readFile(path.join(directory, `command-000002.${extension}`)));
+      }
+    },
+  };
+  for (const [name, mutate] of Object.entries(cases)) {
+    const value = await legacyRun009Fixture();
+    await mutate(value);
+    const execution = exec(process.execPath, [cli, 'resume'], root, JSON.stringify({
+      ...value.request, contract: 'mdlm-demo-resume-request@1',
+    }));
+    assert.equal(execution.status, 0, `${name}: ${execution.stderr}`);
+    assert.notEqual(JSON.parse(execution.stdout).reason, 'wrong-recovery-mode', name);
+    await assert.rejects(readFile(value.workerLog), error => error.code === 'ENOENT', name);
+    await assert.rejects(stat(operationalRecoveryDirectoryForTest(value)), error => error.code === 'ENOENT', name);
+  }
 });
 
 test('operational failure marker publication recovers after a synced pending-write crash', async () => {
