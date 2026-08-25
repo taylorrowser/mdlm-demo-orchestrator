@@ -24,6 +24,10 @@ async function fixture({
   piScript = '#!/bin/sh\nexit 0\n',
   executionId = '55555555-5555-4555-8555-555555555555',
   publicationPath,
+  statusPackage = { reference: 'pkg@1', digest: `sha256:${'1'.repeat(64)}`, language: 'lang@1' },
+  assignmentPackage = statusPackage,
+  doctorPackage = { id: 'pkg', version: '1', ...statusPackage },
+  packetPackage = assignmentPackage,
 } = {}) {
   const scratch = await mkdtemp(path.join(os.tmpdir(), 'issue-213-run-'));
   const repository = path.join(scratch, 'repository');
@@ -65,13 +69,13 @@ const a=process.argv.slice(2), root=process.cwd(), log=${JSON.stringify(path.joi
 fs.appendFileSync(log,JSON.stringify(a)+'\\n');
 const assignment=fs.readFileSync(${JSON.stringify(assignmentStatePath)},'utf8'), scenario=fs.readFileSync(${JSON.stringify(scenarioStatePath)},'utf8'), head=${JSON.stringify(base)};
 const malformedPath=${JSON.stringify(malformedDigestPath)}, malformedResponses=fs.existsSync(malformedPath)?[{digest:fs.readFileSync(malformedPath,'utf8'),diagnostics:[{code:'FIX',message:'correct it'}]}]:[];
-const pkg={reference:'pkg@1',digest:'sha256:${'1'.repeat(64)}',language:'lang@1'};
+const statusPackage=${JSON.stringify(statusPackage)}, assignmentPackage=${JSON.stringify(assignmentPackage)}, doctorPackage=${JSON.stringify(doctorPackage)}, packetPackage=${JSON.stringify(packetPackage)};
 const repo={head,trackedState:${JSON.stringify(trackedState)}};
 function out(x){process.stdout.write(JSON.stringify(x)+'\\n')}
-if(a[0]==='doctor') out({ok:true,command:'doctor',package:{id:'pkg',version:'1',...pkg},baselineRepositoryVerification:{verifiedBaselines:0,processDrift:0},index:{rebuilt:false,data:0,path:'.lifecycle/generated/indexes/data.json'},report:{rebuilt:false,data:0,path:'.lifecycle/generated/reports/lifecycle.json'},diagnostics:[]});
-else if(a[0]==='status') out({contract:'mdlm-status@1',ok:true,command:'status',package:pkg,currentOutcome:{outcome:'assignment',assignment:{allocation:'active',id:assignment}},recentTransaction:{available:false}});
-else if(a[0]==='assignment') out({contract:'mdlm-assignment-state@1',ok:true,command:'assignment.show',assignment:{id:assignment},selected:true,package:pkg,repository:repo,scenarioReference:scenario,disposition:'active',retryAvailability:{},malformedResponses});
-else if(a[0]==='scenario'&&a[1]==='prepare') out({contract:'mdlm-assignment-packet@2',ok:true,command:'scenario.prepare',assignment:{id:assignment},package:pkg,repository:repo,scenario:{reference:scenario},responseSchema:{},exactInputs:[]});
+if(a[0]==='doctor') out({ok:true,command:'doctor',package:doctorPackage,baselineRepositoryVerification:{verifiedBaselines:0,processDrift:0},index:{rebuilt:false,data:0,path:'.lifecycle/generated/indexes/data.json'},report:{rebuilt:false,data:0,path:'.lifecycle/generated/reports/lifecycle.json'},diagnostics:[]});
+else if(a[0]==='status') out({contract:'mdlm-status@1',ok:true,command:'status',package:statusPackage,currentOutcome:{outcome:'assignment',assignment:{allocation:'active',id:assignment}},recentTransaction:{available:false}});
+else if(a[0]==='assignment') out({contract:'mdlm-assignment-state@1',ok:true,command:'assignment.show',assignment:{id:assignment},selected:true,package:assignmentPackage,repository:repo,scenarioReference:scenario,disposition:'active',retryAvailability:{},malformedResponses});
+else if(a[0]==='scenario'&&a[1]==='prepare') out({contract:'mdlm-assignment-packet@2',ok:true,command:'scenario.prepare',assignment:{id:assignment},package:packetPackage,repository:repo,scenario:{reference:scenario},responseSchema:{},exactInputs:[]});
 else if(a[0]==='scenario'&&a[1]==='submit') { let chunks=[]; process.stdin.on('data',x=>chunks.push(x)); process.stdin.on('end',()=>{const bytes=Buffer.concat(chunks); fs.appendFileSync(${JSON.stringify(path.join(scratch, 'submit-count'))},'1\\n'); const id=${JSON.stringify(executionId)}; const dir=path.join(root,'.lifecycle/data/.transactions',id); fs.mkdirSync(dir,{recursive:true}); fs.writeFileSync(path.join(dir,'execution.json'),'execution\\n'); fs.writeFileSync(path.join(dir,'target.json'),'target\\n'); if(${uncertainSubmit}) process.exit(9); else out({contract:'mdlm-scenario-execution@4',ok:true,command:'scenario.submit',execution:{contract:'mdlm-scenario-execution@4',id,status:'completed',response:{assignment,digest:'sha256:'+crypto.createHash('sha256').update(bytes).digest('hex')},definition:{scenario},outputs:[{lifecycleDatum:{path:${publicationPath ? JSON.stringify(publicationPath) : "'.lifecycle/data/.transactions/'+id+'/target.json'"}}}]}}); }); }
 else {process.stderr.write('unexpected '+JSON.stringify(a));process.exit(8)}
 `;
@@ -100,6 +104,28 @@ else {process.stderr.write('unexpected '+JSON.stringify(a));process.exit(8)}
   };
   return { scratch, repository, request, mdlm, mdlmPi, tooling, assignment, assignmentStatePath, scenarioStatePath, malformedDigestPath, executionId };
 }
+
+test('run accepts the exact calculator run-002 Process Package shapes across command boundaries', async () => {
+  const statusBytes = await readFile(path.join(root, 'test', 'fixtures', 'calculator-run-002-mdlm-status.stdout'));
+  const assignmentBytes = await readFile(path.join(root, 'test', 'fixtures', 'calculator-run-002-assignment.stdout'));
+  assert.equal(createHash('sha256').update(statusBytes).digest('hex'), '77c654d5299c452fee6a64257edd05d7a2c2cae0d8bcea8800cd19c578489d5e');
+  assert.equal(createHash('sha256').update(assignmentBytes).digest('hex'), '9d81614a922c39f706885cd292d5436638cf71a68abb82924d00832f0d76be87');
+  const statusPackage = JSON.parse(statusBytes).package;
+  const assignmentPackage = JSON.parse(assignmentBytes).package;
+  const value = await fixture({
+    statusPackage,
+    assignmentPackage,
+    doctorPackage: statusPackage,
+    packetPackage: assignmentPackage,
+  });
+
+  const execution = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
+
+  assert.equal(execution.status, 0, execution.stderr);
+  assert.equal(JSON.parse(execution.stdout).status, 'completed', execution.stdout);
+  const pinned = JSON.parse(await readFile(path.join(value.repository, '.git', 'mdlm-demo-orchestrator', 'run-identity.json'), 'utf8'));
+  assert.deepEqual(pinned.processPackage, assignmentPackage);
+});
 
 test('run and resume submit and commit an external Assignment exactly once', async () => {
   const { scratch, repository, request } = await fixture();

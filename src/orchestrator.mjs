@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { adaptAssignment } from './adapter.mjs';
 import { validateScenarioPrepare } from './contracts.mjs';
 import { snapshot } from './evidence.mjs';
+import { normalizeProcessPackage, sameProcessPackageIdentity } from './process-package.mjs';
 import {
   commandRecord, commandSucceeded, controlledEnvironment, gitEnvironment, parseJsonBytes,
   requireContract, runProcess, sha256,
@@ -77,8 +78,8 @@ async function executeRun(request, context, assignmentDirectory, journalPath, sn
   }
   const assignment = captured.assignment;
   const status = captured.status;
-  const processPackage = reconcileProcessPackage(status.package, assignment.package);
-  if (processPackage === null) return stopped('package-drift', 'status and Assignment Process Package identities differ', snapshotResult, assignmentId);
+  const processPackage = reconcileProcessPackage(status.package, assignment.package, captured.diagnosis.package);
+  if (processPackage === null) return stopped('package-drift', 'doctor, status, and Assignment Process Package identities differ', snapshotResult, assignmentId);
   const runIdentity = observedRunIdentity(captured.provenance, processPackage, request.operator);
   const identityMatch = await pinRunIdentity(context.identityDirectory, runIdentity);
   if (!identityMatch) return stopped('run-identity-drift', 'operator, artifact, installed Process Package, executable target, source, or harness identity changed', snapshotResult, assignmentId);
@@ -155,7 +156,7 @@ async function executeRun(request, context, assignmentDirectory, journalPath, sn
   let packet;
   try { packet = validateScenarioPrepare(parseJsonBytes(prepare.stdout, 'scenario prepare'), assignmentId); }
   catch (error) { return stopped('malformed-assignment', error.message, snapshotResult, assignmentId, { process: commandRecord(prepare) }); }
-  if (!sameJson(packet.package, assignment.package) || !sameJson(packet.repository, assignment.repository)) {
+  if (!sameProcessPackageIdentity(packet.package, assignment.package) || !sameJson(packet.repository, assignment.repository)) {
     return stopped('assignment-fingerprint-drift', 'prepared packet differs from the snapshotted Assignment', snapshotResult, assignmentId);
   }
   if (!externalScenarios.has(packet.scenario?.reference)) {
@@ -358,7 +359,7 @@ async function inspectCorrectionContext(context, assignment, resultDocument) {
     typeof value.stderrPath === 'string' && value.stderrPath.length > 0;
   const journalShapeValid = journal.contract === 'mdlm-pi-run-journal@1' && journal.phase === 'submitting' &&
     journal.assignment?.id === assignment.id && journal.assignment?.scenario === assignment.scenarioReference &&
-    sameJson(journal.assignment?.package, assignment.package) && sameJson(journal.assignment?.repository, assignment.repository) &&
+    sameProcessPackageIdentity(journal.assignment?.package, assignment.package) && sameJson(journal.assignment?.repository, assignment.repository) &&
     typeof submission?.source === 'string' && /^sha256:[0-9a-f]{64}$/.test(submission?.digest ?? '') &&
     sha256(Buffer.from(submission.source)) === submission.digest &&
     (submission.previousTransactionId === null || typeof submission.previousTransactionId === 'string') &&
@@ -424,13 +425,15 @@ async function pinRunIdentity(identityDirectory, current) {
   if (previous === null) { await durableWriteJson(file, current); return true; }
   return sameJson(previous, current);
 }
-function reconcileProcessPackage(statusPackage, assignmentPackage) {
-  if (!validProcessPackage(statusPackage) || !sameJson(statusPackage, assignmentPackage)) return null;
-  return statusPackage;
-}
-function validProcessPackage(value) {
-  return value && typeof value.reference === 'string' && value.reference.length > 0 &&
-    /^sha256:[0-9a-f]{64}$/.test(value.digest ?? '') && typeof value.language === 'string' && value.language.length > 0;
+function reconcileProcessPackage(statusPackage, assignmentPackage, doctorPackage) {
+  try {
+    const normalized = normalizeProcessPackage(statusPackage, 'status.package');
+    if (!sameProcessPackageIdentity(statusPackage, assignmentPackage)) return null;
+    if (doctorPackage !== undefined && !sameProcessPackageIdentity(statusPackage, doctorPackage)) return null;
+    return normalized;
+  } catch {
+    return null;
+  }
 }
 
 async function reconcileRepositoryIdentity(identityDirectory, assignmentDirectory, assignmentId, lifecycle, assignmentRepository) {

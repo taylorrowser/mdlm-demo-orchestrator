@@ -1,6 +1,7 @@
 import { chmod, mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { validateDoctor } from './contracts.mjs';
+import { normalizeProcessPackage } from './process-package.mjs';
 import {
   commandRecord, commandSucceeded, environmentPolicy, fileIdentity, gitEnvironment,
   parseJsonBytes, requireContract, runProcess, sha256, toolingTreeIdentity,
@@ -298,10 +299,7 @@ function validateAssignmentState(value, expectedId) {
 }
 
 function validateProcessPackage(value, label) {
-  const packageIdentity = requireJsonObject(value, label);
-  requiredNonempty(packageIdentity.reference, `${label}.reference`);
-  if (!/^sha256:[0-9a-f]{64}$/.test(packageIdentity.digest ?? '')) throw new Error(`${label}.digest is invalid`);
-  requiredNonempty(packageIdentity.language, `${label}.language`);
+  normalizeProcessPackage(value, label);
 }
 
 function validateRepositoryFingerprint(value, label) {

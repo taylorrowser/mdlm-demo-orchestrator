@@ -1,4 +1,5 @@
 import { isDeepStrictEqual } from 'node:util';
+import { normalizeProcessPackage, sameProcessPackageIdentity } from './process-package.mjs';
 
 function requireObject(value, label) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${label} must be an object`);
@@ -7,13 +8,6 @@ function requireObject(value, label) {
 
 function requireNonemptyString(value, label) {
   if (typeof value !== 'string' || value.length === 0) throw new Error(`${label} must be a nonempty string`);
-}
-
-function validateProcessPackage(value) {
-  const packageIdentity = requireObject(value, 'scenario prepare package');
-  requireNonemptyString(packageIdentity.reference, 'scenario prepare package.reference');
-  if (!/^sha256:[0-9a-f]{64}$/.test(packageIdentity.digest ?? '')) throw new Error('scenario prepare package.digest is invalid');
-  requireNonemptyString(packageIdentity.language, 'scenario prepare package.language');
 }
 
 function validateRepositoryFingerprint(value) {
@@ -41,9 +35,7 @@ function validateDoctorPackage(value) {
   rejectUnknownKeys(packageIdentity, new Set(['id', 'version', 'reference', 'language', 'digest']), 'doctor.package');
   requireNonemptyString(packageIdentity.id, 'doctor.package.id');
   requireNonemptyString(packageIdentity.version, 'doctor.package.version');
-  requireNonemptyString(packageIdentity.reference, 'doctor.package.reference');
-  requireNonemptyString(packageIdentity.language, 'doctor.package.language');
-  if (!/^sha256:[0-9a-f]{64}$/.test(packageIdentity.digest ?? '')) throw new Error('doctor.package.digest is invalid');
+  normalizeProcessPackage(packageIdentity, 'doctor.package');
 }
 
 function validateDoctorDiagnostics(value) {
@@ -113,9 +105,9 @@ export function validateScenarioPrepare(value, expected = {}) {
   if (typeof expectedValues.assignmentId === 'string' && assignment.id !== expectedValues.assignmentId) {
     throw new Error(`scenario prepare assignment.id does not match requested Assignment '${expectedValues.assignmentId}'`);
   }
-  validateProcessPackage(packet.package);
+  normalizeProcessPackage(packet.package, 'scenario prepare package');
   validateRepositoryFingerprint(packet.repository);
-  if (expectedValues.package !== undefined && !isDeepStrictEqual(packet.package, expectedValues.package)) {
+  if (expectedValues.package !== undefined && !sameProcessPackageIdentity(packet.package, expectedValues.package)) {
     throw new Error('scenario prepare package fingerprint differs from the expected Assignment');
   }
   if (expectedValues.repository !== undefined && !isDeepStrictEqual(packet.repository, expectedValues.repository)) {
