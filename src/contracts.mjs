@@ -83,6 +83,7 @@ export function validateDoctor(value) {
     if (typeof result.selected !== 'boolean') throw new Error('doctor.selected must be boolean when doctor.ok is false');
     if (result.diagnostics.length === 0) throw new Error('doctor.diagnostics must not be empty when doctor.ok is false');
     if (!result.selected && result.package !== undefined) throw new Error('doctor.package is unsupported when doctor.selected is false');
+    if (result.selected && result.package === undefined) throw new Error('doctor.package is required when doctor.selected is true');
     if (result.package !== undefined) validateDoctorPackage(result.package);
     return result;
   }

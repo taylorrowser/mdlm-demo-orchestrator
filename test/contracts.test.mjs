@@ -49,6 +49,7 @@ test('doctor validation rejects malformed diagnostics and unknown success or fai
     { ...structuredClone(installedSuccess), outcome: 'healthy' },
     { ok: false, command: 'doctor', selected: false, diagnostics: [] },
     { ok: false, command: 'doctor', selected: false, package: structuredClone(installedSuccess.package), diagnostics: [diagnostic] },
+    { ok: false, command: 'doctor', selected: true, diagnostics: [diagnostic] },
     { ok: false, command: 'doctor', selected: true, diagnostics: [{ ...diagnostic, line: 0 }] },
     { ok: false, command: 'doctor', selected: true, diagnostics: [diagnostic], report: structuredClone(installedSuccess.report) },
   ];
