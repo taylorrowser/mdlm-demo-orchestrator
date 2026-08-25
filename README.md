@@ -1,6 +1,6 @@
 # MDLM demo orchestrator
 
-This repository contains the issue #213 recovery runner. It does not contain a successful public demonstration and has not run a real lifecycle repository.
+This public repository contains the issue #213 recovery runner. It does not yet contain a successful public demonstration and has not run a real lifecycle repository.
 
 The runner uses four JSON commands:
 
@@ -212,7 +212,7 @@ After an operator creates and reviews `operator-inputs/issue-213-first-run.json`
 cd /home/ubuntu/git/mdlm-demo-orchestrator && node ./bin/mdlm-demo-runner.mjs run --input ./operator-inputs/issue-213-first-run.json
 ```
 
-That command has not been run. No remote has been created, and no result from this repository has public acceptance status.
+That command has not been run. The reviewed runner is published at `https://github.com/taylorrowser/mdlm-demo-orchestrator`; no real-demonstration result has public acceptance status yet.
 
 ## Current limits
 
