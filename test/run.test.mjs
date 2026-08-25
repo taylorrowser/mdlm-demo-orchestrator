@@ -115,6 +115,27 @@ const run008OperationalFailureFixture = path.join(run008OperationalFailureDirect
 const run003AssignmentA = '0110fb6b-5a0d-4228-9867-58ed3e27a4a4';
 const run003AssignmentB = '6db7bda7-7043-446b-a38a-2daab6c6df3e';
 
+function operationalRecoveryDirectoryForTest(value) {
+  return path.join(
+    value.repository,
+    '.git',
+    'mdlm-demo-orchestrator',
+    'operational-failure-recoveries',
+    assignmentKeyForTest(value.assignment),
+  );
+}
+
+async function operationalFailureFixture() {
+  const run008 = JSON.parse(await readFile(run008OperationalFailureFixture));
+  const attemptsPath = path.join(os.tmpdir(), `mdlm-demo-operational-attempts-${process.pid}-${Date.now()}-${Math.random()}`);
+  const piScript = `#!/usr/bin/env node
+const fs=require('node:fs'); const attempts=fs.existsSync(${JSON.stringify(attemptsPath)})?Number(fs.readFileSync(${JSON.stringify(attemptsPath)},'utf8')):0; fs.writeFileSync(${JSON.stringify(attemptsPath)},String(attempts+1)); if(attempts===0){process.stderr.write(Buffer.from(${JSON.stringify(run008.process.stderrBase64)},'base64')); process.exit(1);} console.log('{"status":"lifecycle-complete"}');
+`;
+  const value = await fixture({ scenarioReference: 'ordinary@1', piScript });
+  value.request.signal = 'clean-interrupted-command';
+  return { ...value, attemptsPath, run008 };
+}
+
 function cleanLifecycle(repository) {
   const head = git(['rev-parse', 'HEAD^{commit}'], repository);
   return {
@@ -725,6 +746,16 @@ const fs=require('node:fs'); let input=''; process.stdin.on('data',chunk=>input+
   assert.equal(recovered.detail, run008.detail);
   assert.deepEqual(recovered.mdlmPi.document, run008.mdlmPi.document);
   assert.equal(recovered.operationalFailureRecovery.verified, true);
+  assert.match(recovered.operationalFailureRecovery.marker.path, /operational-failure-recoveries/);
+  const durableMarkerBytes = await readFile(recovered.operationalFailureRecovery.marker.path);
+  const durableMarker = JSON.parse(durableMarkerBytes);
+  assert.equal(durableMarker.contract, 'mdlm-demo-operational-failure-marker@1');
+  assert.equal(durableMarker.assignmentId, value.assignment);
+  assert.equal(durableMarker.requiredNextMode, 'run');
+  assert.equal(durableMarker.timeoutIdentity.timeoutMs, 900_000);
+  assert.equal(durableMarker.timeoutIdentity.mdlmPiCommandTimeoutMs, 600_000);
+  assert.equal(durableMarker.timeoutIdentity.mdlmPiAssignmentTimeoutMs, 840_000);
+  assert.equal(durableMarker.failure.document.digest, recovered.process.stderrSha256);
   const initial = JSON.parse(await readFile(path.join(recovered.snapshot.snapshotDirectory, 'snapshot.json'), 'utf8'));
   const post = JSON.parse(await readFile(path.join(recovered.postRunSnapshot.snapshotDirectory, 'snapshot.json'), 'utf8'));
   assert.deepEqual(post.lifecycleRepository, initial.lifecycleRepository);
@@ -733,14 +764,139 @@ const fs=require('node:fs'); let input=''; process.stdin.on('data',chunk=>input+
   assert.equal(initial.piJournal.present, false);
   assert.equal(post.piJournal.present, false);
 
+  const refusedResume = exec(process.execPath, [cli, 'resume'], root, JSON.stringify({
+    ...value.request,
+    contract: 'mdlm-demo-resume-request@1',
+  }));
+  assert.equal(refusedResume.status, 0, refusedResume.stderr);
+  const wrongMode = JSON.parse(refusedResume.stdout);
+  assert.equal(wrongMode.status, 'stopped');
+  assert.equal(wrongMode.reason, 'wrong-recovery-mode');
+  assert.equal(wrongMode.requiredNextMode, 'run');
+  assert.equal(await readFile(attemptsPath, 'utf8'), '1');
+  let calls = (await readFile(path.join(value.scratch, 'calls.log'), 'utf8')).trim().split('\n').map(JSON.parse);
+  assert.equal(calls.filter(args => args[0] === 'scenario' && args[1] === 'prepare' && args[2] === value.assignment).length, 1);
+
   const second = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
   assert.equal(second.status, 0, second.stderr);
   assert.equal(JSON.parse(second.stdout).status, 'completed');
   assert.equal(await readFile(attemptsPath, 'utf8'), '2');
   assert.equal(await readFile(inputPath, 'utf8'), `${wording}\n${wording}\n`);
-  const calls = (await readFile(path.join(value.scratch, 'calls.log'), 'utf8')).trim().split('\n').map(JSON.parse);
+  assert.deepEqual(await readFile(recovered.operationalFailureRecovery.marker.path), durableMarkerBytes);
+  const recoveryHistory = await readdir(path.dirname(recovered.operationalFailureRecovery.marker.path));
+  assert.deepEqual(recoveryHistory.sort(), ['failure-000002.json', 'retry-000002.json']);
+  const transition = JSON.parse(await readFile(path.join(path.dirname(recovered.operationalFailureRecovery.marker.path), 'retry-000002.json')));
+  assert.equal(transition.mode, 'run');
+  assert.equal(transition.marker.digest, recovered.operationalFailureRecovery.marker.digest);
+  calls = (await readFile(path.join(value.scratch, 'calls.log'), 'utf8')).trim().split('\n').map(JSON.parse);
   assert.equal(calls.filter(args => args[0] === 'scenario' && args[1] === 'prepare' && args[2] === value.assignment).length, 2);
   assert.equal(calls.some(args => args[0] === 'scenario' && args[1] === 'submit'), false);
+});
+
+test('legacy run-008 command evidence migrates to a run-only marker before retry', async () => {
+  const value = await operationalFailureFixture();
+  const first = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
+  assert.equal(first.status, 0, first.stderr);
+  assert.equal(JSON.parse(first.stdout).reason, 'pre-submission-operational-failure');
+  await rm(operationalRecoveryDirectoryForTest(value), { recursive: true });
+
+  const resumed = exec(process.execPath, [cli, 'resume'], root, JSON.stringify({
+    ...value.request,
+    contract: 'mdlm-demo-resume-request@1',
+  }));
+
+  assert.equal(resumed.status, 0, resumed.stderr);
+  const refused = JSON.parse(resumed.stdout);
+  assert.equal(refused.reason, 'wrong-recovery-mode');
+  assert.equal(refused.requiredNextMode, 'run');
+  assert.equal(refused.operationalFailureRecovery.source, 'legacy-command-evidence-migration');
+  assert.equal(await readFile(value.attemptsPath, 'utf8'), '1');
+  const migrated = JSON.parse(await readFile(refused.operationalFailureRecovery.marker.path, 'utf8'));
+  assert.equal(migrated.source, 'legacy-command-evidence-migration');
+  assert.equal(migrated.initialBoundary.snapshotDirectory, null);
+
+  const retried = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
+  assert.equal(retried.status, 0, retried.stderr);
+  assert.equal(JSON.parse(retried.stdout).status, 'completed');
+  assert.equal(await readFile(value.attemptsPath, 'utf8'), '2');
+});
+
+test('operational failure marker publication recovers after a synced pending-write crash', async () => {
+  const value = await operationalFailureFixture();
+  const crashed = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request), {
+    ...process.env,
+    MDLM_DEMO_TEST_CRASH: 'operational-recovery-marker:after-temp-sync',
+  });
+  assert.equal(crashed.status, 86, crashed.stderr);
+  assert.equal(await readFile(value.attemptsPath, 'utf8'), '1');
+  assert.equal((await readdir(operationalRecoveryDirectoryForTest(value))).some(name => name.endsWith('.pending')), true);
+
+  const resumed = exec(process.execPath, [cli, 'resume'], root, JSON.stringify({
+    ...value.request,
+    contract: 'mdlm-demo-resume-request@1',
+  }));
+
+  assert.equal(resumed.status, 0, resumed.stderr);
+  assert.equal(JSON.parse(resumed.stdout).reason, 'wrong-recovery-mode');
+  assert.equal(await readFile(value.attemptsPath, 'utf8'), '1');
+  assert.equal((await readdir(operationalRecoveryDirectoryForTest(value))).some(name => name.endsWith('.pending')), false);
+});
+
+test('a synced retry transition survives a crash without deleting failure history', async () => {
+  const value = await operationalFailureFixture();
+  const first = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
+  assert.equal(first.status, 0, first.stderr);
+  const markerPath = JSON.parse(first.stdout).operationalFailureRecovery.marker.path;
+  const markerBytes = await readFile(markerPath);
+
+  const crashed = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request), {
+    ...process.env,
+    MDLM_DEMO_TEST_CRASH: 'operational-recovery-retry:after-temp-sync',
+  });
+  assert.equal(crashed.status, 86, crashed.stderr);
+  assert.equal(await readFile(value.attemptsPath, 'utf8'), '1');
+
+  const retried = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
+  assert.equal(retried.status, 0, retried.stderr);
+  assert.equal(JSON.parse(retried.stdout).status, 'completed');
+  assert.equal(await readFile(value.attemptsPath, 'utf8'), '2');
+  assert.deepEqual(await readFile(markerPath), markerBytes);
+  assert.deepEqual((await readdir(path.dirname(markerPath))).sort(), ['failure-000002.json', 'retry-000002.json']);
+});
+
+test('tampered or ambiguous operational failure markers fail closed without worker or prepare side effects', async () => {
+  for (const mutation of ['tampered', 'ambiguous']) {
+    const value = await operationalFailureFixture();
+    const first = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
+    assert.equal(first.status, 0, first.stderr);
+    const markerPath = JSON.parse(first.stdout).operationalFailureRecovery.marker.path;
+    if (mutation === 'tampered') {
+      await chmod(markerPath, 0o600);
+      const marker = JSON.parse(await readFile(markerPath, 'utf8'));
+      marker.requiredNextMode = 'resume';
+      await writeFile(markerPath, `${JSON.stringify(marker, null, 2)}\n`);
+    } else {
+      await writeFile(
+        path.join(path.dirname(markerPath), 'failure-999999.json'),
+        await readFile(markerPath),
+        { mode: 0o400 },
+      );
+    }
+    const callsBefore = (await readFile(path.join(value.scratch, 'calls.log'), 'utf8')).trim().split('\n').length;
+
+    const resumed = exec(process.execPath, [cli, 'resume'], root, JSON.stringify({
+      ...value.request,
+      contract: 'mdlm-demo-resume-request@1',
+    }));
+
+    assert.equal(resumed.status, 0, `${mutation}: ${resumed.stderr}`);
+    const stopped = JSON.parse(resumed.stdout);
+    assert.equal(stopped.reason, 'operational-recovery-marker-invalid', mutation);
+    assert.equal(stopped.recoverable, false, mutation);
+    assert.equal(await readFile(value.attemptsPath, 'utf8'), '1', mutation);
+    const callsAfter = (await readFile(path.join(value.scratch, 'calls.log'), 'utf8')).trim().split('\n').length;
+    assert.equal(callsAfter - callsBefore, 6, mutation); // Initial and post snapshots only: doctor, status, Assignment.
+  }
 });
 
 test('typed operational failure stays nonrecoverable when post-run evidence changed or became ambiguous', async () => {

@@ -50,7 +50,7 @@ export async function run(request, mode) {
     const postAssignmentId = output[assignmentCheckpointEvidence]?.packet.assignment.id ?? assignmentId;
     const postRunSnapshot = await snapshotRequest(request, context.repository, postDirectory, postAssignmentId, journalPath, piJournalPath, true);
     output = await finalizeAssignmentCheckpoint(output, postRunSnapshot, assignmentId);
-    output = await finalizeOperationalFailure(output, initial, postRunSnapshot, context, assignmentDirectory);
+    output = await finalizeOperationalFailure(output, initial, postRunSnapshot, context, assignmentDirectory, request);
     output.postRunSnapshot = postRunSnapshot;
     await finishTrustedRun(context, assignmentDirectory, journalPath, assignmentId, output, postRunSnapshot);
     return output;
@@ -90,6 +90,22 @@ async function executeRun(request, context, assignmentDirectory, journalPath, sn
   const runIdentity = observedRunIdentity(captured.provenance, processPackage, request.operator, request);
   const identityMatch = await pinRunIdentity(context.identityDirectory, runIdentity, mode === 'run');
   if (!identityMatch) return stopped('run-identity-drift', 'operator, mdlm-pi timeout policy, artifact, installed Process Package, executable target, source, or harness identity changed', snapshotResult, assignmentId);
+
+  const recoveryGate = await inspectOperationalRecovery({
+    request, mode, context, assignmentDirectory, captured, snapshotResult, processPackage, runIdentity,
+  });
+  if (!recoveryGate.ok) {
+    return stopped('operational-recovery-marker-invalid', recoveryGate.detail, snapshotResult, assignmentId);
+  }
+  if (recoveryGate.requiredNextMode !== null) {
+    return stopped(
+      'wrong-recovery-mode',
+      `the verified pre-submission operational failure requires '${recoveryGate.requiredNextMode}', not '${mode}'`,
+      snapshotResult,
+      assignmentId,
+      { recoverable: true, requiredNextMode: recoveryGate.requiredNextMode, operationalFailureRecovery: recoveryGate.recovery },
+    );
+  }
 
   const journal = await optionalJson(journalPath);
   const checkpointRecovery = captured.lifecycleRepository.clean === true
@@ -305,7 +321,11 @@ async function runPiAssignment(request, context, assignmentDirectory, assignment
   }
   const output = stopped(decoded.status, decoded.detail, snapshotResult, assignmentId, common);
   if (decoded.kind === 'operational-failure') {
-    output[operationalFailureEvidence] = { privateEvidenceBefore, shimDirectory };
+    output[operationalFailureEvidence] = {
+      privateEvidenceBefore,
+      shimDirectory,
+      commandEvidence: processResult.commandEvidence,
+    };
   }
   return output;
 }
@@ -444,7 +464,7 @@ async function finalizeAssignmentCheckpoint(output, postSnapshot, completedAssig
   }
 }
 
-async function finalizeOperationalFailure(output, initialSnapshot, postSnapshot, context, assignmentDirectory) {
+async function finalizeOperationalFailure(output, initialSnapshot, postSnapshot, context, assignmentDirectory, request) {
   const evidence = output[operationalFailureEvidence];
   if (evidence === undefined) return output;
   delete output[operationalFailureEvidence];
@@ -493,6 +513,19 @@ async function finalizeOperationalFailure(output, initialSnapshot, postSnapshot,
     if (!privateEvidenceAfter.safe) {
       throw new Error(`private post-run evidence is uncertain: ${privateEvidenceAfter.detail}`);
     }
+    const marker = await writeOperationalFailureMarker({
+      source: 'verified-finalization',
+      request,
+      context,
+      assignmentDirectory,
+      assignmentId: output.assignmentId,
+      initialSnapshot,
+      initial,
+      postSnapshot,
+      post,
+      processPackage: initial.status.package,
+      commandEvidence: evidence.commandEvidence,
+    });
     output.reason = 'pre-submission-operational-failure';
     output.outcome = 'pre-submission-operational-failure';
     output.recoverable = true;
@@ -502,6 +535,7 @@ async function finalizeOperationalFailure(output, initialSnapshot, postSnapshot,
       assignmentId: output.assignmentId,
       retryCommand: 'run',
       resumeAllowed: false,
+      marker,
     };
   } catch (error) {
     output.recoverable = false;
@@ -570,6 +604,445 @@ async function inspectOperationalPrivateEvidence(assignmentDirectory, piJournalP
   } catch (error) {
     return { safe: false, detail: error instanceof Error ? error.message : String(error) };
   }
+}
+
+function operationalRecoveryDirectory(context, assignmentId) {
+  return path.join(
+    context.gitDirectory,
+    'mdlm-demo-orchestrator',
+    'operational-failure-recoveries',
+    assignmentKey(assignmentId),
+  );
+}
+
+async function inspectOperationalRecovery({ request, mode, context, assignmentDirectory, captured, snapshotResult, processPackage, runIdentity }) {
+  try {
+    const directory = operationalRecoveryDirectory(context, request.assignmentId);
+    await recoverPendingOperationalRecoveryWrites(directory);
+    let history = await readOperationalRecoveryHistory({
+      directory, request, context, assignmentDirectory, processPackage, runIdentity,
+    });
+    if (history.markers.length === 0) {
+      const migrated = await migrateLegacyOperationalFailure({
+        request, context, assignmentDirectory, captured, snapshotResult, processPackage,
+      });
+      if (migrated !== null) {
+        history = await readOperationalRecoveryHistory({
+          directory, request, context, assignmentDirectory, processPackage, runIdentity,
+        });
+      }
+    }
+    const active = history.markers.filter(marker => !history.transitions.has(marker.index));
+    if (active.length > 1) throw new Error('more than one operational failure marker requires recovery');
+    if (active.length === 0) return { ok: true, requiredNextMode: null };
+    const marker = active[0];
+    requireActiveOperationalBoundary(marker.document, captured, request.assignmentId);
+    if (mode !== marker.document.requiredNextMode) {
+      return {
+        ok: true,
+        requiredNextMode: marker.document.requiredNextMode,
+        recovery: { marker: { path: marker.path, digest: marker.digest }, source: marker.document.source },
+      };
+    }
+    const transition = {
+      contract: 'mdlm-demo-operational-failure-retry@1',
+      assignmentId: request.assignmentId,
+      mode,
+      marker: { path: marker.path, digest: marker.digest },
+      lifecycleRepository: captured.lifecycleRepository,
+      processPackage,
+      runIdentity: marker.document.runIdentity,
+      timeoutIdentity: marker.document.timeoutIdentity,
+    };
+    const transitionPath = path.join(directory, `retry-${String(marker.index).padStart(6, '0')}.json`);
+    await durableCreateJson(transitionPath, transition, 'operational-recovery-retry');
+    return { ok: true, requiredNextMode: null };
+  } catch (error) {
+    return { ok: false, detail: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+async function writeOperationalFailureMarker({
+  source, request, context, assignmentDirectory, assignmentId, initialSnapshot, initial,
+  postSnapshot, post, processPackage, commandEvidence,
+}) {
+  if (!commandEvidence || !Number.isSafeInteger(commandEvidence.index) || typeof commandEvidence.prefix !== 'string') {
+    throw new Error('typed operational failure has no exact command evidence location');
+  }
+  const runIdentityPath = path.join(context.identityDirectory, 'run-identity.json');
+  const runIdentityEvidence = await immutableFileEvidence(runIdentityPath);
+  const command = await commandEvidenceManifest(commandEvidence.prefix, commandEvidence.index);
+  const stored = await authenticateStoredCommand(path.dirname(commandEvidence.prefix), String(commandEvidence.index).padStart(6, '0'));
+  const document = requireTypedOperationalFailure(stored.record, stored.stdout, stored.stderr);
+  const boundary = captured => ({
+    snapshotDirectory: null,
+    digest: null,
+    lifecycleRepository: captured.lifecycleRepository,
+    assignmentRepository: captured.assignmentRepository,
+  });
+  const marker = {
+    contract: 'mdlm-demo-operational-failure-marker@1',
+    assignmentId,
+    requiredNextMode: 'run',
+    source,
+    assignmentDirectory: path.resolve(assignmentDirectory),
+    initialBoundary: source === 'legacy-command-evidence-migration'
+      ? boundary(initial)
+      : await operationalBoundary(initialSnapshot, initial),
+    postBoundary: source === 'legacy-command-evidence-migration'
+      ? boundary(post)
+      : await operationalBoundary(postSnapshot, post),
+    processPackage,
+    runIdentity: {
+      path: runIdentityEvidence.path,
+      bytes: runIdentityEvidence.bytes.length,
+      digest: runIdentityEvidence.digest,
+    },
+    timeoutIdentity: {
+      timeoutMs: request.timeoutMs,
+      mdlmPiCommandTimeoutMs: request.mdlmPiCommandTimeoutMs,
+      mdlmPiAssignmentTimeoutMs: request.mdlmPiAssignmentTimeoutMs,
+    },
+    failure: {
+      commandIndex: commandEvidence.index,
+      evidence: command,
+      document: {
+        digest: sha256(stored.stderr),
+        errorDigest: sha256(Buffer.from(document.error)),
+        detailsDigest: sha256(Buffer.from(JSON.stringify(document.details))),
+      },
+    },
+  };
+  const directory = operationalRecoveryDirectory(context, assignmentId);
+  const markerPath = path.join(directory, `failure-${String(commandEvidence.index).padStart(6, '0')}.json`);
+  await durableCreateJson(markerPath, marker, 'operational-recovery-marker');
+  const evidence = await immutableFileEvidence(markerPath);
+  return { path: evidence.path, digest: evidence.digest };
+}
+
+async function operationalBoundary(snapshotResult, captured) {
+  const manifestPath = path.join(snapshotResult.snapshotDirectory, 'manifest.json');
+  await syncFile(manifestPath);
+  await syncFile(path.join(snapshotResult.snapshotDirectory, 'snapshot.json'));
+  await syncDirectory(snapshotResult.snapshotDirectory);
+  const manifest = await immutableFileEvidence(manifestPath);
+  if (manifest.digest !== snapshotResult.digest) throw new Error('operational failure snapshot manifest digest changed before marker publication');
+  return {
+    snapshotDirectory: path.resolve(snapshotResult.snapshotDirectory),
+    digest: snapshotResult.digest,
+    lifecycleRepository: captured.lifecycleRepository,
+    assignmentRepository: captured.assignmentRepository,
+  };
+}
+
+async function readOperationalRecoveryHistory({ directory, request, context, assignmentDirectory, processPackage, runIdentity }) {
+  let entries;
+  try { entries = await readdir(directory, { withFileTypes: true }); }
+  catch (error) {
+    if (error.code === 'ENOENT') return { markers: [], transitions: new Map() };
+    throw error;
+  }
+  await requireCanonicalDirectory(directory);
+  const markerEntries = [];
+  const retryEntries = new Map();
+  for (const entry of entries) {
+    if (!entry.isFile() || entry.isSymbolicLink()) throw new Error('operational recovery history contains a non-regular entry');
+    let match = /^failure-([0-9]{6})\.json$/.exec(entry.name);
+    if (match) {
+      markerEntries.push({ entry, index: Number(match[1]) });
+      continue;
+    }
+    match = /^retry-([0-9]{6})\.json$/.exec(entry.name);
+    if (match) {
+      const index = Number(match[1]);
+      if (retryEntries.has(index)) throw new Error('operational recovery history has duplicate retry transitions');
+      retryEntries.set(index, entry);
+      continue;
+    }
+    throw new Error(`operational recovery history contains unsupported entry '${entry.name}'`);
+  }
+  markerEntries.sort((left, right) => left.index - right.index);
+  const markers = [];
+  for (const item of markerEntries) {
+    const file = path.join(directory, item.entry.name);
+    const evidence = await immutableFileEvidence(file);
+    const document = JSON.parse(evidence.bytes.toString('utf8'));
+    await validateOperationalFailureMarker({
+      document, index: item.index, request, context, assignmentDirectory, processPackage, runIdentity,
+    });
+    markers.push({ index: item.index, path: evidence.path, digest: evidence.digest, document });
+  }
+  for (const [index, entry] of retryEntries) {
+    const marker = markers.find(item => item.index === index);
+    if (!marker) throw new Error('operational recovery retry has no matching failure marker');
+    const evidence = await immutableFileEvidence(path.join(directory, entry.name));
+    const document = JSON.parse(evidence.bytes.toString('utf8'));
+    const expected = {
+      contract: 'mdlm-demo-operational-failure-retry@1',
+      assignmentId: request.assignmentId,
+      mode: 'run',
+      marker: { path: marker.path, digest: marker.digest },
+      lifecycleRepository: marker.document.postBoundary.lifecycleRepository,
+      processPackage: marker.document.processPackage,
+      runIdentity: marker.document.runIdentity,
+      timeoutIdentity: marker.document.timeoutIdentity,
+    };
+    if (!sameJson(document, expected)) throw new Error('operational recovery retry transition is malformed or tampered');
+  }
+  return { markers, transitions: retryEntries };
+}
+
+async function validateOperationalFailureMarker({ document, index, request, context, assignmentDirectory, processPackage, runIdentity }) {
+  const keys = [
+    'assignmentDirectory', 'assignmentId', 'contract', 'failure', 'initialBoundary', 'postBoundary',
+    'processPackage', 'requiredNextMode', 'runIdentity', 'source', 'timeoutIdentity',
+  ].sort();
+  if (!document || typeof document !== 'object' || Array.isArray(document) ||
+      !sameJson(Object.keys(document).sort(), keys) ||
+      document.contract !== 'mdlm-demo-operational-failure-marker@1' ||
+      document.assignmentId !== request.assignmentId || document.requiredNextMode !== 'run' ||
+      !['verified-finalization', 'legacy-command-evidence-migration'].includes(document.source) ||
+      path.resolve(document.assignmentDirectory ?? '') !== path.resolve(assignmentDirectory) ||
+      !sameProcessPackageIdentity(document.processPackage, processPackage)) {
+    throw new Error('operational failure marker identity is malformed or tampered');
+  }
+  const timeoutIdentity = {
+    timeoutMs: request.timeoutMs,
+    mdlmPiCommandTimeoutMs: request.mdlmPiCommandTimeoutMs,
+    mdlmPiAssignmentTimeoutMs: request.mdlmPiAssignmentTimeoutMs,
+  };
+  if (!sameJson(document.timeoutIdentity, timeoutIdentity)) throw new Error('operational failure marker timeout identity differs');
+  const runIdentityPath = path.join(context.identityDirectory, 'run-identity.json');
+  const observedRunIdentity = await immutableFileEvidence(runIdentityPath);
+  if (!sameJson(document.runIdentity, {
+    path: observedRunIdentity.path, bytes: observedRunIdentity.bytes.length, digest: observedRunIdentity.digest,
+  }) || sha256(Buffer.from(`${JSON.stringify(runIdentity, null, 2)}\n`)) !== observedRunIdentity.digest) {
+    throw new Error('operational failure marker run identity differs');
+  }
+  await validateOperationalBoundary(document.initialBoundary, document.source);
+  await validateOperationalBoundary(document.postBoundary, document.source);
+  const failure = document.failure;
+  if (!failure || !sameJson(Object.keys(failure).sort(), ['commandIndex', 'document', 'evidence']) || failure.commandIndex !== index) {
+    throw new Error('operational failure marker command identity is malformed');
+  }
+  const commandDirectory = path.join(assignmentDirectory, 'command-evidence');
+  const expectedPrefix = path.join(commandDirectory, `command-${String(index).padStart(6, '0')}`);
+  for (const [name, suffix] of [['record', 'json'], ['stdout', 'stdout'], ['stderr', 'stderr']]) {
+    const expectedPath = `${expectedPrefix}.${suffix}`;
+    const expected = await immutableFileEvidence(expectedPath);
+    if (!sameJson(failure.evidence?.[name], {
+      path: expected.path, bytes: expected.bytes.length, digest: expected.digest,
+    })) throw new Error('operational failure marker command evidence hash differs');
+  }
+  const stored = await authenticateStoredCommand(commandDirectory, String(index).padStart(6, '0'));
+  requireStoredProcess(stored.record, [
+    request.commands.mdlmPi, 'run', context.repository, '--mdlm', mdlmShim,
+    '--provider', request.operator.provider, '--model', request.operator.model,
+    '--thinking', request.operator.thinking,
+  ], context.repository, request.timeoutMs, 1);
+  const typed = requireTypedOperationalFailure(stored.record, stored.stdout, stored.stderr);
+  const expectedDocument = {
+    digest: sha256(stored.stderr),
+    errorDigest: sha256(Buffer.from(typed.error)),
+    detailsDigest: sha256(Buffer.from(JSON.stringify(typed.details))),
+  };
+  if (!sameJson(failure.document, expectedDocument)) throw new Error('operational failure marker typed command document differs');
+}
+
+async function validateOperationalBoundary(boundary, source) {
+  if (!boundary || !sameJson(Object.keys(boundary).sort(), [
+    'assignmentRepository', 'digest', 'lifecycleRepository', 'snapshotDirectory',
+  ])) throw new Error('operational failure marker boundary is malformed');
+  if (source === 'legacy-command-evidence-migration' && boundary.snapshotDirectory === null && boundary.digest === null) return;
+  if (typeof boundary.snapshotDirectory !== 'string' || !/^sha256:[0-9a-f]{64}$/.test(boundary.digest ?? '')) {
+    throw new Error('operational failure marker snapshot identity is malformed');
+  }
+  const manifest = await immutableFileEvidence(path.join(boundary.snapshotDirectory, 'manifest.json'));
+  if (manifest.digest !== boundary.digest) throw new Error('operational failure marker snapshot manifest was tampered');
+  const manifestDocument = JSON.parse(manifest.bytes.toString('utf8'));
+  const snapshotRecord = manifestDocument?.contract === 'mdlm-demo-evidence-manifest@1' && Array.isArray(manifestDocument.files)
+    ? manifestDocument.files.find(item => item?.path === 'snapshot.json')
+    : null;
+  const snapshotEvidence = await immutableFileEvidence(path.join(boundary.snapshotDirectory, 'snapshot.json'));
+  if (!snapshotRecord || snapshotRecord.bytes !== snapshotEvidence.bytes.length || snapshotRecord.sha256 !== snapshotEvidence.digest) {
+    throw new Error('operational failure marker snapshot bytes differ from the bound manifest');
+  }
+  const snapshot = JSON.parse(snapshotEvidence.bytes.toString('utf8'));
+  if (!sameJson(snapshot.lifecycleRepository, boundary.lifecycleRepository) ||
+      !sameJson(snapshot.assignmentRepository, boundary.assignmentRepository)) {
+    throw new Error('operational failure marker snapshot boundary differs');
+  }
+}
+
+function requireActiveOperationalBoundary(marker, captured, assignmentId) {
+  if (!sameJson(marker.postBoundary.lifecycleRepository, captured.lifecycleRepository) ||
+      !sameJson(marker.postBoundary.assignmentRepository, captured.assignmentRepository) ||
+      captured.lifecycleRepository?.clean !== true || captured.assignment?.id !== assignmentId ||
+      captured.assignment.selected !== true || captured.assignment.disposition !== 'active' ||
+      !statusHasActiveAssignment(captured.status, assignmentId)) {
+    throw new Error('active operational failure marker differs from the current Assignment boundary');
+  }
+  requireCertainJournalAbsence(captured.journal, 'runner transaction journal');
+  requireCertainJournalAbsence(captured.piJournal, 'mdlm-pi journal');
+}
+
+async function migrateLegacyOperationalFailure({ request, context, assignmentDirectory, captured, snapshotResult, processPackage }) {
+  const commandDirectory = path.join(assignmentDirectory, 'command-evidence');
+  let names;
+  try { names = (await readdir(commandDirectory)).sort(); }
+  catch (error) { if (error.code === 'ENOENT') return null; throw error; }
+  const indices = names.filter(name => /^command-[0-9]{6}\.json$/.test(name)).map(name => Number(name.slice(8, 14)));
+  if (indices.length === 0) return null;
+  const latest = Math.max(...indices);
+  const index = String(latest).padStart(6, '0');
+  let stored;
+  try { stored = await authenticateStoredCommand(commandDirectory, index); }
+  catch (error) { throw new Error(`legacy operational failure command evidence is ambiguous: ${error.message}`); }
+  let parsed = null;
+  try { parsed = JSON.parse(stored.stderr.toString('utf8')); } catch {}
+  const expectedPi = [
+    request.commands.mdlmPi, 'run', context.repository, '--mdlm', mdlmShim,
+    '--provider', request.operator.provider, '--model', request.operator.model,
+    '--thinking', request.operator.thinking,
+  ];
+  const looksLikeCandidate = sameJson(stored.record.argv, expectedPi) &&
+    (stored.record.exitStatus === 1 || parsed?.status === 'operational-failure');
+  if (!looksLikeCandidate) return null;
+  requireStoredProcess(stored.record, expectedPi, context.repository, request.timeoutMs, 1);
+  requireTypedOperationalFailure(stored.record, stored.stdout, stored.stderr);
+  const expectedNames = [];
+  for (let current = Math.min(...indices); current <= latest; current++) {
+    const numbered = String(current).padStart(6, '0');
+    expectedNames.push(`command-${numbered}.json`, `command-${numbered}.stderr`, `command-${numbered}.stdout`);
+  }
+  if (!sameJson(names, expectedNames.sort())) throw new Error('legacy operational failure command evidence is missing or ambiguous');
+  if (latest < 2) throw new Error('legacy operational failure has no authenticated prepare command');
+  const prepareIndex = String(latest - 1).padStart(6, '0');
+  const prepared = await authenticateStoredCommand(commandDirectory, prepareIndex);
+  requireStoredProcess(prepared.record, [request.commands.mdlm, 'scenario', 'prepare', request.assignmentId, '--json'], context.repository, request.timeoutMs, 0);
+  if (prepared.stderr.length !== 0) throw new Error('legacy operational failure prepare command has stderr bytes');
+  validateScenarioPrepare(JSON.parse(prepared.stdout.toString('utf8')), {
+    assignmentId: request.assignmentId,
+    package: processPackage,
+    repository: captured.assignmentRepository,
+  });
+  const identity = await optionalJson(path.join(assignmentDirectory, 'identity.json'));
+  const expectedIdentity = {
+    contract: 'mdlm-demo-assignment-identity@1',
+    assignmentId: request.assignmentId,
+    lifecycleRepository: captured.lifecycleRepository,
+    assignmentRepository: captured.assignmentRepository,
+  };
+  if (!sameJson(identity, expectedIdentity) || captured.lifecycleRepository?.clean !== true) {
+    throw new Error('legacy operational failure is not at its exact unchanged Assignment boundary');
+  }
+  requireCertainJournalAbsence(captured.journal, 'runner transaction journal');
+  requireCertainJournalAbsence(captured.piJournal, 'mdlm-pi journal');
+  const privateEvidence = await inspectOperationalPrivateEvidence(
+    assignmentDirectory,
+    path.join(context.gitDirectory, 'mdlm-pi', 'run.json'),
+    path.join(assignmentDirectory, 'shim', 'stops'),
+  );
+  if (!privateEvidence.safe) throw new Error(`legacy operational failure has ambiguous private evidence: ${privateEvidence.detail}`);
+  return writeOperationalFailureMarker({
+    source: 'legacy-command-evidence-migration',
+    request,
+    context,
+    assignmentDirectory,
+    assignmentId: request.assignmentId,
+    initialSnapshot: { snapshotDirectory: null, digest: null },
+    initial: captured,
+    postSnapshot: { snapshotDirectory: null, digest: null },
+    post: captured,
+    processPackage,
+    commandEvidence: { index: latest, prefix: path.join(commandDirectory, `command-${index}`) },
+  });
+}
+
+function requireTypedOperationalFailure(record, stdout, stderr) {
+  if (stdout.length !== 0 || record.exitStatus !== 1 || record.timedOut !== false || record.signal !== null ||
+      record.outputLimitExceeded !== false || record.spawnError !== null || record.stdoutSha256 !== sha256(stdout) ||
+      record.stderrSha256 !== sha256(stderr) || record.observedOutputBytes !== stderr.length) {
+    throw new Error('operational failure command termination evidence is not exact');
+  }
+  let document;
+  try { document = JSON.parse(stderr.toString('utf8')); }
+  catch { throw new Error('operational failure stderr is not one exact JSON document'); }
+  if (!document || typeof document !== 'object' || Array.isArray(document) ||
+      !sameJson(Object.keys(document).sort(), ['details', 'error', 'status']) ||
+      document.status !== 'operational-failure' || typeof document.error !== 'string' || document.error.length === 0 ||
+      !document.details || typeof document.details !== 'object' || Array.isArray(document.details) ||
+      !sameJson(JSON.parse(stderr.toString('utf8')), document)) {
+    throw new Error('operational failure stderr is not a strictly typed operational failure');
+  }
+  return document;
+}
+
+async function commandEvidenceManifest(prefix) {
+  const output = {};
+  for (const [name, suffix] of [['record', 'json'], ['stdout', 'stdout'], ['stderr', 'stderr']]) {
+    await syncFile(`${prefix}.${suffix}`);
+    const evidence = await immutableFileEvidence(`${prefix}.${suffix}`);
+    output[name] = { path: evidence.path, bytes: evidence.bytes.length, digest: evidence.digest };
+  }
+  await syncDirectory(path.dirname(prefix));
+  return output;
+}
+
+async function syncFile(file) {
+  const handle = await open(file, 'r');
+  try { await handle.sync(); }
+  finally { await handle.close(); }
+}
+
+async function immutableFileEvidence(file) {
+  const evidence = await readCanonicalEvidenceFile(path.resolve(file));
+  return { ...evidence, digest: sha256(evidence.bytes) };
+}
+
+async function recoverPendingOperationalRecoveryWrites(directory) {
+  let names;
+  try { names = await readdir(directory); }
+  catch (error) { if (error.code === 'ENOENT') return; throw error; }
+  for (const name of names) {
+    if (!name.endsWith('.pending')) continue;
+    const pending = path.join(directory, name);
+    const target = pending.slice(0, -'.pending'.length);
+    const targetInformation = await optionalLstat(target);
+    if (targetInformation !== null) throw new Error('operational recovery history contains an ambiguous completed and pending write');
+    JSON.parse((await immutableFileEvidence(pending)).bytes.toString('utf8'));
+    await rename(pending, target);
+    await syncDirectory(directory);
+  }
+}
+
+async function durableCreateJson(file, value, phase) {
+  await mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
+  let directory = path.dirname(file);
+  for (let depth = 0; depth < 3; depth++) {
+    await syncDirectory(directory);
+    directory = path.dirname(directory);
+  }
+  const bytes = Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
+  const existing = await optionalLstat(file);
+  if (existing !== null) {
+    if (!existing.isFile() || !(await readFile(file)).equals(bytes)) throw new Error('immutable operational recovery history differs');
+    return;
+  }
+  const pending = `${file}.pending`;
+  const pendingInformation = await optionalLstat(pending);
+  if (pendingInformation === null) {
+    const handle = await open(pending, 'wx', 0o400);
+    try { await handle.writeFile(bytes); await handle.sync(); }
+    finally { await handle.close(); }
+  } else if (!pendingInformation.isFile() || !(await readFile(pending)).equals(bytes)) {
+    throw new Error('pending operational recovery history differs');
+  }
+  await syncDirectory(path.dirname(file));
+  maybeInjectedCrash(phase, 'after-temp-sync');
+  await rename(pending, file);
+  await syncDirectory(path.dirname(file));
+  maybeInjectedCrash(phase, 'after-rename');
 }
 
 async function inspectCorrectionContext(context, assignment, resultDocument) {
@@ -1244,6 +1717,7 @@ async function invoke(assignmentDirectory, program, args, cwd, timeoutMs, input,
   await writeFile(`${prefix}.stdout`, output.stdout, { flag: 'wx', mode: 0o400 });
   await writeFile(`${prefix}.stderr`, output.stderr, { flag: 'wx', mode: 0o400 });
   await writeFile(`${prefix}.json`, `${JSON.stringify(commandRecord(output), null, 2)}\n`, { flag: 'wx', mode: 0o400 });
+  output.commandEvidence = { index: count, prefix };
   return output;
 }
 
