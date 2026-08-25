@@ -1,5 +1,6 @@
 import { chmod, mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { validateDoctor } from './contracts.mjs';
 import {
   commandRecord, commandSucceeded, environmentPolicy, fileIdentity, gitEnvironment,
   parseJsonBytes, requireContract, runProcess, sha256, toolingTreeIdentity,
@@ -253,13 +254,6 @@ async function expectedToolingRecord(value, tools) {
 function isPathWithin(root, candidate) {
   const relative = path.relative(root, candidate);
   return relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative));
-}
-
-function validateDoctor(value) {
-  requireJsonObject(value, 'doctor');
-  requireLiteral(value, 'contract', 'mdlm-doctor@1', 'doctor');
-  requireLiteral(value, 'command', 'doctor', 'doctor');
-  requireBoolean(value, 'ok', 'doctor');
 }
 
 function validateStatus(value) {

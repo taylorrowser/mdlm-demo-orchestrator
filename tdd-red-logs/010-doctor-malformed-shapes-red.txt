@@ -1,0 +1,30 @@
+✔ doctor validation accepts the installed 0.74.0 success output and documented failures (2.908798ms)
+✖ doctor validation rejects malformed diagnostics and unknown success or failure shapes (2.594602ms)
+ℹ tests 2
+ℹ suites 0
+ℹ pass 1
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 168.177356
+
+✖ failing tests:
+
+test at test/contracts.test.mjs:39:1
+✖ doctor validation rejects malformed diagnostics and unknown success or failure shapes (2.594602ms)
+  AssertionError [ERR_ASSERTION]: Missing expected exception: {"ok":false,"command":"doctor","selected":false,"package":{"id":"mdlm-bootstrap","version":"0.74.0","reference":"mdlm-bootstrap@0.74.0","language":"mdlm-expression@1","digest":"sha256:ee99e698d36e406a836a796a36fc1db2d2451072ad662c0e06805ab5c20fe5ac"},"diagnostics":[{"code":"repository-contract","message":"Repository contract is invalid"}]}
+      at TestContext.<anonymous> (file:///home/ubuntu/git/mdlm-demo-orchestrator/test/contracts.test.mjs:56:12)
+      at Test.runInAsyncScope (node:async_hooks:227:14)
+      at Test.run (node:internal/test_runner/test:1382:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:960:18)
+      at Test.postRun (node:internal/test_runner/test:1522:19)
+      at Test.run (node:internal/test_runner/test:1447:12)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: undefined,
+    operator: 'throws',
+    diff: 'simple'
+  }

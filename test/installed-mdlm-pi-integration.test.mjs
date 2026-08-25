@@ -79,7 +79,7 @@ test('installed mdlm-pi consumes attended Review-correction wording in the same 
       };
     },
     async execution() { throw new Error('no recovery execution lookup expected'); },
-    async doctor() { return { contract: 'mdlm-doctor@1', command: 'doctor', ok: true }; },
+    async doctor() { return { command: 'doctor', ok: true }; },
   };
   let attentionCalls = 0;
   const io = {

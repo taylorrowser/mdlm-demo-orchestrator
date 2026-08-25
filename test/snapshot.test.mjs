@@ -9,6 +9,7 @@ import { toolingTreeDigest } from './provenance-fixture.mjs';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const cli = path.join(root, 'bin/mdlm-demo-runner.mjs');
+const installedDoctorSuccess = await readFile(path.join(root, 'test', 'fixtures', 'mdlm-doctor-0.74.0-success.json'), 'utf8');
 
 function command(program, args, cwd) {
   const result = spawnSync(program, args, { cwd, encoding: 'utf8' });
@@ -40,7 +41,7 @@ test('snapshot writes raw command and Git evidence once and cannot replace it', 
   const lock = path.join(tooling, 'package-lock.json');
   const packageArtifact = path.join(scratch, 'mdlm.tgz');
   const piPackageArtifact = path.join(scratch, 'mdlm-pi.tgz');
-  await writeFile(fakeMdlm, `#!/usr/bin/env node\nconst a=process.argv.slice(2);\nif(a[0]==='doctor') console.log(JSON.stringify({contract:'mdlm-doctor@1',ok:true,command:'doctor'}));\nelse if(a[0]==='status') console.log(JSON.stringify({contract:'mdlm-status@1',ok:true,command:'status',package:{reference:'pkg@1',digest:'sha256:${'1'.repeat(64)}',language:'lang@1'},currentOutcome:{outcome:'assignment',assignment:{allocation:'active',id:'assignment-1'}},recentTransaction:{available:false}}));\nelse console.log(JSON.stringify({contract:'mdlm-assignment-state@1',ok:true,command:'assignment.show',assignment:{id:'assignment-1'},selected:true,package:{reference:'pkg@1',digest:'sha256:${'1'.repeat(64)}',language:'lang@1'},repository:{head:'${command('git', ['rev-parse', 'HEAD'], repository)}',trackedState:'sha256:${'2'.repeat(64)}'},scenarioReference:'review@1',disposition:'active',retryAvailability:{},malformedResponses:[]}));\n`);
+  await writeFile(fakeMdlm, `#!/usr/bin/env node\nconst a=process.argv.slice(2);\nif(a[0]==='doctor') process.stdout.write(${JSON.stringify(installedDoctorSuccess)});\nelse if(a[0]==='status') console.log(JSON.stringify({contract:'mdlm-status@1',ok:true,command:'status',package:{reference:'pkg@1',digest:'sha256:${'1'.repeat(64)}',language:'lang@1'},currentOutcome:{outcome:'assignment',assignment:{allocation:'active',id:'assignment-1'}},recentTransaction:{available:false}}));\nelse console.log(JSON.stringify({contract:'mdlm-assignment-state@1',ok:true,command:'assignment.show',assignment:{id:'assignment-1'},selected:true,package:{reference:'pkg@1',digest:'sha256:${'1'.repeat(64)}',language:'lang@1'},repository:{head:'${command('git', ['rev-parse', 'HEAD'], repository)}',trackedState:'sha256:${'2'.repeat(64)}'},scenarioReference:'review@1',disposition:'active',retryAvailability:{},malformedResponses:[]}));\n`);
   await writeFile(fakePi, '#!/bin/sh\nexit 0\n');
   await writeFile(lock, '{"lockfileVersion":3}\n');
   await writeFile(packageArtifact, 'mdlm package bytes\n');
@@ -76,11 +77,14 @@ test('snapshot writes raw command and Git evidence once and cannot replace it', 
   assert.equal(first.status, 0, first.stderr);
   const output = JSON.parse(first.stdout);
   assert.equal(output.snapshotDirectory, snapshotDirectory);
+  assert.equal(output.status, 'complete');
   assert.match(output.digest, /^sha256:[0-9a-f]{64}$/);
   const captured = JSON.parse(await readFile(path.join(snapshotDirectory, 'snapshot.json'), 'utf8'));
   assert.equal(captured.git.head.exitStatus, 0);
   assert.equal(captured.git.status.stdoutBase64, '');
   assert.equal(captured.commands.doctor.exitStatus, 0);
+  assert.deepEqual(captured.diagnosis, JSON.parse(installedDoctorSuccess));
+  assert.deepEqual(await readFile(path.join(snapshotDirectory, 'commands', 'doctor.stdout'), 'utf8'), installedDoctorSuccess);
   assert.equal(captured.assignment.id, 'assignment-1');
   assert.equal(captured.provenance.valid, true);
   assert.equal((await stat(path.join(snapshotDirectory, 'commands', 'doctor.stdout'))).mode & 0o222, 0);

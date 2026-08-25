@@ -97,7 +97,7 @@ const staged=cp.execFileSync('git',['diff','--binary','--no-ext-diff','--cached'
 const worktree=cp.execFileSync('git',['diff','--binary','--no-ext-diff','--'],{encoding:'utf8'});
 const crypto=require('node:crypto');
 const trackedState='sha256:'+crypto.createHash('sha256').update(head+'\\0staged\\0'+staged+'\\0worktree\\0'+worktree).digest('hex');
-if(a[0]==='doctor') console.log(JSON.stringify({contract:'mdlm-doctor@1',ok:true,command:'doctor'}));
+if(a[0]==='doctor') console.log(JSON.stringify({ok:true,command:'doctor',package:{id:'pkg',version:'1',...pkg},baselineRepositoryVerification:{verifiedBaselines:0,processDrift:0},index:{rebuilt:false,data:0,path:'.lifecycle/generated/indexes/data.json'},report:{rebuilt:false,data:0,path:'.lifecycle/generated/reports/lifecycle.json'},diagnostics:[]}));
 else if(a[0]==='status') console.log(JSON.stringify({contract:'mdlm-status@1',ok:true,command:'status',package:pkg,currentOutcome:{outcome:'assignment',assignment:{allocation:'active',id:assignment}},recentTransaction:{available:false}}));
 else console.log(JSON.stringify({contract:'mdlm-assignment-state@1',ok:true,command:'assignment.show',assignment:{id:assignment},selected:true,package:pkg,repository:{head,trackedState},scenarioReference:'review@1',disposition:'active',retryAvailability:{},malformedResponses:[]}));`;
 

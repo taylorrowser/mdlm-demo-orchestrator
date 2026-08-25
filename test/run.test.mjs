@@ -68,7 +68,7 @@ const malformedPath=${JSON.stringify(malformedDigestPath)}, malformedResponses=f
 const pkg={reference:'pkg@1',digest:'sha256:${'1'.repeat(64)}',language:'lang@1'};
 const repo={head,trackedState:${JSON.stringify(trackedState)}};
 function out(x){process.stdout.write(JSON.stringify(x)+'\\n')}
-if(a[0]==='doctor') out({contract:'mdlm-doctor@1',ok:true,command:'doctor'});
+if(a[0]==='doctor') out({ok:true,command:'doctor',package:{id:'pkg',version:'1',...pkg},baselineRepositoryVerification:{verifiedBaselines:0,processDrift:0},index:{rebuilt:false,data:0,path:'.lifecycle/generated/indexes/data.json'},report:{rebuilt:false,data:0,path:'.lifecycle/generated/reports/lifecycle.json'},diagnostics:[]});
 else if(a[0]==='status') out({contract:'mdlm-status@1',ok:true,command:'status',package:pkg,currentOutcome:{outcome:'assignment',assignment:{allocation:'active',id:assignment}},recentTransaction:{available:false}});
 else if(a[0]==='assignment') out({contract:'mdlm-assignment-state@1',ok:true,command:'assignment.show',assignment:{id:assignment},selected:true,package:pkg,repository:repo,scenarioReference:scenario,disposition:'active',retryAvailability:{},malformedResponses});
 else if(a[0]==='scenario'&&a[1]==='prepare') out({contract:'mdlm-assignment-packet@2',ok:true,command:'scenario.prepare',assignment:{id:assignment},package:pkg,repository:repo,scenario:{reference:scenario},responseSchema:{},exactInputs:[]});
