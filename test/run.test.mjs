@@ -77,7 +77,7 @@ const repo=repository();
 function out(x){process.stdout.write(JSON.stringify(x)+'\\n')}
 if(a[0]==='doctor') out({ok:true,command:'doctor',package:doctorPackage,baselineRepositoryVerification:{verifiedBaselines:0,processDrift:0},index:{rebuilt:false,data:0,path:'.lifecycle/generated/indexes/data.json'},report:{rebuilt:false,data:0,path:'.lifecycle/generated/reports/lifecycle.json'},diagnostics:[]});
 else if(a[0]==='status') out({contract:'mdlm-status@1',ok:true,command:'status',package:statusPackage,currentOutcome:{outcome:'assignment',assignment:{allocation:'active',id:assignment}},recentTransaction:{available:false}});
-else if(a[0]==='assignment') out({contract:'mdlm-assignment-state@1',ok:true,command:'assignment.show',assignment:{id:assignment},selected:true,package:assignmentPackage,repository:repo,scenarioReference:scenario,disposition:'active',retryAvailability:{},malformedResponses});
+else if(a[0]==='assignment') { const requested=a[2]; if(requested!==assignment) out({contract:'mdlm-assignment-state@1',ok:true,command:'assignment.show',assignment:{id:requested},selected:false,diagnostics:[]}); else out({contract:'mdlm-assignment-state@1',ok:true,command:'assignment.show',assignment:{id:assignment},selected:true,package:assignmentPackage,repository:repo,scenarioReference:scenario,disposition:'active',retryAvailability:{},malformedResponses}); }
 else if(a[0]==='scenario'&&a[1]==='prepare') out({contract:'mdlm-assignment-packet@2',ok:true,command:'scenario.prepare',assignment:{id:assignment},package:packetPackage,repository:repo,scenario:{reference:scenario},responseSchema:{},exactInputs:[]});
 else if(a[0]==='scenario'&&a[1]==='submit') { let chunks=[]; process.stdin.on('data',x=>chunks.push(x)); process.stdin.on('end',()=>{const bytes=Buffer.concat(chunks); fs.appendFileSync(${JSON.stringify(path.join(scratch, 'submit-count'))},'1\\n'); const id=${JSON.stringify(executionId)}; const dir=path.join(root,'.lifecycle/data/.transactions',id); fs.mkdirSync(dir,{recursive:true}); fs.writeFileSync(path.join(dir,'execution.json'),'execution\\n'); fs.writeFileSync(path.join(dir,'target.json'),'target\\n'); if(${uncertainSubmit}) process.exit(9); else out({contract:'mdlm-scenario-execution@4',ok:true,command:'scenario.submit',execution:{contract:'mdlm-scenario-execution@4',id,status:'completed',response:{assignment,digest:'sha256:'+crypto.createHash('sha256').update(bytes).digest('hex')},definition:{scenario},outputs:[{lifecycleDatum:{path:${publicationPath ? JSON.stringify(publicationPath) : "'.lifecycle/data/.transactions/'+id+'/target.json'"}}}]}}); }); }
 else {process.stderr.write('unexpected '+JSON.stringify(a));process.exit(8)}
@@ -229,12 +229,45 @@ async function afterFactCheckpointFixture({ mutate } = {}) {
   });
   await writeEvidenceTriplet(evidenceDirectory, '000002', command2, stdout2, stderr2);
 
+  const preservedSnapshotDirectory = path.join(value.scratch, 'preserved-post-snapshot');
+  const snapshotExecution = exec(process.execPath, [cli, 'snapshot'], root, JSON.stringify({
+    contract: 'mdlm-demo-snapshot-request@1', repository: value.repository,
+    snapshotDirectory: preservedSnapshotDirectory, assignmentId: run003AssignmentA,
+    timeoutMs: value.request.timeoutMs, postRun: true, provenance: value.request.provenance,
+  }));
+  assert.equal(snapshotExecution.status, 0, snapshotExecution.stderr);
+  const preservedSnapshot = JSON.parse(snapshotExecution.stdout);
+  assert.equal(preservedSnapshot.status, 'complete', snapshotExecution.stdout);
+  value.request.checkpointRecovery = {
+    snapshotDirectory: preservedSnapshot.snapshotDirectory,
+    digest: preservedSnapshot.digest,
+  };
+
   const context = {
     ...value, workerLog, oldLifecycle, currentLifecycle, identityDirectory, aDirectory,
     evidenceDirectory, stopDirectory, packetPath, packet, config, command1, command2,
+    preservedSnapshotDirectory, preservedSnapshot,
   };
   if (mutate) await mutate(context);
   return context;
+}
+
+async function rewritePinnedSnapshot(value, update) {
+  const snapshotPath = path.join(value.preservedSnapshotDirectory, 'snapshot.json');
+  const manifestPath = path.join(value.preservedSnapshotDirectory, 'manifest.json');
+  await chmod(snapshotPath, 0o600);
+  await chmod(manifestPath, 0o600);
+  const snapshot = JSON.parse(await readFile(snapshotPath));
+  update(snapshot);
+  const snapshotBytes = Buffer.from(`${JSON.stringify(snapshot, null, 2)}\n`);
+  await writeFile(snapshotPath, snapshotBytes);
+  const manifest = JSON.parse(await readFile(manifestPath));
+  const record = manifest.files.find(item => item.path === 'snapshot.json');
+  record.bytes = snapshotBytes.length;
+  record.sha256 = `sha256:${createHash('sha256').update(snapshotBytes).digest('hex')}`;
+  const manifestBytes = Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`);
+  await writeFile(manifestPath, manifestBytes);
+  value.request.checkpointRecovery.digest = `sha256:${createHash('sha256').update(manifestBytes).digest('hex')}`;
 }
 
 test('run accepts the exact calculator run-002 Process Package shapes across command boundaries', async () => {
@@ -315,6 +348,31 @@ test('run and resume reject missing or unsafe operator configuration before snap
       assert.equal(await stat(value.request.evidenceDirectory).then(() => true, () => false), false);
       assert.equal(await stat(path.join(value.scratch, 'calls.log')).then(() => true, () => false), false);
       assert.equal(await stat(path.join(value.scratch, 'submit-count')).then(() => true, () => false), false);
+    }
+  }
+});
+
+test('run and resume requests reject unknown top-level and checkpoint recovery keys before snapshotting', async () => {
+  for (const mode of ['run', 'resume']) {
+    for (const update of [
+      request => { request.unreviewed = true; },
+      request => {
+        request.checkpointRecovery = {
+          snapshotDirectory: '/tmp/preserved-post-snapshot',
+          digest: `sha256:${'0'.repeat(64)}`,
+          unreviewed: true,
+        };
+      },
+    ]) {
+      const value = await fixture();
+      value.request.contract = mode === 'run' ? 'mdlm-demo-run-request@1' : 'mdlm-demo-resume-request@1';
+      update(value.request);
+
+      const execution = exec(process.execPath, [cli, mode], root, JSON.stringify(value.request));
+
+      assert.equal(execution.status, 1, `${mode}: ${execution.stderr}`);
+      assert.match(JSON.parse(execution.stderr).error, /unsupported|exactly/);
+      assert.equal(await stat(value.request.evidenceDirectory).then(() => true, () => false), false);
     }
   }
 });
@@ -732,6 +790,11 @@ fs.appendFileSync(workerLog,config.allowedAssignment+'\\n'); console.log(JSON.st
 });
 
 test('a later B resume reconciles exact old-runner A-to-B checkpoint evidence once without rerunning A', async () => {
+  const realSnapshotFixture = path.join(root, 'test', 'fixtures', 'calculator-run-003-post-snapshot');
+  assert.equal(
+    `sha256:${createHash('sha256').update(await readFile(path.join(realSnapshotFixture, 'manifest.json'))).digest('hex')}`,
+    'sha256:8bf25285f59b0deddfbbaaabbea617da6682d2f66ef239c0ff9665203da2838e',
+  );
   const exactHashes = {
     'identity.json': '528e4c6d51f871efedc6afdbbbd021c91b5856a3e5557a751cfe2d555587de20',
     'command-evidence/command-000001.json': 'f5b074b82de42fe29e58042ae941ad4c7d316edc126c747bc296a896cf518787',
@@ -748,6 +811,18 @@ test('a later B resume reconciles exact old-runner A-to-B checkpoint evidence on
   }
   const value = await afterFactCheckpointFixture();
   const request = { ...value.request, contract: 'mdlm-demo-resume-request@1' };
+  const realFixtureAttempt = exec(process.execPath, [cli, 'resume'], root, JSON.stringify({
+    ...request,
+    checkpointRecovery: {
+      snapshotDirectory: realSnapshotFixture,
+      digest: 'sha256:8bf25285f59b0deddfbbaaabbea617da6682d2f66ef239c0ff9665203da2838e',
+    },
+  }));
+  assert.equal(realFixtureAttempt.status, 0, realFixtureAttempt.stderr);
+  const realFixtureStop = JSON.parse(realFixtureAttempt.stdout);
+  assert.equal(realFixtureStop.reason, 'checkpoint-reconciliation-failure');
+  assert.match(realFixtureStop.detail, /different lifecycle repository/);
+  assert.equal(await stat(value.workerLog).then(() => true, () => false), false);
 
   const first = exec(process.execPath, [cli, 'resume'], root, JSON.stringify(request));
 
@@ -763,6 +838,10 @@ test('a later B resume reconciles exact old-runner A-to-B checkpoint evidence on
   assert.deepEqual(reconciliationFiles, [`${assignmentKeyForTest(run003AssignmentA)}-to-${assignmentKeyForTest(run003AssignmentB)}.json`]);
   const reconciliationPath = path.join(reconciliationDirectory, reconciliationFiles[0]);
   const reconciliationBytes = await readFile(reconciliationPath);
+  const reconciliation = JSON.parse(reconciliationBytes);
+  assert.equal(reconciliation.checkpointRecovery.snapshotDirectory, value.preservedSnapshotDirectory);
+  assert.equal(reconciliation.checkpointRecovery.digest, value.preservedSnapshot.digest);
+  assert.equal(reconciliation.checkpointRecovery.manifest.digest, value.preservedSnapshot.digest);
   const completedAPath = path.join(value.aDirectory, 'transaction.json');
   const completedABytes = await readFile(completedAPath);
   const completedA = JSON.parse(completedABytes);
@@ -770,6 +849,7 @@ test('a later B resume reconciles exact old-runner A-to-B checkpoint evidence on
   assert.equal(completedA.assignmentId, run003AssignmentA);
   assert.equal(completedA.outcome, 'accepted-publication');
   assert.deepEqual(completedA.completedRepository, value.currentLifecycle);
+  assert.deepEqual(completedA.checkpointRecovery, reconciliation.checkpointRecovery);
   const trusted = JSON.parse(await readFile(path.join(value.identityDirectory, 'repository-identity.json')));
   assert.deepEqual(trusted.lifecycleRepository, value.currentLifecycle);
   assert.deepEqual(trusted.lastAssignment, { id: run003AssignmentA, outcome: 'accepted-publication', completed: true });
@@ -829,6 +909,36 @@ test('after-the-fact checkpoint reconciliation rejects tamper, stale boundaries,
     await writeFile(file, `${JSON.stringify(value, null, 2)}\n`);
   };
   const cases = [
+    ['missing operator-pinned snapshot', value => { delete value.request.checkpointRecovery; }],
+    ['wrong operator-pinned digest', value => { value.request.checkpointRecovery.digest = `sha256:${'0'.repeat(64)}`; }],
+    ['tampered pinned manifest', async value => {
+      const manifest = path.join(value.preservedSnapshotDirectory, 'manifest.json');
+      await chmod(manifest, 0o600);
+      await writeFile(manifest, Buffer.concat([await readFile(manifest), Buffer.from('\n')]));
+    }],
+    ['tampered manifest-bound snapshot file', async value => {
+      const snapshotFile = path.join(value.preservedSnapshotDirectory, 'snapshot.json');
+      await chmod(snapshotFile, 0o600);
+      await writeFile(snapshotFile, Buffer.concat([await readFile(snapshotFile), Buffer.from('\n')]));
+    }],
+    ['symlinked pinned snapshot directory', async value => {
+      const link = path.join(value.scratch, 'preserved-post-snapshot-link');
+      await symlink(value.preservedSnapshotDirectory, link);
+      value.request.checkpointRecovery.snapshotDirectory = link;
+    }],
+    ['internally consistent pre-run snapshot', value => rewritePinnedSnapshot(value, snapshot => { snapshot.postRun = false; })],
+    ['pinned snapshot names wrong Assignment A', value => rewritePinnedSnapshot(value, snapshot => {
+      snapshot.assignment.id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    })],
+    ['pinned snapshot names wrong active Assignment B', value => rewritePinnedSnapshot(value, snapshot => {
+      snapshot.status.currentOutcome.assignment.id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    })],
+    ['pinned snapshot has wrong Process Package', value => rewritePinnedSnapshot(value, snapshot => {
+      snapshot.status.package.digest = `sha256:${'0'.repeat(64)}`;
+    })],
+    ['pinned snapshot names wrong lifecycle repository', value => rewritePinnedSnapshot(value, snapshot => {
+      snapshot.repository = '/tmp/unrelated-lifecycle-repository';
+    })],
     ['changed raw command bytes', async value => {
       await writeFile(path.join(value.evidenceDirectory, 'command-000002.stdout'), Buffer.concat([
         await readFile(path.join(value.evidenceDirectory, 'command-000002.stdout')), Buffer.from('forged\n'),
@@ -871,6 +981,15 @@ test('after-the-fact checkpoint reconciliation rejects tamper, stale boundaries,
       await writeFile(path.join(value.repository, 'unrelated.txt'), 'unrelated advancement\n');
       git(['add', 'unrelated.txt'], value.repository);
       git(['commit', '-m', 'unrelated advancement'], value.repository);
+    }],
+    ['packet repository changed to the unrelated current clean boundary', async value => {
+      await writeFile(path.join(value.repository, 'unrelated.txt'), 'unrelated advancement\n');
+      git(['add', 'unrelated.txt'], value.repository);
+      git(['commit', '-m', 'unrelated advancement'], value.repository);
+      const unrelated = cleanLifecycle(value.repository);
+      await rewrite(value.packetPath, packet => {
+        packet.repository = { head: unrelated.head, trackedState: unrelated.trackedState };
+      });
     }],
   ];
 

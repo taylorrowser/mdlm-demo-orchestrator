@@ -1,4 +1,4 @@
-import { chmod, mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
+import { chmod, lstat, mkdir, readFile, readdir, realpath, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { validateDoctor } from './contracts.mjs';
 import { normalizeProcessPackage } from './process-package.mjs';
@@ -8,6 +8,103 @@ import {
 } from './util.mjs';
 
 const commandNames = ['head', 'tree', 'status', 'stagedDiff', 'worktreeDiff', 'doctor', 'mdlmStatus', 'assignment'];
+const snapshotManifestPaths = [
+  'snapshot.json',
+  ...commandNames.flatMap(name => ['json', 'stderr', 'stdout'].map(extension => `commands/${name}.${extension}`)),
+].sort();
+
+export async function verifySnapshot(snapshotDirectory, expectedDigest) {
+  if (typeof snapshotDirectory !== 'string' || !path.isAbsolute(snapshotDirectory)) {
+    throw new Error('checkpointRecovery.snapshotDirectory must be an absolute path');
+  }
+  if (!/^sha256:[0-9a-f]{64}$/.test(expectedDigest ?? '')) {
+    throw new Error('checkpointRecovery.digest must be sha256:<64 lowercase hex>');
+  }
+  const directory = path.resolve(snapshotDirectory);
+  await requireCanonicalSnapshotDirectory(directory);
+  const rootEntries = await readdir(directory, { withFileTypes: true });
+  if (!sameJson(rootEntries.map(entry => entry.name).sort(), ['commands', 'manifest.json', 'snapshot.json'])) {
+    throw new Error('pinned snapshot root contains missing or extra entries');
+  }
+  const commandsEntry = rootEntries.find(entry => entry.name === 'commands');
+  if (!commandsEntry?.isDirectory() || commandsEntry.isSymbolicLink()) {
+    throw new Error('pinned snapshot commands entry is not a canonical directory');
+  }
+  const commandsDirectory = path.join(directory, 'commands');
+  await requireCanonicalSnapshotDirectory(commandsDirectory);
+  const commandEntries = await readdir(commandsDirectory, { withFileTypes: true });
+  const expectedCommandFiles = snapshotManifestPaths.filter(name => name.startsWith('commands/')).map(name => path.basename(name));
+  if (!sameJson(commandEntries.map(entry => entry.name).sort(), expectedCommandFiles) ||
+      commandEntries.some(entry => !entry.isFile() || entry.isSymbolicLink())) {
+    throw new Error('pinned snapshot commands contain missing, extra, or non-regular files');
+  }
+
+  const manifestEvidence = await readCanonicalSnapshotFile(path.join(directory, 'manifest.json'));
+  if (sha256(manifestEvidence.bytes) !== expectedDigest) throw new Error('pinned snapshot manifest digest differs from the operator pin');
+  let manifest;
+  try { manifest = JSON.parse(manifestEvidence.bytes.toString('utf8')); }
+  catch { throw new Error('pinned snapshot manifest is not valid JSON'); }
+  if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest) ||
+      !sameJson(Object.keys(manifest).sort(), ['contract', 'files']) ||
+      manifest.contract !== 'mdlm-demo-evidence-manifest@1' || !Array.isArray(manifest.files)) {
+    throw new Error('pinned snapshot manifest has an unsupported shape');
+  }
+  if (!sameJson(manifest.files.map(item => item?.path), snapshotManifestPaths)) {
+    throw new Error('pinned snapshot manifest is incomplete, unordered, or ambiguous');
+  }
+  const evidenceByPath = new Map();
+  for (const item of manifest.files) {
+    if (!item || typeof item !== 'object' || Array.isArray(item) ||
+        !sameJson(Object.keys(item).sort(), ['bytes', 'path', 'sha256']) ||
+        !Number.isSafeInteger(item.bytes) || item.bytes < 0 || !/^sha256:[0-9a-f]{64}$/.test(item.sha256 ?? '')) {
+      throw new Error('pinned snapshot manifest file record has an unsupported shape');
+    }
+    const evidence = await readCanonicalSnapshotFile(path.join(directory, item.path));
+    if (evidence.bytes.length !== item.bytes || sha256(evidence.bytes) !== item.sha256) {
+      throw new Error(`pinned snapshot file bytes differ from the manifest: ${item.path}`);
+    }
+    evidenceByPath.set(item.path, evidence);
+  }
+
+  let record;
+  try { record = JSON.parse(evidenceByPath.get('snapshot.json').bytes.toString('utf8')); }
+  catch { throw new Error('pinned snapshot record is not valid JSON'); }
+  if (record?.contract !== 'mdlm-demo-snapshot@2' || record.postRun !== true ||
+      record.commandFailure !== null || record.provenance?.valid !== true) {
+    throw new Error('pinned snapshot is not a complete post-run snapshot');
+  }
+  const records = {
+    head: record.git?.head,
+    tree: record.git?.tree,
+    status: record.git?.status,
+    stagedDiff: record.git?.stagedDiff,
+    worktreeDiff: record.git?.worktreeDiff,
+    doctor: record.commands?.doctor,
+    mdlmStatus: record.commands?.status,
+    assignment: record.commands?.assignment,
+  };
+  for (const name of commandNames) {
+    const recordBytes = evidenceByPath.get(`commands/${name}.json`).bytes;
+    let command;
+    try { command = JSON.parse(recordBytes.toString('utf8')); }
+    catch { throw new Error(`pinned snapshot command record is not valid JSON: ${name}`); }
+    const stdout = evidenceByPath.get(`commands/${name}.stdout`).bytes;
+    const stderr = evidenceByPath.get(`commands/${name}.stderr`).bytes;
+    if (!sameJson(command, records[name]) || command.stdoutBase64 !== stdout.toString('base64') ||
+        command.stderrBase64 !== stderr.toString('base64') || command.stdoutSha256 !== sha256(stdout) ||
+        command.stderrSha256 !== sha256(stderr) || command.observedOutputBytes !== stdout.length + stderr.length ||
+        command.exitStatus !== 0 || command.signal !== null || command.spawnError !== null ||
+        command.timedOut !== false || command.outputLimitExceeded !== false) {
+      throw new Error(`pinned snapshot command evidence is inconsistent or incomplete: ${name}`);
+    }
+  }
+  return {
+    snapshotDirectory: directory,
+    digest: expectedDigest,
+    manifest: { path: manifestEvidence.path, bytes: manifestEvidence.bytes.length, digest: sha256(manifestEvidence.bytes) },
+    snapshot: record,
+  };
+}
 
 export async function snapshot(request) {
   requireContract(request, 'mdlm-demo-snapshot-request@1');
@@ -328,10 +425,8 @@ async function captureOptional(file) {
 }
 
 async function manifestFiles(root) {
-  const names = ['snapshot.json'];
-  for (const name of commandNames) for (const suffix of ['stdout', 'stderr', 'json']) names.push(`commands/${name}.${suffix}`);
   const output = [];
-  for (const name of names.sort()) {
+  for (const name of snapshotManifestPaths) {
     const bytes = await readFile(path.join(root, name));
     output.push({ path: name, bytes: bytes.length, sha256: sha256(bytes) });
   }
@@ -344,7 +439,24 @@ async function makeReadOnly(root, files) {
   await chmod(root, 0o500);
 }
 
+async function requireCanonicalSnapshotDirectory(directory) {
+  const information = await lstat(directory);
+  if (!information.isDirectory() || information.isSymbolicLink() || await realpath(directory) !== directory) {
+    throw new Error(`pinned snapshot directory is not canonical: ${directory}`);
+  }
+}
+
+async function readCanonicalSnapshotFile(file) {
+  const expected = path.resolve(file);
+  const information = await lstat(expected);
+  if (!information.isFile() || information.isSymbolicLink() || await realpath(expected) !== expected) {
+    throw new Error(`pinned snapshot evidence is not a canonical regular file: ${expected}`);
+  }
+  return { path: expected, bytes: await readFile(expected) };
+}
+
 async function writeExclusive(file, bytes) { await writeFile(file, bytes, { flag: 'wx', mode: 0o600 }); }
+function sameJson(left, right) { return JSON.stringify(left) === JSON.stringify(right); }
 function deduplicateFailures(failures) { return failures.filter((item, index) => failures.findIndex(other => other.command === item.command && other.kind === item.kind) === index); }
 function recordSucceeded(record) { return record.exitStatus === 0 && record.signal === null && record.timedOut === false && record.outputLimitExceeded === false && record.spawnError === null; }
 function commandRecordFailureKind(record) {

@@ -1,0 +1,21 @@
+{
+  "argv": [
+    "/home/ubuntu/git/mdlm-successor-demos/.tooling-issue-214/node_modules/.bin/mdlm",
+    "doctor",
+    "--json"
+  ],
+  "cwd": "/home/ubuntu/git/mdlm-successor-demos/issue-212/calculator-post214-resumable-20260825T0050Z",
+  "startedAt": "2026-08-25T01:58:50.554Z",
+  "completedAt": "2026-08-25T01:58:55.392Z",
+  "timeoutMs": 900000,
+  "timedOut": false,
+  "outputLimitExceeded": false,
+  "observedOutputBytes": 616,
+  "exitStatus": 0,
+  "signal": null,
+  "spawnError": null,
+  "stdoutBase64": "ewogICJvayI6IHRydWUsCiAgImNvbW1hbmQiOiAiZG9jdG9yIiwKICAicGFja2FnZSI6IHsKICAgICJpZCI6ICJtZGxtLWJvb3RzdHJhcCIsCiAgICAidmVyc2lvbiI6ICIwLjc0LjAiLAogICAgInJlZmVyZW5jZSI6ICJtZGxtLWJvb3RzdHJhcEAwLjc0LjAiLAogICAgImxhbmd1YWdlIjogIm1kbG0tZXhwcmVzc2lvbkAxIiwKICAgICJkaWdlc3QiOiAic2hhMjU2OmVlOTllNjk4ZDM2ZTQwNmE4MzZhNzk2YTM2ZmMxZGIyZDI0NTEwNzJhZDY2MmMwZTA2ODA1YWI1YzIwZmU1YWMiCiAgfSwKICAiYmFzZWxpbmVSZXBvc2l0b3J5VmVyaWZpY2F0aW9uIjogewogICAgInZlcmlmaWVkQmFzZWxpbmVzIjogMSwKICAgICJwcm9jZXNzRHJpZnQiOiAwCiAgfSwKICAiaW5kZXgiOiB7CiAgICAicmVidWlsdCI6IGZhbHNlLAogICAgImRhdGEiOiAzLAogICAgInBhdGgiOiAiLmxpZmVjeWNsZS9nZW5lcmF0ZWQvaW5kZXhlcy9kYXRhLmpzb24iCiAgfSwKICAicmVwb3J0IjogewogICAgInJlYnVpbHQiOiBmYWxzZSwKICAgICJkYXRhIjogMywKICAgICJwYXRoIjogIi5saWZlY3ljbGUvZ2VuZXJhdGVkL3JlcG9ydHMvbGlmZWN5Y2xlLmpzb24iCiAgfSwKICAiZGlhZ25vc3RpY3MiOiBbXQp9Cg==",
+  "stderrBase64": "",
+  "stdoutSha256": "sha256:8831673866fd9408c83829bd621640cc14527dfe88004370b33a0146bd98b9c1",
+  "stderrSha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

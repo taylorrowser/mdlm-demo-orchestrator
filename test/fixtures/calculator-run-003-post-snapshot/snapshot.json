@@ -1,0 +1,574 @@
+{
+  "contract": "mdlm-demo-snapshot@2",
+  "createdAt": "2026-08-25T01:59:09.991Z",
+  "postRun": true,
+  "repository": "/home/ubuntu/git/mdlm-successor-demos/issue-212/calculator-post214-resumable-20260825T0050Z",
+  "lifecycleRepository": {
+    "head": "856aab804ebb097598cf75cc437f933bd0e5569d",
+    "tree": "2723a4e729a1a6a698d4759702cfc1401c6a1ae0",
+    "trackedState": "sha256:e73879f6b29faffef20950bdd9c25fef11ed5fac9ab5f0e13eb5554e5b841e65",
+    "clean": true,
+    "porcelainSha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "assignmentRepository": null,
+  "git": {
+    "head": {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD^{commit}"
+      ],
+      "cwd": "/home/ubuntu/git/mdlm-successor-demos/issue-212/calculator-post214-resumable-20260825T0050Z",
+      "startedAt": "2026-08-25T01:58:50.507Z",
+      "completedAt": "2026-08-25T01:58:50.515Z",
+      "timeoutMs": 900000,
+      "timedOut": false,
+      "outputLimitExceeded": false,
+      "observedOutputBytes": 41,
+      "exitStatus": 0,
+      "signal": null,
+      "spawnError": null,
+      "stdoutBase64": "ODU2YWFiODA0ZWJiMDk3NTk4Y2Y3NWNjNDM3ZjkzM2JkMGU1NTY5ZAo=",
+      "stderrBase64": "",
+      "stdoutSha256": "sha256:9a84b1f1751b91efdba5794e5c31d6086474a3a610fd4eb0f55c2435f8d50d52",
+      "stderrSha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "tree": {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD^{tree}"
+      ],
+      "cwd": "/home/ubuntu/git/mdlm-successor-demos/issue-212/calculator-post214-resumable-20260825T0050Z",
+      "startedAt": "2026-08-25T01:58:50.515Z",
+      "completedAt": "2026-08-25T01:58:50.523Z",
+      "timeoutMs": 900000,
+      "timedOut": false,
+      "outputLimitExceeded": false,
+      "observedOutputBytes": 41,
+      "exitStatus": 0,
+      "signal": null,
+      "spawnError": null,
+      "stdoutBase64": "MjcyM2E0ZTcyOWExYTZhNjk4ZDQ3NTk3MDJjZmMxNDAxYzZhMWFlMAo=",
+      "stderrBase64": "",
+      "stdoutSha256": "sha256:0a3310a6cd2ba7e12acbad438ce05d5a5b61d5a5123935496c56bb6ec22ea026",
+      "stderrSha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "status": {
+      "argv": [
+        "git",
+        "status",
+        "--porcelain=v1",
+        "-z",
+        "--untracked-files=all"
+      ],
+      "cwd": "/home/ubuntu/git/mdlm-successor-demos/issue-212/calculator-post214-resumable-20260825T0050Z",
+      "startedAt": "2026-08-25T01:58:50.523Z",
+      "completedAt": "2026-08-25T01:58:50.536Z",
+      "timeoutMs": 900000,
+      "timedOut": false,
+      "outputLimitExceeded": false,
+      "observedOutputBytes": 0,
+      "exitStatus": 0,
+      "signal": null,
+      "spawnError": null,
+      "stdoutBase64": "",
+      "stderrBase64": "",
+      "stdoutSha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "stagedDiff": {
+      "argv": [
+        "git",
+        "diff",
+        "--binary",
+        "--no-ext-diff",
+        "--cached",
+        "HEAD",
+        "--"
+      ],
+      "cwd": "/home/ubuntu/git/mdlm-successor-demos/issue-212/calculator-post214-resumable-20260825T0050Z",
+      "startedAt": "2026-08-25T01:58:50.537Z",
+      "completedAt": "2026-08-25T01:58:50.544Z",
+      "timeoutMs": 900000,
+      "timedOut": false,
+      "outputLimitExceeded": false,
+      "observedOutputBytes": 0,
+      "exitStatus": 0,
+      "signal": null,
+      "spawnError": null,
+      "stdoutBase64": "",
+      "stderrBase64": "",
+      "stdoutSha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "worktreeDiff": {
+      "argv": [
+        "git",
+        "diff",
+        "--binary",
+        "--no-ext-diff",
+        "--"
+      ],
+      "cwd": "/home/ubuntu/git/mdlm-successor-demos/issue-212/calculator-post214-resumable-20260825T0050Z",
+      "startedAt": "2026-08-25T01:58:50.544Z",
+      "completedAt": "2026-08-25T01:58:50.554Z",
+      "timeoutMs": 900000,
+      "timedOut": false,
+      "outputLimitExceeded": false,
+      "observedOutputBytes": 0,
+      "exitStatus": 0,
+      "signal": null,
+      "spawnError": null,
+      "stdoutBase64": "",
+      "stderrBase64": "",
+      "stdoutSha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderrSha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "commands": {
+    "doctor": {
+      "argv": [
+        "/home/ubuntu/git/mdlm-successor-demos/.tooling-issue-214/node_modules/.bin/mdlm",
+        "doctor",
+        "--json"
+      ],
+      "cwd": "/home/ubuntu/git/mdlm-successor-demos/issue-212/calculator-post214-resumable-20260825T0050Z",
+      "startedAt": "2026-08-25T01:58:50.554Z",
+      "completedAt": "2026-08-25T01:58:55.392Z",
+      "timeoutMs": 900000,
+      "timedOut": false,
+      "outputLimitExceeded": false,
+      "observedOutputBytes": 616,
+      "exitStatus": 0,
+      "signal": null,
+      "spawnError": null,
+      "stdoutBase64": "ewogICJvayI6IHRydWUsCiAgImNvbW1hbmQiOiAiZG9jdG9yIiwKICAicGFja2FnZSI6IHsKICAgICJpZCI6ICJtZGxtLWJvb3RzdHJhcCIsCiAgICAidmVyc2lvbiI6ICIwLjc0LjAiLAogICAgInJlZmVyZW5jZSI6ICJtZGxtLWJvb3RzdHJhcEAwLjc0LjAiLAogICAgImxhbmd1YWdlIjogIm1kbG0tZXhwcmVzc2lvbkAxIiwKICAgICJkaWdlc3QiOiAic2hhMjU2OmVlOTllNjk4ZDM2ZTQwNmE4MzZhNzk2YTM2ZmMxZGIyZDI0NTEwNzJhZDY2MmMwZTA2ODA1YWI1YzIwZmU1YWMiCiAgfSwKICAiYmFzZWxpbmVSZXBvc2l0b3J5VmVyaWZpY2F0aW9uIjogewogICAgInZlcmlmaWVkQmFzZWxpbmVzIjogMSwKICAgICJwcm9jZXNzRHJpZnQiOiAwCiAgfSwKICAiaW5kZXgiOiB7CiAgICAicmVidWlsdCI6IGZhbHNlLAogICAgImRhdGEiOiAzLAogICAgInBhdGgiOiAiLmxpZmVjeWNsZS9nZW5lcmF0ZWQvaW5kZXhlcy9kYXRhLmpzb24iCiAgfSwKICAicmVwb3J0IjogewogICAgInJlYnVpbHQiOiBmYWxzZSwKICAgICJkYXRhIjogMywKICAgICJwYXRoIjogIi5saWZlY3ljbGUvZ2VuZXJhdGVkL3JlcG9ydHMvbGlmZWN5Y2xlLmpzb24iCiAgfSwKICAiZGlhZ25vc3RpY3MiOiBbXQp9Cg==",
+      "stderrBase64": "",
+      "stdoutSha256": "sha256:8831673866fd9408c83829bd621640cc14527dfe88004370b33a0146bd98b9c1",
+      "stderrSha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "status": {
+      "argv": [
+        "/home/ubuntu/git/mdlm-successor-demos/.tooling-issue-214/node_modules/.bin/mdlm",
+        "status",
+        "--json"
+      ],
+      "cwd": "/home/ubuntu/git/mdlm-successor-demos/issue-212/calculator-post214-resumable-20260825T0050Z",
+      "startedAt": "2026-08-25T01:58:55.392Z",
+      "completedAt": "2026-08-25T01:58:59.874Z",
+      "timeoutMs": 900000,
+      "timedOut": false,
+      "outputLimitExceeded": false,
+      "observedOutputBytes": 1976,
+      "exitStatus": 0,
+      "signal": null,
+      "spawnError": null,
+      "stdoutBase64": "ewogICJvayI6IHRydWUsCiAgImNvbW1hbmQiOiAic3RhdHVzIiwKICAiY29udHJhY3QiOiAibWRsbS1zdGF0dXNAMSIsCiAgInBhY2thZ2UiOiB7CiAgICAiaWQiOiAibWRsbS1ib290c3RyYXAiLAogICAgInZlcnNpb24iOiAiMC43NC4wIiwKICAgICJyZWZlcmVuY2UiOiAibWRsbS1ib290c3RyYXBAMC43NC4wIiwKICAgICJsYW5ndWFnZSI6ICJtZGxtLWV4cHJlc3Npb25AMSIsCiAgICAiZGlnZXN0IjogInNoYTI1NjplZTk5ZTY5OGQzNmU0MDZhODM2YTc5NmEzNmZjMWRiMmQyNDUxMDcyYWQ2NjJjMGUwNjgwNWFiNWMyMGZlNWFjIgogIH0sCiAgInByb2ZpbGUiOiB7CiAgICAicmVmZXJlbmNlIjogImJvb3RzdHJhcEAzOCIsCiAgICAic3RhdHVzIjogImV4cGVyaW1lbnRhbCIsCiAgICAiZGVzY3JpcHRpb24iOiAiQ29tcGxldGUgYm9vdHN0cmFwIHByb2ZpbGUgd2l0aCBwcm9wb3J0aW9uYWwgZ3JvdXBlZCBzeXN0ZW0gZGVmaW5pdGlvbiwgcmV2aWV3ZWQgaW50ZW50LCBxdWFsaWZpY2F0aW9uL3BpbG90LCBleGFjdCBhY2NlcHRlZC1TVEsgYW5kIHNoYXJlZC1TWVMgY2hhbmdlIGNvbnRyb2wsIGFuZCBhIHJldmlld2VkIGV4cGFuc2lvbiBEZWNpc2lvbi4iCiAgfSwKICAiaW50ZWdyaXR5IjogewogICAgInN0YXR1cyI6ICJ2YWxpZCIsCiAgICAiZGlhZ25vc3RpY3MiOiBbXQogIH0sCiAgImFjdGl2ZVBoYXNlIjogewogICAgInJlZmVyZW5jZSI6ICJwaGFzZS0wLXdheWZpbmRpbmdANSIsCiAgICAibmFtZSI6ICJXYXlmaW5kaW5nIGJvb3RzdHJhcCIsCiAgICAicHVycG9zZSI6ICJFc3RhYmxpc2ggcmV2aWV3ZWQsIHNjb3BlLWNoYWxsZW5nZWQgcHJvZHVjdCBpbnRlbnQgYW5kIHN0YWtlaG9sZGVyIGNvbW1pdG1lbnRzIGZvciBleHBsaWNpdCB1c2VyIGFwcHJvdmFsLiIsCiAgICAiY292ZXJhZ2UiOiAiYm9vdHN0cmFwLXN1YnNldCIKICB9LAogICJvbWl0dGVkQ292ZXJhZ2UiOiB7CiAgICAicHJvZmlsZSI6IFsKICAgICAgImNvbXBvbmVudCBhbmQgZGVzaWduIGRlY29tcG9zaXRpb24gbGlmZWN5Y2xlIHR5cGVzIiwKICAgICAgImZvcm1hbCB2ZXJpZmljYXRpb24gZXhlY3V0aW9uIiwKICAgICAgImNvbXBvbmVudCBhbmQgZGVzaWduIGltcGxlbWVudGF0aW9uIGxpZmVjeWNsZSB0eXBlcyIKICAgIF0sCiAgICAicGhhc2UiOiBbCiAgICAgICJWU1AgYW5kIGVudmlyb25tZW50IHByb2ZpbGVzIgogICAgXQogIH0sCiAgInJlY2VudFRyYW5zYWN0aW9uIjogewogICAgImF2YWlsYWJsZSI6IHRydWUsCiAgICAiaWQiOiAiNWQ3YzA2N2YtMzUyMS00NDhiLTkzNmQtYThkM2UzYzljYmIwIiwKICAgICJzdGF0dXMiOiAiY29tcGxldGVkIiwKICAgICJzY2VuYXJpbyI6ICJjcmVhdGUtcmV2aWV3LWNvbnRleHRAMSIKICB9LAogICJ1bnJlc29sdmVkV29yayI6IHsKICAgICJ0b3RhbCI6IDUsCiAgICAiZGlzcGF0Y2hhYmxlIjogMiwKICAgICJieVN0YXR1cyI6IHsKICAgICAgImF3YWl0aW5nLXJldmlldyI6IDEsCiAgICAgICJibG9ja2VkIjogMywKICAgICAgInJlYWR5IjogMQogICAgfQogIH0sCiAgImN1cnJlbnRPdXRjb21lIjogewogICAgIm91dGNvbWUiOiAiYXNzaWdubWVudCIsCiAgICAiYXNzaWdubWVudCI6IHsKICAgICAgImFsbG9jYXRpb24iOiAiYWN0aXZlIiwKICAgICAgImlkIjogIjZkYjdiZGE3LTcwNDMtNDQ2Yi1hMzhhLTJkYWFiNmM2ZGYzZSIKICAgIH0KICB9LAogICJkcmlsbERvd25Db21tYW5kcyI6IFsKICAgICJtZGxtIG5leHQiLAogICAgIm1kbG0gYXNzaWdubWVudCBzaG93IDZkYjdiZGE3LTcwNDMtNDQ2Yi1hMzhhLTJkYWFiNmM2ZGYzZSAtLWpzb24iLAogICAgIm1kbG0gbG9vc2UtZW5kcyAtLWpzb24iLAogICAgIm1kbG0gcGhhc2Ugc3RhdHVzIHBoYXNlLTAtd2F5ZmluZGluZyAtLWpzb24iLAogICAgIm1kbG0gZG9jdG9yIC0tanNvbiIsCiAgICAibWRsbSBwcm9jZXNzIHNob3cgLS1qc29uIgogIF0sCiAgImRpYWdub3N0aWNzIjogW10KfQo=",
+      "stderrBase64": "",
+      "stdoutSha256": "sha256:dd6e6b8522e840864feda2d7f5c3a1318b3d8508e05e0b0cf02143743843a065",
+      "stderrSha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "assignment": {
+      "argv": [
+        "/home/ubuntu/git/mdlm-successor-demos/.tooling-issue-214/node_modules/.bin/mdlm",
+        "assignment",
+        "show",
+        "0110fb6b-5a0d-4228-9867-58ed3e27a4a4",
+        "--json"
+      ],
+      "cwd": "/home/ubuntu/git/mdlm-successor-demos/issue-212/calculator-post214-resumable-20260825T0050Z",
+      "startedAt": "2026-08-25T01:58:59.874Z",
+      "completedAt": "2026-08-25T01:59:00.275Z",
+      "timeoutMs": 900000,
+      "timedOut": false,
+      "outputLimitExceeded": false,
+      "observedOutputBytes": 204,
+      "exitStatus": 0,
+      "signal": null,
+      "spawnError": null,
+      "stdoutBase64": "ewogICJvayI6IHRydWUsCiAgImNvbW1hbmQiOiAiYXNzaWdubWVudC5zaG93IiwKICAiY29udHJhY3QiOiAibWRsbS1hc3NpZ25tZW50LXN0YXRlQDEiLAogICJhc3NpZ25tZW50IjogewogICAgImlkIjogIjAxMTBmYjZiLTVhMGQtNDIyOC05ODY3LTU4ZWQzZTI3YTRhNCIKICB9LAogICJzZWxlY3RlZCI6IGZhbHNlLAogICJkaWFnbm9zdGljcyI6IFtdCn0K",
+      "stderrBase64": "",
+      "stdoutSha256": "sha256:899d3ff6fe3097df288c10162fb58608d67665e05779215f9bf7ba02d9216684",
+      "stderrSha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "assignment": {
+    "id": "0110fb6b-5a0d-4228-9867-58ed3e27a4a4",
+    "selected": false
+  },
+  "status": {
+    "ok": true,
+    "command": "status",
+    "contract": "mdlm-status@1",
+    "package": {
+      "id": "mdlm-bootstrap",
+      "version": "0.74.0",
+      "reference": "mdlm-bootstrap@0.74.0",
+      "language": "mdlm-expression@1",
+      "digest": "sha256:ee99e698d36e406a836a796a36fc1db2d2451072ad662c0e06805ab5c20fe5ac"
+    },
+    "profile": {
+      "reference": "bootstrap@38",
+      "status": "experimental",
+      "description": "Complete bootstrap profile with proportional grouped system definition, reviewed intent, qualification/pilot, exact accepted-STK and shared-SYS change control, and a reviewed expansion Decision."
+    },
+    "integrity": {
+      "status": "valid",
+      "diagnostics": []
+    },
+    "activePhase": {
+      "reference": "phase-0-wayfinding@5",
+      "name": "Wayfinding bootstrap",
+      "purpose": "Establish reviewed, scope-challenged product intent and stakeholder commitments for explicit user approval.",
+      "coverage": "bootstrap-subset"
+    },
+    "omittedCoverage": {
+      "profile": [
+        "component and design decomposition lifecycle types",
+        "formal verification execution",
+        "component and design implementation lifecycle types"
+      ],
+      "phase": [
+        "VSP and environment profiles"
+      ]
+    },
+    "recentTransaction": {
+      "available": true,
+      "id": "5d7c067f-3521-448b-936d-a8d3e3c9cbb0",
+      "status": "completed",
+      "scenario": "create-review-context@1"
+    },
+    "unresolvedWork": {
+      "total": 5,
+      "dispatchable": 2,
+      "byStatus": {
+        "awaiting-review": 1,
+        "blocked": 3,
+        "ready": 1
+      }
+    },
+    "currentOutcome": {
+      "outcome": "assignment",
+      "assignment": {
+        "allocation": "active",
+        "id": "6db7bda7-7043-446b-a38a-2daab6c6df3e"
+      }
+    },
+    "drillDownCommands": [
+      "mdlm next",
+      "mdlm assignment show 6db7bda7-7043-446b-a38a-2daab6c6df3e --json",
+      "mdlm loose-ends --json",
+      "mdlm phase status phase-0-wayfinding --json",
+      "mdlm doctor --json",
+      "mdlm process show --json"
+    ],
+    "diagnostics": []
+  },
+  "diagnosis": {
+    "ok": true,
+    "command": "doctor",
+    "package": {
+      "id": "mdlm-bootstrap",
+      "version": "0.74.0",
+      "reference": "mdlm-bootstrap@0.74.0",
+      "language": "mdlm-expression@1",
+      "digest": "sha256:ee99e698d36e406a836a796a36fc1db2d2451072ad662c0e06805ab5c20fe5ac"
+    },
+    "baselineRepositoryVerification": {
+      "verifiedBaselines": 1,
+      "processDrift": 0
+    },
+    "index": {
+      "rebuilt": false,
+      "data": 3,
+      "path": ".lifecycle/generated/indexes/data.json"
+    },
+    "report": {
+      "rebuilt": false,
+      "data": 3,
+      "path": ".lifecycle/generated/reports/lifecycle.json"
+    },
+    "diagnostics": []
+  },
+  "journal": {
+    "present": false,
+    "path": "/home/ubuntu/git/mdlm-successor-demos/evidence/issue-212-final/calculator-post214/private-state/assignments/0110fb6b-5a0d-4228-9867-58ed3e27a4a4-df4b4d238366/transaction.json"
+  },
+  "piJournal": {
+    "present": false,
+    "path": "/home/ubuntu/git/mdlm-successor-demos/issue-212/calculator-post214-resumable-20260825T0050Z/.git/mdlm-pi/run.json"
+  },
+  "provenance": {
+    "source": {
+      "repository": "/home/ubuntu/git/mdlm-successor-demos/.source-516f9e0",
+      "expectedCommit": "516f9e0ef52bb5fcc47cce56282a44075c5af4f2",
+      "expectedTree": "623575c22b53bd6a2a21c73c4420ca5f26aaa172",
+      "observedCommit": "516f9e0ef52bb5fcc47cce56282a44075c5af4f2",
+      "observedTree": "623575c22b53bd6a2a21c73c4420ca5f26aaa172",
+      "clean": true,
+      "matches": true,
+      "commands": {
+        "commit": {
+          "argv": [
+            "git",
+            "rev-parse",
+            "HEAD^{commit}"
+          ],
+          "cwd": "/home/ubuntu/git/mdlm-successor-demos/.source-516f9e0",
+          "startedAt": "2026-08-25T01:59:00.286Z",
+          "completedAt": "2026-08-25T01:59:00.295Z",
+          "timeoutMs": 900000,
+          "timedOut": false,
+          "outputLimitExceeded": false,
+          "observedOutputBytes": 41,
+          "exitStatus": 0,
+          "signal": null,
+          "spawnError": null,
+          "stdoutBase64": "NTE2ZjllMGVmNTJiYjVmY2M0N2NjZTU2MjgyYTQ0MDc1YzVhZjRmMgo=",
+          "stderrBase64": "",
+          "stdoutSha256": "sha256:41d3cd8052295235f95e41ab64de39b85e9f1d90b183ee0b25b0a9d468a27a8b",
+          "stderrSha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "tree": {
+          "argv": [
+            "git",
+            "rev-parse",
+            "HEAD^{tree}"
+          ],
+          "cwd": "/home/ubuntu/git/mdlm-successor-demos/.source-516f9e0",
+          "startedAt": "2026-08-25T01:59:00.295Z",
+          "completedAt": "2026-08-25T01:59:00.305Z",
+          "timeoutMs": 900000,
+          "timedOut": false,
+          "outputLimitExceeded": false,
+          "observedOutputBytes": 41,
+          "exitStatus": 0,
+          "signal": null,
+          "spawnError": null,
+          "stdoutBase64": "NjIzNTc1YzIyYjUzYmQ2YTJhMjFjNzNjNDQyMGNhNWYyNmFhYTE3Mgo=",
+          "stderrBase64": "",
+          "stdoutSha256": "sha256:5cbd3f08c4f91389ccd555262c46ea9cf2b9bf610707b4245a1b2d753c49f6a8",
+          "stderrSha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "status": {
+          "argv": [
+            "git",
+            "status",
+            "--porcelain=v1",
+            "-z",
+            "--untracked-files=all"
+          ],
+          "cwd": "/home/ubuntu/git/mdlm-successor-demos/.source-516f9e0",
+          "startedAt": "2026-08-25T01:59:00.305Z",
+          "completedAt": "2026-08-25T01:59:00.321Z",
+          "timeoutMs": 900000,
+          "timedOut": false,
+          "outputLimitExceeded": false,
+          "observedOutputBytes": 0,
+          "exitStatus": 0,
+          "signal": null,
+          "spawnError": null,
+          "stdoutBase64": "",
+          "stderrBase64": "",
+          "stdoutSha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderrSha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      }
+    },
+    "package": {
+      "path": "/home/ubuntu/git/mdlm-successor-demos/.packages/0.74.0/mdlm-0.0.0.tgz",
+      "realpath": "/home/ubuntu/git/mdlm-successor-demos/.packages/0.74.0/mdlm-0.0.0.tgz",
+      "pathKind": "file",
+      "digest": "sha256:8f7eb4b7d4e04a053713c72debc2a4a71d7878a0a9ed084ade8c964e9eef6cf7",
+      "bytes": 3713899,
+      "expectedDigest": "sha256:8f7eb4b7d4e04a053713c72debc2a4a71d7878a0a9ed084ade8c964e9eef6cf7",
+      "matches": true
+    },
+    "piPackage": {
+      "path": "/home/ubuntu/git/mdlm-successor-demos/.packages/0.74.0/mdlm-pi-0.0.0.tgz",
+      "realpath": "/home/ubuntu/git/mdlm-successor-demos/.packages/0.74.0/mdlm-pi-0.0.0.tgz",
+      "pathKind": "file",
+      "digest": "sha256:d3e99c2ebd13f1167ac2041f586b9bbe8fa738388020d9103cad10b90f17df3b",
+      "bytes": 80659,
+      "expectedDigest": "sha256:d3e99c2ebd13f1167ac2041f586b9bbe8fa738388020d9103cad10b90f17df3b",
+      "matches": true
+    },
+    "tooling": {
+      "root": "/home/ubuntu/git/mdlm-successor-demos/.tooling-issue-214",
+      "contract": "mdlm-demo-tooling-tree@1",
+      "digest": "sha256:a16e6aeeb1ee082a500e11494d5c924f29a44f71736d4681e2895ee653f4c5f0",
+      "entries": 17276,
+      "files": 15741,
+      "symlinks": 12,
+      "bytes": 124184736,
+      "expectedDigest": "sha256:a16e6aeeb1ee082a500e11494d5c924f29a44f71736d4681e2895ee653f4c5f0",
+      "lock": {
+        "path": "/home/ubuntu/git/mdlm-successor-demos/.tooling-issue-214/package-lock.json",
+        "realpath": "/home/ubuntu/git/mdlm-successor-demos/.tooling-issue-214/package-lock.json",
+        "pathKind": "file",
+        "digest": "sha256:028cb194bc2b0bfdaf8e631cd03cd3bf3aeadb64e2284eaad7e19061da90b294",
+        "bytes": 77148,
+        "expectedDigest": "sha256:028cb194bc2b0bfdaf8e631cd03cd3bf3aeadb64e2284eaad7e19061da90b294",
+        "matches": true
+      },
+      "containedTools": true,
+      "matches": true
+    },
+    "tools": {
+      "mdlm": {
+        "path": "/home/ubuntu/git/mdlm-successor-demos/.tooling-issue-214/node_modules/.bin/mdlm",
+        "realpath": "/home/ubuntu/git/mdlm-successor-demos/.tooling-issue-214/node_modules/mdlm/dist/mdlm.js",
+        "pathKind": "symbolic-link",
+        "digest": "sha256:c8117c43233d3735ee3cdc39d6ceba3aaf2cb3b395e93a67429513d816c82b2f",
+        "bytes": 998,
+        "expectedDigest": "sha256:c8117c43233d3735ee3cdc39d6ceba3aaf2cb3b395e93a67429513d816c82b2f",
+        "matches": true
+      },
+      "mdlmPi": {
+        "path": "/home/ubuntu/git/mdlm-successor-demos/.tooling-issue-214/node_modules/.bin/mdlm-pi",
+        "realpath": "/home/ubuntu/git/mdlm-successor-demos/.tooling-issue-214/node_modules/mdlm-pi/dist/cli.js",
+        "pathKind": "symbolic-link",
+        "digest": "sha256:843bf59b780a7e89fc022cc5b168ad90814ef223d8f8a17e32b895335c1d6c43",
+        "bytes": 5765,
+        "expectedDigest": "sha256:843bf59b780a7e89fc022cc5b168ad90814ef223d8f8a17e32b895335c1d6c43",
+        "matches": true
+      }
+    },
+    "qualificationHarness": {
+      "repository": "/home/ubuntu/git/mdlm-phase1-qualification-harness",
+      "expectedCommit": "79c87627aaf48ca3261a3476aa82c52524f3c938",
+      "expectedTree": "e7311ce6e36df8df6fa840ea2df70ff00fe316c1",
+      "observedCommit": "79c87627aaf48ca3261a3476aa82c52524f3c938",
+      "observedTree": "e7311ce6e36df8df6fa840ea2df70ff00fe316c1",
+      "clean": true,
+      "matches": true,
+      "commands": {
+        "commit": {
+          "argv": [
+            "git",
+            "rev-parse",
+            "HEAD^{commit}"
+          ],
+          "cwd": "/home/ubuntu/git/mdlm-phase1-qualification-harness",
+          "startedAt": "2026-08-25T01:59:00.322Z",
+          "completedAt": "2026-08-25T01:59:00.331Z",
+          "timeoutMs": 900000,
+          "timedOut": false,
+          "outputLimitExceeded": false,
+          "observedOutputBytes": 41,
+          "exitStatus": 0,
+          "signal": null,
+          "spawnError": null,
+          "stdoutBase64": "NzljODc2MjdhYWY0OGNhMzI2MWEzNDc2YWE4MmM1MjUyNGYzYzkzOAo=",
+          "stderrBase64": "",
+          "stdoutSha256": "sha256:7a0730db1e16196831bb4216c6fa80845b25418a4a768fb76b81e8f74ada5cd3",
+          "stderrSha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "tree": {
+          "argv": [
+            "git",
+            "rev-parse",
+            "HEAD^{tree}"
+          ],
+          "cwd": "/home/ubuntu/git/mdlm-phase1-qualification-harness",
+          "startedAt": "2026-08-25T01:59:00.331Z",
+          "completedAt": "2026-08-25T01:59:00.339Z",
+          "timeoutMs": 900000,
+          "timedOut": false,
+          "outputLimitExceeded": false,
+          "observedOutputBytes": 41,
+          "exitStatus": 0,
+          "signal": null,
+          "spawnError": null,
+          "stdoutBase64": "ZTczMTFjZTZlMzZkZjhkZjZmYTg0MGVhMmRmNzBmZjAwZmUzMTZjMQo=",
+          "stderrBase64": "",
+          "stdoutSha256": "sha256:aa4e82ad46eeb5fe3b08a3e703de57c0f1fe41de31c7705454bfedea711bb802",
+          "stderrSha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "status": {
+          "argv": [
+            "git",
+            "status",
+            "--porcelain=v1",
+            "-z",
+            "--untracked-files=all"
+          ],
+          "cwd": "/home/ubuntu/git/mdlm-phase1-qualification-harness",
+          "startedAt": "2026-08-25T01:59:00.339Z",
+          "completedAt": "2026-08-25T01:59:00.349Z",
+          "timeoutMs": 900000,
+          "timedOut": false,
+          "outputLimitExceeded": false,
+          "observedOutputBytes": 0,
+          "exitStatus": 0,
+          "signal": null,
+          "spawnError": null,
+          "stdoutBase64": "",
+          "stderrBase64": "",
+          "stdoutSha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "stderrSha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "manifest": {
+        "path": "/home/ubuntu/git/mdlm-phase1-qualification-harness/manifest.json",
+        "realpath": "/home/ubuntu/git/mdlm-phase1-qualification-harness/manifest.json",
+        "pathKind": "file",
+        "digest": "sha256:21c5d54714928894d0d280f913856a02972c831fdaffcffc26f51e8f6b309c8c",
+        "bytes": 4519,
+        "expectedDigest": "sha256:21c5d54714928894d0d280f913856a02972c831fdaffcffc26f51e8f6b309c8c",
+        "matches": true
+      },
+      "repositoryLocator": "https://github.com/taylorrowser/mdlm-phase1-qualification-harness.git"
+    },
+    "valid": true
+  },
+  "environmentPolicy": {
+    "contract": "mdlm-demo-environment-policy@1",
+    "inherited": [
+      "HOME",
+      "PATH",
+      "TMPDIR",
+      "ANTHROPIC_API_KEY",
+      "OPENAI_API_KEY",
+      "GOOGLE_API_KEY",
+      "GEMINI_API_KEY",
+      "AWS_ACCESS_KEY_ID",
+      "AWS_SECRET_ACCESS_KEY",
+      "AWS_SESSION_TOKEN",
+      "AWS_REGION",
+      "AWS_DEFAULT_REGION"
+    ],
+    "removed": [
+      "BASH_ENV",
+      "CDPATH",
+      "ENV",
+      "GIT_DIR",
+      "GIT_WORK_TREE",
+      "GIT_CONFIG",
+      "GIT_CONFIG_COUNT",
+      "GIT_CONFIG_GLOBAL",
+      "GIT_CONFIG_NOSYSTEM",
+      "GIT_CONFIG_SYSTEM",
+      "GIT_OBJECT_DIRECTORY",
+      "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+      "IFS",
+      "NODE_CHANNEL_FD",
+      "NODE_COMPILE_CACHE",
+      "NODE_EXTRA_CA_CERTS",
+      "NODE_OPTIONS",
+      "NODE_PATH",
+      "NODE_REPL_EXTERNAL_MODULE",
+      "NODE_UNIQUE_ID",
+      "NPM_CONFIG_PREFIX",
+      "SHELLOPTS"
+    ],
+    "fixed": {
+      "LANG": "C.UTF-8",
+      "LC_ALL": "C.UTF-8",
+      "GIT_TERMINAL_PROMPT": "0"
+    },
+    "gitConfigIsolation": true
+  },
+  "commandFailure": null
+}

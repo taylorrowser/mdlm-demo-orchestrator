@@ -1,0 +1,23 @@
+{
+  "argv": [
+    "/home/ubuntu/git/mdlm-successor-demos/.tooling-issue-214/node_modules/.bin/mdlm",
+    "assignment",
+    "show",
+    "0110fb6b-5a0d-4228-9867-58ed3e27a4a4",
+    "--json"
+  ],
+  "cwd": "/home/ubuntu/git/mdlm-successor-demos/issue-212/calculator-post214-resumable-20260825T0050Z",
+  "startedAt": "2026-08-25T01:58:59.874Z",
+  "completedAt": "2026-08-25T01:59:00.275Z",
+  "timeoutMs": 900000,
+  "timedOut": false,
+  "outputLimitExceeded": false,
+  "observedOutputBytes": 204,
+  "exitStatus": 0,
+  "signal": null,
+  "spawnError": null,
+  "stdoutBase64": "ewogICJvayI6IHRydWUsCiAgImNvbW1hbmQiOiAiYXNzaWdubWVudC5zaG93IiwKICAiY29udHJhY3QiOiAibWRsbS1hc3NpZ25tZW50LXN0YXRlQDEiLAogICJhc3NpZ25tZW50IjogewogICAgImlkIjogIjAxMTBmYjZiLTVhMGQtNDIyOC05ODY3LTU4ZWQzZTI3YTRhNCIKICB9LAogICJzZWxlY3RlZCI6IGZhbHNlLAogICJkaWFnbm9zdGljcyI6IFtdCn0K",
+  "stderrBase64": "",
+  "stdoutSha256": "sha256:899d3ff6fe3097df288c10162fb58608d67665e05779215f9bf7ba02d9216684",
+  "stderrSha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { adaptAssignment } from './adapter.mjs';
 import { validateScenarioPrepare } from './contracts.mjs';
-import { snapshot } from './evidence.mjs';
+import { snapshot, verifySnapshot } from './evidence.mjs';
 import { normalizeProcessPackage, sameProcessPackageIdentity } from './process-package.mjs';
 import {
   commandRecord, commandSucceeded, controlledEnvironment, gitEnvironment, parseJsonBytes,
@@ -20,6 +20,7 @@ const assignmentCheckpointEvidence = Symbol('assignmentCheckpointEvidence');
 
 export async function run(request, mode) {
   requireContract(request, mode === 'resume' ? 'mdlm-demo-resume-request@1' : 'mdlm-demo-run-request@1');
+  validateRunRequest(request);
   validateOperator(request.operator);
   const assignmentId = required(request.assignmentId, 'assignmentId');
   const context = await repositoryContext(required(request.repository, 'repository'), request.timeoutMs);
@@ -614,6 +615,13 @@ async function authenticatePriorAssignmentCheckpoint({ request, context, sourceD
   }
   const fromAssignment = identity.assignmentId;
   if (fromAssignment === toAssignment) throw new Error('checkpoint source and target are the same Assignment');
+  if (request.checkpointRecovery === undefined) {
+    throw new Error('checkpointRecovery with an operator-pinned prior post-run snapshot is required');
+  }
+  const pinnedSnapshot = await verifySnapshot(
+    request.checkpointRecovery.snapshotDirectory,
+    request.checkpointRecovery.digest,
+  );
   if (path.basename(sourceDirectory) !== assignmentKey(fromAssignment)) throw new Error('source Assignment directory does not match its identity');
   if (!sameJson(identity.lifecycleRepository, priorRepository) || !sameRepositoryFingerprint(identity.assignmentRepository, priorRepository)) {
     throw new Error('source Assignment identity does not equal the prior durable repository boundary');
@@ -697,6 +705,15 @@ async function authenticatePriorAssignmentCheckpoint({ request, context, sourceD
       !sameRepositoryFingerprint(packet.repository, captured.lifecycleRepository)) {
     throw new Error('current Assignment or repository boundary differs from the retained packet');
   }
+  authenticatePinnedCheckpointSnapshot({
+    pinned: pinnedSnapshot.snapshot,
+    context,
+    fromAssignment,
+    toAssignment,
+    packet,
+    captured,
+    processPackage,
+  });
 
   const evidence = {
     identity: evidenceManifest(identityEvidence),
@@ -720,9 +737,48 @@ async function authenticatePriorAssignmentCheckpoint({ request, context, sourceD
       scenario: packet.scenario.reference,
       sourceScenario: preparedSource.scenario.reference,
       package: processPackage,
+      checkpointRecovery: {
+        snapshotDirectory: pinnedSnapshot.snapshotDirectory,
+        digest: pinnedSnapshot.digest,
+        manifest: pinnedSnapshot.manifest,
+      },
       evidence,
     },
   };
+}
+
+function authenticatePinnedCheckpointSnapshot({ pinned, context, fromAssignment, toAssignment, packet, captured, processPackage }) {
+  if (pinned.repository !== context.repository) {
+    throw new Error('pinned post-run snapshot names a different lifecycle repository');
+  }
+  if (!sameJson(pinned.lifecycleRepository, captured.lifecycleRepository) || pinned.lifecycleRepository?.clean !== true) {
+    throw new Error('current lifecycle boundary differs from the pinned post-run snapshot');
+  }
+  if (!sameRepositoryFingerprint(packet.repository, pinned.lifecycleRepository)) {
+    throw new Error('retained packet repository differs from the pinned post-run snapshot');
+  }
+  if (pinned.status?.contract !== 'mdlm-status@1' || pinned.status.command !== 'status' || pinned.status.ok !== true ||
+      !statusHasActiveAssignment(pinned.status, toAssignment)) {
+    throw new Error('pinned post-run status does not select active Assignment B');
+  }
+  if (pinned.diagnosis?.command !== 'doctor' || pinned.diagnosis.ok !== true ||
+      !sameProcessPackageIdentity(processPackage, pinned.status.package) ||
+      !sameProcessPackageIdentity(processPackage, pinned.diagnosis.package)) {
+    throw new Error('pinned post-run status or doctor Process Package differs');
+  }
+  const historicalAssignment = pinned.assignment;
+  const exactSourceAssignment = historicalAssignment?.id === fromAssignment && historicalAssignment.selected === false &&
+    sameJson(Object.keys(historicalAssignment).sort(), ['id', 'selected']) && pinned.assignmentRepository === null;
+  if (!exactSourceAssignment) {
+    throw new Error('pinned post-run Assignment record does not identify deselected Assignment A');
+  }
+  if (captured.assignment?.id !== toAssignment || captured.assignment.selected !== true ||
+      captured.assignment.disposition !== 'active' || captured.assignment.scenarioReference !== packet.scenario.reference ||
+      !sameProcessPackageIdentity(processPackage, captured.assignment.package) ||
+      !sameJson(captured.assignment.repository, packet.repository) ||
+      !sameJson(captured.assignmentRepository, packet.repository)) {
+    throw new Error('current Assignment B differs from the pinned post-run boundary');
+  }
 }
 
 async function authenticateStoredCommand(directory, index) {
@@ -785,6 +841,7 @@ function reconciliationEvidence(value) {
     scenario: value.scenario,
     sourceScenario: value.sourceScenario,
     package: value.package,
+    checkpointRecovery: value.checkpointRecovery,
     evidence: value.evidence,
   };
 }
@@ -825,6 +882,7 @@ async function completeCheckpointReconciliation({ journalPath, journal, globalPa
     completedRepository: journal.completedRepository,
     trustedRepositoryAdvance: true,
     checkpointReconciliation: journalPath,
+    checkpointRecovery: journal.checkpointRecovery,
   };
   const existingTransaction = await optionalJson(transactionPath);
   if (existingTransaction === null) await durableWriteJson(transactionPath, completedSource, 'checkpoint-reconciliation-assignment');
@@ -1185,6 +1243,27 @@ async function optionalJson(file) { try { return JSON.parse(await readFile(file,
 function result(status, snapshotResult, extra) { return { contract: 'mdlm-demo-run-result@2', status, snapshot: snapshotResult, ...extra }; }
 function stopped(reason, detail, snapshotResult, assignmentId, extra = {}) { return result('stopped', snapshotResult, { assignmentId, recoverable: false, reason, detail, ...extra }); }
 function required(value, label) { if (typeof value !== 'string' || value.length === 0) throw new Error(`${label} must be a nonempty string`); return value; }
+function validateRunRequest(value) {
+  const allowed = new Set([
+    'adapterInputsPath', 'assignmentId', 'checkpointRecovery', 'commands', 'contract', 'decisionCatalogPath',
+    'evidenceDirectory', 'harness', 'operator', 'provenance', 'repository', 'signal', 'stateDirectory', 'timeoutMs',
+  ]);
+  for (const key of Object.keys(value)) {
+    if (!allowed.has(key)) throw new Error(`run request.${key} is unsupported`);
+  }
+  if (value.checkpointRecovery !== undefined) {
+    const recovery = value.checkpointRecovery;
+    if (!recovery || typeof recovery !== 'object' || Array.isArray(recovery) ||
+        !sameJson(Object.keys(recovery).sort(), ['digest', 'snapshotDirectory'])) {
+      throw new Error('checkpointRecovery must contain exactly snapshotDirectory and digest');
+    }
+    required(recovery.snapshotDirectory, 'checkpointRecovery.snapshotDirectory');
+    if (!path.isAbsolute(recovery.snapshotDirectory)) throw new Error('checkpointRecovery.snapshotDirectory must be an absolute path');
+    if (!/^sha256:[0-9a-f]{64}$/.test(recovery.digest ?? '')) {
+      throw new Error('checkpointRecovery.digest must be sha256:<64 lowercase hex>');
+    }
+  }
+}
 function validateOperator(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('operator must be an object');
   if (!sameJson(Object.keys(value).sort(), ['model', 'provider', 'thinking'])) throw new Error('operator must contain exactly provider, model, and thinking');

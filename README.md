@@ -42,7 +42,7 @@ Every `run` and `resume` first resolves the lifecycle repository and worktree-pr
 | Clean command interruption before submission starts | Continue the same Assignment |
 | External adapter stop before submission | Re-run the adapter against the same packet bytes |
 | Authenticated A-to-B checkpoint with active B at the exact clean packet boundary | Complete A, advance repository identity once, and return B pre-submission |
-| Later B run with an old-runner A-to-B checkpoint still retained under A's private state | Reconcile the checkpoint once, complete A, then continue B without invoking A |
+| Later B run with an old-runner A-to-B checkpoint still retained under A's private state | Require the operator-pinned post-run snapshot, reconcile the checkpoint once, complete A, then continue B without invoking A |
 | Captured response, submission not started | Submit the captured exact bytes |
 | Accepted execution with journaled output paths and Git blob identities | Before generic drift checks, finish or recognize the one exact publication commit by HEAD, parent, subject, paths, and blobs |
 | Completed transaction journal | Return `already-completed`; do not submit or commit again |
@@ -58,9 +58,13 @@ A failed command is not enough to make a retry safe. The journal must still say 
 
 A clean unrelated lifecycle-repository commit is drift, not recovery. Expected values supplied by a later request cannot bless changes to source, harness, artifact, executable target, installed Process Package, or an existing Assignment boundary. Successive ordinary Assignments get separate immutable directories beneath `stateDirectory/assignments`; repository identity and locking remain repository-wide.
 
-A later B `run` or `resume` may repair the old-runner case where A reached a clean B boundary but the repository-wide identity still names A. Recovery runs before the generic repository-drift check. It requires A's assignment identity, both command-evidence triplets, shim configuration, and sole retained B packet. The runner verifies raw byte hashes, Base64 fields, argv, executable paths, working directory, timeout and process termination fields, typed stderr, operator settings, package identity, Scenario, and both repository fingerprints. It rejects symlinks, missing files, extra commands or stops, same-Assignment checkpoints, dirty state, and any current boundary other than the packet's exact clean B boundary. The retained `mdlm-pi` stdout is hash-checked but never used as semantic proof.
+A later B `run` or `resume` may repair the old-runner case where A reached a clean B boundary but the repository-wide identity still names A. Recovery runs before the generic repository-drift check. It requires A's assignment identity, both command-evidence triplets, shim configuration, the sole retained B packet, and `checkpointRecovery` in the request. The operator must copy the post-run snapshot path and digest from the preserved A run result before upgrading the runner. A digest read or recalculated from the mutable checkpoint state is not an external pin.
 
-The recovery writes one `mdlm-demo-checkpoint-reconciliation@1` journal beneath the worktree-private Git directory. File and directory `fsync` plus atomic rename make its `authenticated`, `boundary-advanced`, and `completed` phases resumable. It advances repository identity only from the recorded A boundary, writes A's completed transaction once, and leaves lifecycle data untouched. Repeating recovery verifies the retained bytes and returns `checkpointReconciliation.status: "already-reconciled"`; it does not invoke `mdlm-pi` for A or prepare A again.
+The runner canonicalizes the pinned snapshot directory with `realpath`, rejects symlinks, checks the operator's digest against the exact manifest bytes, and verifies every manifest-bound file. The snapshot must be a complete post-run snapshot. Its repository path, clean Git HEAD, tree, tracked state, deselected A record, active-B status, and doctor and status Process Package must match the retained packet and the current initial snapshot. The runner also verifies raw checkpoint byte hashes, Base64 fields, argv, executable paths, working directory, timeout and process termination fields, typed stderr, operator settings, package identity, Scenario, and both repository fingerprints. It rejects missing files, extra commands or stops, same-Assignment checkpoints, dirty state, and any current boundary other than the pinned B boundary. The retained `mdlm-pi` stdout is hash-checked but never used as semantic proof.
+
+The recovery writes one `mdlm-demo-checkpoint-reconciliation@1` journal beneath the worktree-private Git directory. The journal binds the canonical snapshot path, operator digest, and verified manifest identity. File and directory `fsync` plus atomic rename make its `authenticated`, `boundary-advanced`, and `completed` phases resumable. It advances repository identity only from the recorded A boundary, writes A's completed transaction once, and leaves lifecycle data untouched. Repeating recovery verifies the same pinned snapshot and retained bytes, then returns `checkpointReconciliation.status: "already-reconciled"`; it does not invoke `mdlm-pi` for A or prepare A again.
+
+Normal A-to-B checkpoints authenticated during the same runner invocation do not use `checkpointRecovery`.
 
 ## Evidence
 
@@ -76,7 +80,7 @@ The recovery writes one `mdlm-demo-checkpoint-reconciliation@1` journal beneath 
 - separate MDLM and MDLM-Pi archive identities, configured/real executable identities, the lockfile identity, and a path-independent digest of the complete installed tooling tree (relative entry names, types, modes, symlink targets, sizes, and file digests)
 - `manifest.json` with byte lengths and SHA-256 values
 
-`test/fixtures/calculator-run-003-checkpoint` retains the real run-003 A identity, both command triplets, shim configuration, and B stop packet byte for byte. The process test asserts each fixture SHA-256 before deriving scratch-repository boundaries from it.
+`test/fixtures/calculator-run-003-checkpoint` retains the real run-003 A identity, both command triplets, shim configuration, and B stop packet byte for byte. `test/fixtures/calculator-run-003-post-snapshot` retains the authoritative post-run snapshot whose manifest digest is `sha256:8bf25285f59b0deddfbbaaabbea617da6682d2f66ef239c0ff9665203da2838e`. The process tests assert the fixture digests before deriving scratch-repository boundaries from them.
 
 Every command record includes spawn errors and output-limit state as well as exit/signal/deadline evidence. Nonzero commands, malformed JSON, and semantic contract violations produce a complete immutable snapshot whose result is `command-failure`; evidence capture does not substitute an exception for the failed command. `mdlm doctor --json` is checked against the shape the CLI emits: command `doctor`, boolean `ok`, safe diagnostics, Process Package identity, baseline verification counts, and generated projection summaries. Doctor output has no contract discriminator. Status and Assignment JSON must retain their exact versioned contract and command discriminators, supported outcome/allocation/disposition, Process Package, repository fingerprint, and Assignment shapes before the runner exposes semantic state. Every run also returns a post-run snapshot.
 
@@ -147,6 +151,10 @@ The runner records the origin, authority basis, and digest. It does not label th
   "evidenceDirectory": "/absolute/path/to/immutable-evidence",
   "timeoutMs": 30000,
   "signal": "clean-interrupted-command",
+  "checkpointRecovery": {
+    "snapshotDirectory": "/absolute/path/to/preserved/post-run-snapshot",
+    "digest": "sha256:POST_RUN_MANIFEST_SHA256_FROM_PRESERVED_RUN_RESULT"
+  },
   "operator": {
     "provider": "openai-codex",
     "model": "gpt-5.6-sol",
@@ -209,6 +217,8 @@ The runner records the origin, authority basis, and digest. It does not label th
   }
 }
 ```
+
+The `checkpointRecovery` object is optional except for after-the-fact reconciliation of a checkpoint retained by an older runner. It accepts exactly `snapshotDirectory` and `digest`. Preserve the prior run result before upgrading, then copy its `postRunSnapshot.snapshotDirectory` and `postRunSnapshot.digest` values into the recovery request. Do not derive the requested digest from the checkpoint packet, current repository, or mutable private state.
 
 The `operator` object is mandatory for `run` and `resume`. Provider and model are safe nonempty scalar tokens. Thinking is one of `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`. The runner validates these values before resolving or snapshotting the lifecycle repository, pins them in durable run identity, rejects exact drift on resume, and passes them to `mdlm-pi` as explicit `--provider`, `--model`, and `--thinking` arguments.
 
