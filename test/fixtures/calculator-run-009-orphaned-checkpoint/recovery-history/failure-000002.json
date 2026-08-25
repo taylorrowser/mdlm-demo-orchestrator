@@ -1,0 +1,77 @@
+{
+  "contract": "mdlm-demo-operational-failure-marker@1",
+  "assignmentId": "bdb9ffc9-3491-443b-88b0-80d5dc800781",
+  "requiredNextMode": "run",
+  "source": "legacy-command-evidence-migration",
+  "assignmentDirectory": "/home/ubuntu/git/mdlm-successor-demos/evidence/issue-212-final/calculator-post214/private-state/assignments/bdb9ffc9-3491-443b-88b0-80d5dc800781-622b1ddf8c21",
+  "initialBoundary": {
+    "snapshotDirectory": "/home/ubuntu/git/mdlm-successor-demos/evidence/issue-212-final/calculator-post214/run-008-snapshot/snapshot-000001",
+    "digest": "sha256:fe25aabb438387d7a6828e1bf4c168b75bb0b8d517c627c7ceb57334e6865b7f",
+    "lifecycleRepository": {
+      "head": "06d7f01d343102a8da9ea0f118276f55b4235c4a",
+      "tree": "8be45f60bd797c6723fbdeea40723698c7a0a39c",
+      "trackedState": "sha256:622cae94f60649df1b1f874e6520b5cd416cd06ff6ae23ebc85f2667a6709f96",
+      "clean": true,
+      "porcelainSha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "assignmentRepository": {
+      "head": "06d7f01d343102a8da9ea0f118276f55b4235c4a",
+      "trackedState": "sha256:622cae94f60649df1b1f874e6520b5cd416cd06ff6ae23ebc85f2667a6709f96"
+    }
+  },
+  "postBoundary": {
+    "snapshotDirectory": "/home/ubuntu/git/mdlm-successor-demos/evidence/issue-212-final/calculator-post214/run-008-snapshot/snapshot-000002",
+    "digest": "sha256:e44d04e03e803736581ba95ecb4f95cae92d390de24921d76ce8c07a1225a817",
+    "lifecycleRepository": {
+      "head": "06d7f01d343102a8da9ea0f118276f55b4235c4a",
+      "tree": "8be45f60bd797c6723fbdeea40723698c7a0a39c",
+      "trackedState": "sha256:622cae94f60649df1b1f874e6520b5cd416cd06ff6ae23ebc85f2667a6709f96",
+      "clean": true,
+      "porcelainSha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "assignmentRepository": {
+      "head": "06d7f01d343102a8da9ea0f118276f55b4235c4a",
+      "trackedState": "sha256:622cae94f60649df1b1f874e6520b5cd416cd06ff6ae23ebc85f2667a6709f96"
+    }
+  },
+  "processPackage": {
+    "reference": "mdlm-bootstrap@0.74.0",
+    "digest": "sha256:ee99e698d36e406a836a796a36fc1db2d2451072ad662c0e06805ab5c20fe5ac",
+    "language": "mdlm-expression@1"
+  },
+  "runIdentity": {
+    "path": "/home/ubuntu/git/mdlm-successor-demos/issue-212/calculator-post214-resumable-20260825T0050Z/.git/mdlm-demo-orchestrator/run-identity.json",
+    "bytes": 2514,
+    "digest": "sha256:5451417022fcdbcf0cdcc4e436172f8825948f81a32c580fb01246dc2cec4d1b"
+  },
+  "timeoutIdentity": {
+    "timeoutMs": 900000,
+    "mdlmPiCommandTimeoutMs": 600000,
+    "mdlmPiAssignmentTimeoutMs": 840000
+  },
+  "failure": {
+    "commandIndex": 2,
+    "evidence": {
+      "record": {
+        "path": "/home/ubuntu/git/mdlm-successor-demos/evidence/issue-212-final/calculator-post214/private-state/assignments/bdb9ffc9-3491-443b-88b0-80d5dc800781-622b1ddf8c21/command-evidence/command-000002.json",
+        "bytes": 1209,
+        "digest": "sha256:c6eae9e12cdd8a2ea633e1234b9964680dd9b890b86b76d1863878a214baf399"
+      },
+      "stdout": {
+        "path": "/home/ubuntu/git/mdlm-successor-demos/evidence/issue-212-final/calculator-post214/private-state/assignments/bdb9ffc9-3491-443b-88b0-80d5dc800781-622b1ddf8c21/command-evidence/command-000002.stdout",
+        "bytes": 0,
+        "digest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stderr": {
+        "path": "/home/ubuntu/git/mdlm-successor-demos/evidence/issue-212-final/calculator-post214/private-state/assignments/bdb9ffc9-3491-443b-88b0-80d5dc800781-622b1ddf8c21/command-evidence/command-000002.stderr",
+        "bytes": 158,
+        "digest": "sha256:25d375f49181145713f6c9bf248c6200f630584bb675236d2ecc7d9622df22e1"
+      }
+    },
+    "document": {
+      "digest": "sha256:25d375f49181145713f6c9bf248c6200f630584bb675236d2ecc7d9622df22e1",
+      "errorDigest": "sha256:e51c6ba909cb8e0e1731507533eae2da161e395c398d7c82e1159ed34e9c0ba3",
+      "detailsDigest": "sha256:7a9b429747e1aa04791506f4a9a8ba951b9fa93e7e774a7be9910f2fc0bdc6ac"
+    }
+  }
+}

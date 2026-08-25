@@ -1,0 +1,16 @@
+{
+  "contract": "mdlm-demo-shim-config@1",
+  "realMdlm": "/home/ubuntu/git/mdlm-successor-demos/.tooling-issue-214/node_modules/.bin/mdlm",
+  "allowedAssignment": "bdb9ffc9-3491-443b-88b0-80d5dc800781",
+  "package": {
+    "reference": "mdlm-bootstrap@0.74.0",
+    "digest": "sha256:ee99e698d36e406a836a796a36fc1db2d2451072ad662c0e06805ab5c20fe5ac",
+    "language": "mdlm-expression@1"
+  },
+  "repository": {
+    "head": "06d7f01d343102a8da9ea0f118276f55b4235c4a",
+    "trackedState": "sha256:622cae94f60649df1b1f874e6520b5cd416cd06ff6ae23ebc85f2667a6709f96"
+  },
+  "stopDirectory": "/home/ubuntu/git/mdlm-successor-demos/evidence/issue-212-final/calculator-post214/private-state/assignments/bdb9ffc9-3491-443b-88b0-80d5dc800781-622b1ddf8c21/shim/stops",
+  "timeoutMs": 900000
+}

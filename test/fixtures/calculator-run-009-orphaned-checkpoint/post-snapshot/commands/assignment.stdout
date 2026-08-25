@@ -1,0 +1,25 @@
+{
+  "ok": true,
+  "command": "assignment.show",
+  "contract": "mdlm-assignment-state@1",
+  "assignment": {
+    "id": "1b7355d0-b445-4c70-b76d-2242299e3170"
+  },
+  "selected": true,
+  "package": {
+    "reference": "mdlm-bootstrap@0.74.0",
+    "digest": "sha256:ee99e698d36e406a836a796a36fc1db2d2451072ad662c0e06805ab5c20fe5ac",
+    "language": "mdlm-expression@1"
+  },
+  "repository": {
+    "head": "d67a57be3df3d36121514c88ceb01af50dbc7e38",
+    "trackedState": "sha256:72befa56bf3de1dbf7df7e2115def1b564ab16d467bfa0b048e4ab61dcf134c9"
+  },
+  "scenarioReference": "review-datum-in-context@2",
+  "disposition": "active",
+  "retryAvailability": {
+    "malformedResponseCorrection": 1
+  },
+  "malformedResponses": [],
+  "diagnostics": []
+}

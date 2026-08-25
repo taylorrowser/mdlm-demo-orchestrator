@@ -1,0 +1,31 @@
+✔ run and resume requests reject unknown top-level and recovery trust keys before snapshotting (12641.529885ms)
+✖ run accepts the strict orphaned checkpoint recovery trust shape at the operator boundary (2317.622423ms)
+✔ the preserved run-009 orphaned checkpoint fixture stays byte exact (19.903448ms)
+ℹ tests 3
+ℹ suites 0
+ℹ pass 2
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 15664.973586
+
+✖ failing tests:
+
+test at test/run.test.mjs:607:1
+✖ run accepts the strict orphaned checkpoint recovery trust shape at the operator boundary (2317.622423ms)
+  AssertionError [ERR_ASSERTION]: {"contract":"mdlm-demo-error@1","error":"run request.orphanedCheckpointRecovery is unsupported"}
+  
+  
+  1 !== 0
+  
+      at TestContext.<anonymous> (file:///home/ubuntu/git/mdlm-demo-orchestrator/test/run.test.mjs:625:10)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 1,
+    expected: 0,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

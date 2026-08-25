@@ -1,0 +1,4356 @@
+{
+  "ok": true,
+  "command": "scenario.prepare",
+  "contract": "mdlm-assignment-packet@2",
+  "assignment": {
+    "id": "bdb9ffc9-3491-443b-88b0-80d5dc800781"
+  },
+  "package": {
+    "reference": "mdlm-bootstrap@0.74.0",
+    "digest": "sha256:ee99e698d36e406a836a796a36fc1db2d2451072ad662c0e06805ab5c20fe5ac",
+    "language": "mdlm-expression@1"
+  },
+  "repository": {
+    "head": "06d7f01d343102a8da9ea0f118276f55b4235c4a",
+    "trackedState": "sha256:622cae94f60649df1b1f874e6520b5cd416cd06ff6ae23ebc85f2667a6709f96"
+  },
+  "phase": "phase-0-wayfinding@5",
+  "obligation": {
+    "instance": "question-decision-review-correction-required@1:DEC-EBHPCWVRSG-r00001:mdlm-bootstrap@0.74.0#sha256:ee99e698d36e406a836a796a36fc1db2d2451072ad662c0e06805ab5c20fe5ac",
+    "definition": "question-decision-review-correction-required@1",
+    "subject": "DEC-EBHPCWVRSG-r00001"
+  },
+  "scenario": {
+    "reference": "revise-question-decision-after-review@1",
+    "definition": {
+      "id": "revise-question-decision-after-review",
+      "version": 1
+    }
+  },
+  "prompt": {
+    "reference": "prompts/revise-question-decision-after-review.md@1",
+    "path": "prompts/revise-question-decision-after-review.md",
+    "digest": "sha256:7997494bd0110117336c331d95bc5eba0d479760f53ddf7f296d98db9535e402",
+    "content": "---\nid: revise-question-decision-after-review\nversion: 1\nscenario: revise-question-decision-after-review\n---\n\n# Correct a failed Question Decision\n\nRead `skills/lifecycle-data.md@1`, `skills/clarification-protocol.md@1`, and\n`skills/gate-protocol.md@1`. Present the exact Question, current Decision, failed\nReview findings, and supplied causal correction lineage to the stakeholder.\nPublish one replacement Revision in the same DEC Stable Datum lineage. Preserve\nits Decision kind and exact Question scope. Link `resolves` to that exact QST\nRevision and `corrects-review` to every supplied failed Review. The answered QST\ncontains the normalized attended answer. Retain that answer exactly unless the\nstakeholder explicitly narrows, defers, or removes behavior in this correction.\nFor such a change, record `attended_answer_change.disposition`, the exact\n`previous_answer`, the complete `revised_answer`, and a specific `rationale`.\nThe previous answer must equal the supplied QST authority, and the revised\nanswer must equal the replacement `decision`. Do not reinterpret omitted\nDecision text as an attended change. Do not rewrite an unfavorable Review or infer a different\npreference. Normal reevaluation must require a fresh independent Review of the\nreplacement.\n\nBefore proposing authored Lifecycle Data, apply the bounded ephemeral\n`skills/author-preflight.md@2` contract.\n",
+    "skills": [
+      {
+        "reference": "skills/lifecycle-data.md@1",
+        "path": "skills/lifecycle-data.md",
+        "digest": "sha256:f742ca75cd39e4d1d4947082c1e9f65813b4847906b0b7e2f2b876e70a8a765e",
+        "content": "---\nid: lifecycle-data\nversion: 1\n---\n\n# Lifecycle data\n\n- Treat lifecycle files, not generated indexes or chat history, as durable truth.\n- Let the kernel create and validate envelope fields: identity, revision, type,\n  links, provenance, and Markdown body projection.\n- Author only fields permitted by the resolved type payload schema. Do not place\n  type-specific data beside the kernel envelope.\n- Create opaque stable IDs with the type prefix and Crockford Base32 payload.\n- Edit only an unfrozen draft. A change to frozen content creates the next revision.\n- Validate outgoing links against the source type's resolved link contracts; never\n  author a backlink.\n- Use stable targets for evolving semantic relationships and exact revision targets\n  for reviews, decisions, evidence, composition, and promotion.\n- Populate `created_by` with the exact scenario, prompt, process, skills, and\n  machine-readable policies.\n- Validate the envelope, flattened payload schema, links, and one-open-draft rule.\n- Never rewrite, renumber, silently merge, or repair frozen history.\n"
+      },
+      {
+        "reference": "skills/clarification-protocol.md@1",
+        "path": "skills/clarification-protocol.md",
+        "digest": "sha256:6f1e466947d4e43baeb0f58142ddc9b4e3487c2680b8ad325fe491987736d602",
+        "content": "---\nid: clarification-protocol\nversion: 1\n---\n\n# Clarification protocol\n\nClassify uncertainty before acting:\n\n- **Preferential:** only a stakeholder can choose. Ask; never fabricate the answer.\n- **Empirical:** research, measurement, or observation can answer. Require evidence.\n- **Low-cost reversible:** an agent may decide when scope and reversal are explicit.\n- **Consequential:** record alternatives, rationale, and effective scope in DEC.\n\nUse QST only when work is genuinely blocked or intentionally deferred. To defer,\nrecord a DEC, blocking impact, and concrete reactivation condition. Do not hide\nuncertainty in vague requirement language, treat silence as agreement, or call a\nhypothesis a fact.\n"
+      },
+      {
+        "reference": "skills/gate-protocol.md@1",
+        "path": "skills/gate-protocol.md",
+        "digest": "sha256:0470a43509f5a38d5332b584c30cf2ef9b1147f3cec4dc9af55665ae51099918",
+        "content": "---\nid: gate-protocol\nversion: 1\n---\n\n# Gate protocol\n\nA gate is a decision about one exact frozen candidate.\n\n1. Verify hashes, composition, member reviews, candidate review, and blocking QSTs.\n2. Present candidate ID, role, scope, material changes, findings, omissions, and\n   process drift separately.\n3. Batch and deduplicate questions without obscuring which artifacts they affect.\n4. Ask for explicit approval or rejection; never infer sign-off.\n5. Record the answer as DEC linked to the exact candidate revision.\n6. If any definition changes, stop and create a new candidate; never patch the\n   baseline under review.\n7. Treat approval for downstream work separately from later acceptance or promotion.\n"
+      },
+      {
+        "reference": "skills/author-preflight.md@2",
+        "path": "skills/author-preflight.md",
+        "digest": "sha256:189d31acb7da3ff8f3bdb13efd6ade0d4c832b1bb5c9e1b97b7e679776046824",
+        "content": "---\nid: author-preflight\nversion: 2\n---\n\n# Ephemeral author preflight\n\nBefore proposing authored Lifecycle Data, inspect the proposal in isolation using\nthe applicable independent-Review rubric and the exact Assignment packet.\n\n1. Check contract validity, exact traceability, information allocation, scope,\n   internal consistency, verifiability, and proportionality.\n2. Treat a concern as blocking only when you can name the exact violated\n   criterion, concrete evidence or counterexample, and the material consequence\n   that prevents safe use. Correct every such concern before publication.\n3. Correct clear `needs-triage` concerns when they are local and authorized.\n   Do not expand scope to satisfy advisory preferences.\n4. For a correction, compare the proposal with the exact prior Revision. Name\n   each behavior or commitment added, removed, strengthened, or deferred, and\n   trace every change to a blocking finding or exact authority. Prefer the\n   smallest local delta that resolves the finding. Explicitly compare a bounded\n   correction, deferral or removal, and retention of broader behavior; do not\n   infer stakeholder need from determinism, prior elaboration, or an agent\n   proposal. If safe correction requires a new stakeholder-visible choice that\n   is not supplied, stop rather than elaborate.\n5. For a definition set, perform a deletion/merge pass and confirm every split is\n   justified by distinct behavior, responsibility, boundary, risk, trust context,\n   or verification need.\n\nThis preflight is bounded working memory, not Lifecycle Data. Publish no REV,\nFinding, score, transcript, or telemetry from it. Do not place preflight content\nin the response or Review Context, and do not supply it to the independent\nreviewer. The later independent Review remains fresh-eyed and authoritative.\n"
+      }
+    ]
+  },
+  "assets": [
+    {
+      "reference": "prompts/revise-question-decision-after-review.md@1",
+      "path": "prompts/revise-question-decision-after-review.md",
+      "digest": "sha256:7997494bd0110117336c331d95bc5eba0d479760f53ddf7f296d98db9535e402",
+      "content": "---\nid: revise-question-decision-after-review\nversion: 1\nscenario: revise-question-decision-after-review\n---\n\n# Correct a failed Question Decision\n\nRead `skills/lifecycle-data.md@1`, `skills/clarification-protocol.md@1`, and\n`skills/gate-protocol.md@1`. Present the exact Question, current Decision, failed\nReview findings, and supplied causal correction lineage to the stakeholder.\nPublish one replacement Revision in the same DEC Stable Datum lineage. Preserve\nits Decision kind and exact Question scope. Link `resolves` to that exact QST\nRevision and `corrects-review` to every supplied failed Review. The answered QST\ncontains the normalized attended answer. Retain that answer exactly unless the\nstakeholder explicitly narrows, defers, or removes behavior in this correction.\nFor such a change, record `attended_answer_change.disposition`, the exact\n`previous_answer`, the complete `revised_answer`, and a specific `rationale`.\nThe previous answer must equal the supplied QST authority, and the revised\nanswer must equal the replacement `decision`. Do not reinterpret omitted\nDecision text as an attended change. Do not rewrite an unfavorable Review or infer a different\npreference. Normal reevaluation must require a fresh independent Review of the\nreplacement.\n\nBefore proposing authored Lifecycle Data, apply the bounded ephemeral\n`skills/author-preflight.md@2` contract.\n"
+    },
+    {
+      "reference": "skills/lifecycle-data.md@1",
+      "path": "skills/lifecycle-data.md",
+      "digest": "sha256:f742ca75cd39e4d1d4947082c1e9f65813b4847906b0b7e2f2b876e70a8a765e",
+      "content": "---\nid: lifecycle-data\nversion: 1\n---\n\n# Lifecycle data\n\n- Treat lifecycle files, not generated indexes or chat history, as durable truth.\n- Let the kernel create and validate envelope fields: identity, revision, type,\n  links, provenance, and Markdown body projection.\n- Author only fields permitted by the resolved type payload schema. Do not place\n  type-specific data beside the kernel envelope.\n- Create opaque stable IDs with the type prefix and Crockford Base32 payload.\n- Edit only an unfrozen draft. A change to frozen content creates the next revision.\n- Validate outgoing links against the source type's resolved link contracts; never\n  author a backlink.\n- Use stable targets for evolving semantic relationships and exact revision targets\n  for reviews, decisions, evidence, composition, and promotion.\n- Populate `created_by` with the exact scenario, prompt, process, skills, and\n  machine-readable policies.\n- Validate the envelope, flattened payload schema, links, and one-open-draft rule.\n- Never rewrite, renumber, silently merge, or repair frozen history.\n"
+    },
+    {
+      "reference": "skills/clarification-protocol.md@1",
+      "path": "skills/clarification-protocol.md",
+      "digest": "sha256:6f1e466947d4e43baeb0f58142ddc9b4e3487c2680b8ad325fe491987736d602",
+      "content": "---\nid: clarification-protocol\nversion: 1\n---\n\n# Clarification protocol\n\nClassify uncertainty before acting:\n\n- **Preferential:** only a stakeholder can choose. Ask; never fabricate the answer.\n- **Empirical:** research, measurement, or observation can answer. Require evidence.\n- **Low-cost reversible:** an agent may decide when scope and reversal are explicit.\n- **Consequential:** record alternatives, rationale, and effective scope in DEC.\n\nUse QST only when work is genuinely blocked or intentionally deferred. To defer,\nrecord a DEC, blocking impact, and concrete reactivation condition. Do not hide\nuncertainty in vague requirement language, treat silence as agreement, or call a\nhypothesis a fact.\n"
+    },
+    {
+      "reference": "skills/gate-protocol.md@1",
+      "path": "skills/gate-protocol.md",
+      "digest": "sha256:0470a43509f5a38d5332b584c30cf2ef9b1147f3cec4dc9af55665ae51099918",
+      "content": "---\nid: gate-protocol\nversion: 1\n---\n\n# Gate protocol\n\nA gate is a decision about one exact frozen candidate.\n\n1. Verify hashes, composition, member reviews, candidate review, and blocking QSTs.\n2. Present candidate ID, role, scope, material changes, findings, omissions, and\n   process drift separately.\n3. Batch and deduplicate questions without obscuring which artifacts they affect.\n4. Ask for explicit approval or rejection; never infer sign-off.\n5. Record the answer as DEC linked to the exact candidate revision.\n6. If any definition changes, stop and create a new candidate; never patch the\n   baseline under review.\n7. Treat approval for downstream work separately from later acceptance or promotion.\n"
+    },
+    {
+      "reference": "skills/author-preflight.md@2",
+      "path": "skills/author-preflight.md",
+      "digest": "sha256:189d31acb7da3ff8f3bdb13efd6ade0d4c832b1bb5c9e1b97b7e679776046824",
+      "content": "---\nid: author-preflight\nversion: 2\n---\n\n# Ephemeral author preflight\n\nBefore proposing authored Lifecycle Data, inspect the proposal in isolation using\nthe applicable independent-Review rubric and the exact Assignment packet.\n\n1. Check contract validity, exact traceability, information allocation, scope,\n   internal consistency, verifiability, and proportionality.\n2. Treat a concern as blocking only when you can name the exact violated\n   criterion, concrete evidence or counterexample, and the material consequence\n   that prevents safe use. Correct every such concern before publication.\n3. Correct clear `needs-triage` concerns when they are local and authorized.\n   Do not expand scope to satisfy advisory preferences.\n4. For a correction, compare the proposal with the exact prior Revision. Name\n   each behavior or commitment added, removed, strengthened, or deferred, and\n   trace every change to a blocking finding or exact authority. Prefer the\n   smallest local delta that resolves the finding. Explicitly compare a bounded\n   correction, deferral or removal, and retention of broader behavior; do not\n   infer stakeholder need from determinism, prior elaboration, or an agent\n   proposal. If safe correction requires a new stakeholder-visible choice that\n   is not supplied, stop rather than elaborate.\n5. For a definition set, perform a deletion/merge pass and confirm every split is\n   justified by distinct behavior, responsibility, boundary, risk, trust context,\n   or verification need.\n\nThis preflight is bounded working memory, not Lifecycle Data. Publish no REV,\nFinding, score, transcript, or telemetry from it. Do not place preflight content\nin the response or Review Context, and do not supply it to the independent\nreviewer. The later independent Review remains fresh-eyed and authoritative.\n"
+    }
+  ],
+  "exactInputs": [
+    {
+      "inputs": [
+        {
+          "name": "decision",
+          "contract": {
+            "types": [
+              "DEC"
+            ],
+            "cardinality": "one",
+            "identity": "revision"
+          },
+          "values": [
+            {
+              "identity": {
+                "id": "DEC-EBHPCWVRSG",
+                "revision_id": "DEC-EBHPCWVRSG-r00001",
+                "type": "DEC",
+                "revision": 1
+              },
+              "data": {
+                "id": "DEC-EBHPCWVRSG",
+                "revision": 1,
+                "revision_id": "DEC-EBHPCWVRSG-r00001",
+                "type": "DEC",
+                "payload": {
+                  "title": "Command-line calculator product intent",
+                  "rationale": "The attended stakeholder explicitly selected this product behavior and its command-line, operand, operator, output, rounding, and error-handling boundaries.",
+                  "kind": "scope",
+                  "decision": "Build a command-line calculator. Invoke it as `calculator <left> <operator> <right>`. Support only the operators `+`, `-`, `*`, and `/`. Accept operands matching exactly `[+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)`. Emit canonical successful output. For nonterminating results, round exactly at the 12th fractional digit using half-away-from-zero and then trim. For invalid input, emit no stdout, emit exactly `invalid input\\n` on stderr, and exit 2. For division by zero, emit no stdout, emit exactly `division by zero\\n` on stderr, and exit 2.",
+                  "alternatives": [],
+                  "effective_scope": "QST-21219K6RVZ-r00002"
+                },
+                "links": [
+                  {
+                    "type": "resolves",
+                    "target": "QST-21219K6RVZ-r00001"
+                  },
+                  {
+                    "type": "resolves",
+                    "target": "QST-21219K6RVZ-r00002"
+                  }
+                ],
+                "created_by": {
+                  "scenario": "resolve-question@2",
+                  "prompt_ref": "prompts/resolve-question.md@2",
+                  "process_ref": "mdlm-bootstrap@0.74.0#sha256:ee99e698d36e406a836a796a36fc1db2d2451072ad662c0e06805ab5c20fe5ac",
+                  "loaded_skill_refs": [
+                    "skills/lifecycle-data.md@1",
+                    "skills/clarification-protocol.md@1",
+                    "skills/traceability.md@1",
+                    "skills/author-preflight.md@2"
+                  ],
+                  "policy_refs": [
+                    "question-participation@1",
+                    "review-applicability@1",
+                    "waiver-applicability@1"
+                  ]
+                },
+                "body": "# Command-line calculator product intent\n\n## Decision\n\nBuild a command-line calculator. Invoke it as `calculator <left> <operator> <right>`. Support only the operators `+`, `-`, `*`, and `/`. Accept operands matching exactly `[+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)`. Emit canonical successful output. For nonterminating results, round exactly at the 12th fractional digit using half-away-from-zero and then trim. For invalid input, emit no stdout, emit exactly `invalid input\\n` on stderr, and exit 2. For division by zero, emit no stdout, emit exactly `division by zero\\n` on stderr, and exit 2.\n\n## Rationale\n\nThe attended stakeholder explicitly selected this product behavior and its command-line, operand, operator, output, rounding, and error-handling boundaries.\n\n## Alternatives\n\nNone recorded.\n\n## Effective scope\n\n`$proposal.updatedQuestion.revision_id`\n"
+              }
+            }
+          ],
+          "checks": [
+            {
+              "check": "resolution",
+              "passed": true,
+              "expected": "named lifecycle identities from the evaluated snapshot",
+              "actual": "1/1 resolved"
+            },
+            {
+              "check": "cardinality",
+              "passed": true,
+              "expected": "one",
+              "actual": 1
+            },
+            {
+              "check": "identity",
+              "passed": true,
+              "expected": "revision",
+              "actual": [
+                "revision"
+              ]
+            },
+            {
+              "check": "type",
+              "passed": true,
+              "expected": [
+                "DEC"
+              ],
+              "actual": [
+                "DEC"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "question",
+          "contract": {
+            "types": [
+              "QST"
+            ],
+            "cardinality": "one",
+            "identity": "revision"
+          },
+          "values": [
+            {
+              "identity": {
+                "id": "QST-21219K6RVZ",
+                "revision_id": "QST-21219K6RVZ-r00002",
+                "type": "QST",
+                "revision": 2
+              },
+              "data": {
+                "id": "QST-21219K6RVZ",
+                "revision": 2,
+                "revision_id": "QST-21219K6RVZ-r00002",
+                "type": "QST",
+                "payload": {
+                  "title": "Product intent",
+                  "kind": "preferential",
+                  "intent_scope": "product",
+                  "question": "What product do you currently intend to build?",
+                  "attended_answer": "Build a command-line calculator. Invoke it as `calculator <left> <operator> <right>`. Support only the operators `+`, `-`, `*`, and `/`. Accept operands matching exactly `[+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)`. Emit canonical successful output. For nonterminating results, round exactly at the 12th fractional digit using half-away-from-zero and then trim. For invalid input, emit no stdout, emit exactly `invalid input\\n` on stderr, and exit 2. For division by zero, emit no stdout, emit exactly `division by zero\\n` on stderr, and exit 2.",
+                  "state": "answered",
+                  "blocking_impact": "PSP compilation is blocked until the stakeholder answers this question."
+                },
+                "links": [],
+                "created_by": {
+                  "scenario": "resolve-question@2",
+                  "prompt_ref": "prompts/resolve-question.md@2",
+                  "process_ref": "mdlm-bootstrap@0.74.0#sha256:ee99e698d36e406a836a796a36fc1db2d2451072ad662c0e06805ab5c20fe5ac",
+                  "loaded_skill_refs": [
+                    "skills/lifecycle-data.md@1",
+                    "skills/clarification-protocol.md@1",
+                    "skills/traceability.md@1",
+                    "skills/author-preflight.md@2"
+                  ],
+                  "policy_refs": [
+                    "question-participation@1",
+                    "review-applicability@1",
+                    "waiver-applicability@1"
+                  ]
+                },
+                "body": "# Product intent\n\n**Question:** What product do you currently intend to build?\n\n**Kind:** Preferential  \n**State:** Answered\n\n## Attended answer\n\nBuild a command-line calculator. Invoke it as `calculator <left> <operator> <right>`. Support only the operators `+`, `-`, `*`, and `/`. Accept operands matching exactly `[+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)`. Emit canonical successful output. For nonterminating results, round exactly at the 12th fractional digit using half-away-from-zero and then trim. For invalid input, emit no stdout, emit exactly `invalid input\\n` on stderr, and exit 2. For division by zero, emit no stdout, emit exactly `division by zero\\n` on stderr, and exit 2.\n\n**Blocking impact:** PSP compilation is blocked until the stakeholder answers this question.\n"
+              }
+            }
+          ],
+          "checks": [
+            {
+              "check": "resolution",
+              "passed": true,
+              "expected": "named lifecycle identities from the evaluated snapshot",
+              "actual": "1/1 resolved"
+            },
+            {
+              "check": "cardinality",
+              "passed": true,
+              "expected": "one",
+              "actual": 1
+            },
+            {
+              "check": "identity",
+              "passed": true,
+              "expected": "revision",
+              "actual": [
+                "revision"
+              ]
+            },
+            {
+              "check": "type",
+              "passed": true,
+              "expected": [
+                "QST"
+              ],
+              "actual": [
+                "QST"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "lineage",
+          "contract": {
+            "types": [
+              "DEC"
+            ],
+            "cardinality": "one-or-more",
+            "identity": "revision"
+          },
+          "values": [
+            {
+              "identity": {
+                "id": "DEC-EBHPCWVRSG",
+                "revision_id": "DEC-EBHPCWVRSG-r00001",
+                "type": "DEC",
+                "revision": 1
+              },
+              "data": {
+                "id": "DEC-EBHPCWVRSG",
+                "revision": 1,
+                "revision_id": "DEC-EBHPCWVRSG-r00001",
+                "type": "DEC",
+                "payload": {
+                  "title": "Command-line calculator product intent",
+                  "rationale": "The attended stakeholder explicitly selected this product behavior and its command-line, operand, operator, output, rounding, and error-handling boundaries.",
+                  "kind": "scope",
+                  "decision": "Build a command-line calculator. Invoke it as `calculator <left> <operator> <right>`. Support only the operators `+`, `-`, `*`, and `/`. Accept operands matching exactly `[+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)`. Emit canonical successful output. For nonterminating results, round exactly at the 12th fractional digit using half-away-from-zero and then trim. For invalid input, emit no stdout, emit exactly `invalid input\\n` on stderr, and exit 2. For division by zero, emit no stdout, emit exactly `division by zero\\n` on stderr, and exit 2.",
+                  "alternatives": [],
+                  "effective_scope": "QST-21219K6RVZ-r00002"
+                },
+                "links": [
+                  {
+                    "type": "resolves",
+                    "target": "QST-21219K6RVZ-r00001"
+                  },
+                  {
+                    "type": "resolves",
+                    "target": "QST-21219K6RVZ-r00002"
+                  }
+                ],
+                "created_by": {
+                  "scenario": "resolve-question@2",
+                  "prompt_ref": "prompts/resolve-question.md@2",
+                  "process_ref": "mdlm-bootstrap@0.74.0#sha256:ee99e698d36e406a836a796a36fc1db2d2451072ad662c0e06805ab5c20fe5ac",
+                  "loaded_skill_refs": [
+                    "skills/lifecycle-data.md@1",
+                    "skills/clarification-protocol.md@1",
+                    "skills/traceability.md@1",
+                    "skills/author-preflight.md@2"
+                  ],
+                  "policy_refs": [
+                    "question-participation@1",
+                    "review-applicability@1",
+                    "waiver-applicability@1"
+                  ]
+                },
+                "body": "# Command-line calculator product intent\n\n## Decision\n\nBuild a command-line calculator. Invoke it as `calculator <left> <operator> <right>`. Support only the operators `+`, `-`, `*`, and `/`. Accept operands matching exactly `[+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)`. Emit canonical successful output. For nonterminating results, round exactly at the 12th fractional digit using half-away-from-zero and then trim. For invalid input, emit no stdout, emit exactly `invalid input\\n` on stderr, and exit 2. For division by zero, emit no stdout, emit exactly `division by zero\\n` on stderr, and exit 2.\n\n## Rationale\n\nThe attended stakeholder explicitly selected this product behavior and its command-line, operand, operator, output, rounding, and error-handling boundaries.\n\n## Alternatives\n\nNone recorded.\n\n## Effective scope\n\n`$proposal.updatedQuestion.revision_id`\n"
+              }
+            }
+          ],
+          "checks": [
+            {
+              "check": "resolution",
+              "passed": true,
+              "expected": "named lifecycle identities from the evaluated snapshot",
+              "actual": "1/1 resolved"
+            },
+            {
+              "check": "cardinality",
+              "passed": true,
+              "expected": "one-or-more",
+              "actual": 1
+            },
+            {
+              "check": "identity",
+              "passed": true,
+              "expected": "revision",
+              "actual": [
+                "revision"
+              ]
+            },
+            {
+              "check": "type",
+              "passed": true,
+              "expected": [
+                "DEC"
+              ],
+              "actual": [
+                "DEC"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "prior_failed_reviews",
+          "contract": {
+            "types": [
+              "REV"
+            ],
+            "cardinality": "zero-or-more",
+            "identity": "revision"
+          },
+          "values": [],
+          "checks": [
+            {
+              "check": "resolution",
+              "passed": true,
+              "expected": "named lifecycle identities from the evaluated snapshot",
+              "actual": "0/0 resolved"
+            },
+            {
+              "check": "cardinality",
+              "passed": true,
+              "expected": "zero-or-more",
+              "actual": 0
+            },
+            {
+              "check": "identity",
+              "passed": true,
+              "expected": "revision",
+              "actual": []
+            },
+            {
+              "check": "type",
+              "passed": true,
+              "expected": [
+                "REV"
+              ],
+              "actual": []
+            }
+          ]
+        },
+        {
+          "name": "failed_reviews",
+          "contract": {
+            "types": [
+              "REV"
+            ],
+            "cardinality": "one-or-more",
+            "identity": "revision"
+          },
+          "values": [
+            {
+              "identity": {
+                "id": "REV-079NVE0Y8M",
+                "revision_id": "REV-079NVE0Y8M-r00001",
+                "type": "REV",
+                "revision": 1
+              },
+              "data": {
+                "id": "REV-079NVE0Y8M",
+                "revision": 1,
+                "revision_id": "REV-079NVE0Y8M-r00001",
+                "type": "REV",
+                "payload": {
+                  "title": "Contextual review of command-line calculator product intent decision",
+                  "review_kind": "contextual",
+                  "rubric_ref": "policies/rubrics/bootstrap-review.md@3",
+                  "findings": [
+                    {
+                      "id": "F-001",
+                      "target": "DEC-EBHPCWVRSG-r00001",
+                      "relationship": "primary",
+                      "severity": "blocking",
+                      "summary": "Clarify the successful-output canonicalization rule before this decision is used: the decision requires “canonical successful output” but does not define the canonical representation for terminating results or zero.",
+                      "criterion": "Bootstrap review universal clarity and internal-consistency rubric, and the DEC type check requiring exact scope with rationale proportionate to the consequence.",
+                      "evidence": "The decision says only “Emit canonical successful output.” Its rounding-and-trimming rule is expressly limited to nonterminating results. For the valid invocation `calculator 1.0 + 2.0`, both `3\\n` and `3.0\\n` are plausible canonical decimal outputs; for a zero result, `0\\n`, `0.0\\n`, and a signed-zero rendering are likewise not distinguished. These interpretations produce observably different stdout while remaining consistent with the supplied text. The ambiguity is local to DEC-EBHPCWVRSG-r00001 and concerns behavior that the decision itself places in scope.",
+                      "material_consequence": "Downstream requirements and verification cannot derive one expected stdout value for valid terminating calculations, so conforming implementations can disagree observably and the decision cannot be used safely as exact product authority until the stakeholder selects or defines the canonical representation."
+                    },
+                    {
+                      "id": "F-002",
+                      "target": "DEC-EBHPCWVRSG-r00001",
+                      "relationship": "primary",
+                      "severity": "advisory",
+                      "summary": "Regenerate the Markdown projection: its Effective scope is the unresolved token `$proposal.updatedQuestion.revision_id`, while the authoritative payload records `QST-21219K6RVZ-r00002`. The exact payload and links preserve machine-readable scope, so this projection defect is not independently blocking."
+                    }
+                  ],
+                  "correction_authority": "stakeholder",
+                  "outcome": "fail"
+                },
+                "links": [
+                  {
+                    "type": "reviews",
+                    "target": "DEC-EBHPCWVRSG-r00001"
+                  },
+                  {
+                    "type": "contextualizes",
+                    "target": "BSL-1CE8ZHP7GS-r00001"
+                  }
+                ],
+                "created_by": {
+                  "scenario": "review-datum-in-context@2",
+                  "prompt_ref": "prompts/review-datum-in-context.md@6",
+                  "process_ref": "mdlm-bootstrap@0.74.0#sha256:ee99e698d36e406a836a796a36fc1db2d2451072ad662c0e06805ab5c20fe5ac",
+                  "loaded_skill_refs": [
+                    "skills/lifecycle-data.md@1",
+                    "skills/contextual-artifact-review.md@2",
+                    "skills/traceability.md@1",
+                    "skills/scope-challenge.md@2",
+                    "skills/review-correction-authority.md@1"
+                  ],
+                  "policy_refs": [
+                    "contextual-review-participation@1",
+                    "review-applicability@1",
+                    "waiver-applicability@1"
+                  ]
+                },
+                "body": "# Contextual review of command-line calculator product intent decision\n\n**Outcome:** Fail  \n**Review kind:** Contextual  \n**Rubric:** `policies/rubrics/bootstrap-review.md@3`\n\n## Findings\n\n### F-001 — Blocking, primary\n\n**Target:** `DEC-EBHPCWVRSG-r00001`  \n**Criterion:** Bootstrap review universal clarity and internal-consistency rubric, and the DEC type check requiring exact scope with rationale proportionate to the consequence.\n\nThe decision requires “canonical successful output” without defining the canonical representation for terminating results or zero. Its rounding-and-trimming rule is expressly limited to nonterminating results. For `calculator 1.0 + 2.0`, both `3\\n` and `3.0\\n` are plausible; zero also admits materially different renderings. These interpretations change observable stdout while remaining consistent with the supplied text.\n\n**Material consequence:** Downstream requirements and verification cannot derive one expected stdout value for valid terminating calculations. The decision cannot be used safely as exact product authority until the stakeholder selects or defines the canonical representation.\n\n### F-002 — Advisory, primary\n\n**Target:** `DEC-EBHPCWVRSG-r00001`\n\nRegenerate the Markdown projection: its Effective scope is the unresolved token `$proposal.updatedQuestion.revision_id`, while the authoritative payload records `QST-21219K6RVZ-r00002`. The exact payload and links preserve machine-readable scope, so this is not independently blocking.\n\n## Correction authority\n\nStakeholder judgment is required because resolving F-001 requires selecting stakeholder-visible output behavior.\n"
+              }
+            }
+          ],
+          "checks": [
+            {
+              "check": "resolution",
+              "passed": true,
+              "expected": "named lifecycle identities from the evaluated snapshot",
+              "actual": "1/1 resolved"
+            },
+            {
+              "check": "cardinality",
+              "passed": true,
+              "expected": "one-or-more",
+              "actual": 1
+            },
+            {
+              "check": "identity",
+              "passed": true,
+              "expected": "revision",
+              "actual": [
+                "revision"
+              ]
+            },
+            {
+              "check": "type",
+              "passed": true,
+              "expected": [
+                "REV"
+              ],
+              "actual": [
+                "REV"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "allowedProjections": {
+    "exactLifecycleData": [
+      "DEC-EBHPCWVRSG-r00001",
+      "QST-21219K6RVZ-r00002",
+      "REV-079NVE0Y8M-r00001"
+    ],
+    "inputSchemas": [
+      {
+        "type": "DEC",
+        "envelope": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "$id": "https://mdlm.dev/kernel/process-interface/v1/datum-envelope.schema.json",
+          "title": "Kernel-owned MDLM datum envelope",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "revision",
+            "revision_id",
+            "type",
+            "payload",
+            "links",
+            "created_by",
+            "body"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^[A-Z]{3,8}-[0-9A-HJKMNP-TV-Z]{10,12}$"
+            },
+            "revision": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "revision_id": {
+              "type": "string",
+              "pattern": "^[A-Z]{3,8}-[0-9A-HJKMNP-TV-Z]{10,12}-r[0-9]{5}$"
+            },
+            "type": {
+              "type": "string",
+              "pattern": "^[A-Z]{3,8}$"
+            },
+            "payload": {
+              "type": "object"
+            },
+            "links": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "type",
+                  "target"
+                ],
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]*$"
+                  },
+                  "target": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              },
+              "uniqueItems": true
+            },
+            "created_by": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "scenario",
+                "prompt_ref",
+                "process_ref",
+                "loaded_skill_refs",
+                "policy_refs"
+              ],
+              "properties": {
+                "scenario": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9-]*@[1-9][0-9]*$"
+                },
+                "prompt_ref": {
+                  "type": "string",
+                  "pattern": "^prompts/.+\\.md@[1-9][0-9]*$"
+                },
+                "process_ref": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "loaded_skill_refs": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^skills/.+\\.md@[1-9][0-9]*$"
+                  },
+                  "uniqueItems": true
+                },
+                "policy_refs": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]*@[1-9][0-9]*$"
+                  },
+                  "uniqueItems": true
+                }
+              }
+            },
+            "body": {
+              "type": "string"
+            }
+          },
+          "x-mdlm-kernel-invariants": [
+            "id prefix equals type",
+            "revision_id equals id plus zero-padded revision",
+            "frozen revisions are immutable",
+            "at most one local editable revision exists per stable id"
+          ]
+        },
+        "payload": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "alternatives",
+            "decision",
+            "effective_scope",
+            "kind",
+            "rationale",
+            "title"
+          ],
+          "properties": {
+            "title": {
+              "type": "string",
+              "minLength": 1
+            },
+            "rationale": {
+              "type": "string",
+              "minLength": 1
+            },
+            "kind": {
+              "enum": [
+                "decision",
+                "assumption",
+                "scope",
+                "waiver",
+                "deferral",
+                "authority-delegation",
+                "gate-signoff",
+                "change-approval",
+                "change-closure",
+                "pilot-observation",
+                "pilot-expansion",
+                "retirement",
+                "cancellation"
+              ]
+            },
+            "change_disposition": {
+              "enum": [
+                "approve",
+                "reject",
+                "defer",
+                "cancel"
+              ]
+            },
+            "change_reactivation_condition": {
+              "type": "string",
+              "minLength": 1
+            },
+            "decision": {
+              "type": "string",
+              "minLength": 1
+            },
+            "alternatives": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "effective_scope": {
+              "type": "string",
+              "minLength": 1
+            },
+            "attended_answer_change": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "disposition",
+                "previous_answer",
+                "revised_answer",
+                "rationale"
+              ],
+              "properties": {
+                "disposition": {
+                  "enum": [
+                    "narrow",
+                    "defer",
+                    "remove"
+                  ]
+                },
+                "previous_answer": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "revised_answer": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "rationale": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            },
+            "scope_correction": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "disposition",
+                "options",
+                "necessity"
+              ],
+              "properties": {
+                "disposition": {
+                  "enum": [
+                    "bound",
+                    "defer-or-remove",
+                    "retain"
+                  ]
+                },
+                "options": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "bounded",
+                    "defer_or_remove",
+                    "retain"
+                  ],
+                  "properties": {
+                    "bounded": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "defer_or_remove": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "retain": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                },
+                "necessity": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "reactivation_condition": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "allOf": [
+                {
+                  "if": {
+                    "properties": {
+                      "disposition": {
+                        "const": "defer-or-remove"
+                      }
+                    },
+                    "required": [
+                      "disposition"
+                    ]
+                  },
+                  "then": {
+                    "required": [
+                      "reactivation_condition"
+                    ]
+                  }
+                }
+              ]
+            },
+            "pilot_observation": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "availability",
+                "review",
+                "agent_effort",
+                "evidence_reuse",
+                "loose_ends",
+                "gate_ceremony",
+                "environment_profiles",
+                "verification_discrimination",
+                "scope_reduction"
+              ],
+              "properties": {
+                "availability": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "review",
+                    "agent_effort",
+                    "evidence_reuse",
+                    "loose_ends",
+                    "gate_ceremony",
+                    "environment_profiles",
+                    "verification_discrimination",
+                    "scope_reduction"
+                  ],
+                  "properties": {
+                    "review": {
+                      "enum": [
+                        "observed",
+                        "unavailable"
+                      ]
+                    },
+                    "agent_effort": {
+                      "enum": [
+                        "observed",
+                        "unavailable"
+                      ]
+                    },
+                    "evidence_reuse": {
+                      "enum": [
+                        "observed",
+                        "unavailable"
+                      ]
+                    },
+                    "loose_ends": {
+                      "enum": [
+                        "observed",
+                        "unavailable"
+                      ]
+                    },
+                    "gate_ceremony": {
+                      "enum": [
+                        "observed",
+                        "unavailable"
+                      ]
+                    },
+                    "environment_profiles": {
+                      "enum": [
+                        "observed",
+                        "unavailable"
+                      ]
+                    },
+                    "verification_discrimination": {
+                      "enum": [
+                        "observed",
+                        "unavailable"
+                      ]
+                    },
+                    "scope_reduction": {
+                      "enum": [
+                        "observed",
+                        "unavailable"
+                      ]
+                    }
+                  }
+                },
+                "review": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "contexts",
+                    "completed_reviews",
+                    "findings",
+                    "quality_improved",
+                    "volume_assessment"
+                  ],
+                  "properties": {
+                    "contexts": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "completed_reviews": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "findings": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "quality_improved": {
+                      "type": "boolean"
+                    },
+                    "volume_assessment": {
+                      "enum": [
+                        "low",
+                        "acceptable",
+                        "high"
+                      ]
+                    }
+                  }
+                },
+                "agent_effort": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "tracer_issues",
+                    "implementation_commits",
+                    "implementation_commit_refs",
+                    "effort_assessment"
+                  ],
+                  "properties": {
+                    "tracer_issues": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "implementation_commits": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "implementation_commit_refs": {
+                      "type": "array",
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "pattern": "^git:[0-9a-f]{40}$"
+                      }
+                    },
+                    "effort_assessment": {
+                      "enum": [
+                        "low",
+                        "acceptable",
+                        "high"
+                      ]
+                    }
+                  },
+                  "allOf": [
+                    {
+                      "if": {
+                        "properties": {
+                          "implementation_commits": {
+                            "const": 0
+                          }
+                        },
+                        "required": [
+                          "implementation_commits"
+                        ]
+                      },
+                      "then": {
+                        "properties": {
+                          "implementation_commit_refs": {
+                            "maxItems": 0
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "if": {
+                        "properties": {
+                          "implementation_commits": {
+                            "minimum": 1
+                          }
+                        },
+                        "required": [
+                          "implementation_commits"
+                        ]
+                      },
+                      "then": {
+                        "properties": {
+                          "implementation_commit_refs": {
+                            "minItems": 1
+                          }
+                        }
+                      }
+                    }
+                  ]
+                },
+                "evidence_reuse": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "eligible",
+                    "reused",
+                    "stale",
+                    "explanation_checks",
+                    "explanations_correct"
+                  ],
+                  "properties": {
+                    "eligible": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "reused": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "stale": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "explanation_checks": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "explanations_correct": {
+                      "type": "boolean"
+                    }
+                  }
+                },
+                "loose_ends": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "sampled",
+                    "actionable",
+                    "useful",
+                    "assessment"
+                  ],
+                  "properties": {
+                    "sampled": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "actionable": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "useful": {
+                      "type": "boolean"
+                    },
+                    "assessment": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                },
+                "gate_ceremony": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "gates",
+                    "signoffs",
+                    "decision_reviews",
+                    "proportionate"
+                  ],
+                  "properties": {
+                    "gates": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "signoffs": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "decision_reviews": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "proportionate": {
+                      "type": "boolean"
+                    }
+                  }
+                },
+                "environment_profiles": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "profiles_assessed",
+                    "sufficient"
+                  ],
+                  "properties": {
+                    "profiles_assessed": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "sufficient": {
+                      "type": "boolean"
+                    }
+                  }
+                },
+                "verification_discrimination": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "supported_successes",
+                    "unsupported_rejections",
+                    "discriminates"
+                  ],
+                  "properties": {
+                    "supported_successes": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "unsupported_rejections": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "discriminates": {
+                      "type": "boolean"
+                    }
+                  }
+                },
+                "scope_reduction": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "proposed_items",
+                    "removed_items",
+                    "retained_items",
+                    "demonstrated"
+                  ],
+                  "properties": {
+                    "proposed_items": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "removed_items": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "retained_items": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "demonstrated": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            },
+            "gate_outcome": {
+              "enum": [
+                "approve",
+                "reject"
+              ]
+            },
+            "gate_rejection": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "findings"
+              ],
+              "properties": {
+                "findings": {
+                  "type": "array",
+                  "minItems": 1,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "id",
+                      "summary"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "pattern": "^G-[0-9]{3,}$"
+                      },
+                      "summary": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "delegation": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "authority",
+                "delegate",
+                "scenario",
+                "expires_when",
+                "reactivation_requires"
+              ],
+              "properties": {
+                "authority": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "delegate": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "scenario": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9-]*@[1-9][0-9]*$"
+                },
+                "expires_when": {
+                  "const": "target-revised"
+                },
+                "reactivation_requires": {
+                  "const": "new-delegation-decision"
+                }
+              }
+            },
+            "waiver": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "instance",
+                "obligation",
+                "subject",
+                "scope",
+                "expires_when"
+              ],
+              "properties": {
+                "instance": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "obligation": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "subject": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "scope": {
+                  "enum": [
+                    "this-revision",
+                    "this-baseline",
+                    "one-execution"
+                  ]
+                },
+                "expires_when": {
+                  "type": "array",
+                  "minItems": 1,
+                  "uniqueItems": true,
+                  "items": {
+                    "enum": [
+                      "subject-revised",
+                      "dependency-revised",
+                      "baseline-superseded",
+                      "process-explicitly-reassessed"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "allOf": [
+            {
+              "allOf": [
+                {
+                  "if": {
+                    "properties": {
+                      "kind": {
+                        "const": "pilot-observation"
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ]
+                  },
+                  "then": {
+                    "required": [
+                      "pilot_observation"
+                    ]
+                  }
+                },
+                {
+                  "if": {
+                    "required": [
+                      "pilot_observation"
+                    ]
+                  },
+                  "then": {
+                    "properties": {
+                      "kind": {
+                        "const": "pilot-observation"
+                      }
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "kind": {
+                        "const": "gate-signoff"
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ]
+                  },
+                  "then": {
+                    "required": [
+                      "gate_outcome"
+                    ]
+                  }
+                },
+                {
+                  "if": {
+                    "required": [
+                      "gate_outcome"
+                    ]
+                  },
+                  "then": {
+                    "properties": {
+                      "kind": {
+                        "const": "gate-signoff"
+                      }
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "gate_outcome": {
+                        "const": "reject"
+                      }
+                    },
+                    "required": [
+                      "gate_outcome"
+                    ]
+                  },
+                  "then": {
+                    "required": [
+                      "gate_rejection"
+                    ]
+                  }
+                },
+                {
+                  "if": {
+                    "required": [
+                      "gate_rejection"
+                    ]
+                  },
+                  "then": {
+                    "properties": {
+                      "kind": {
+                        "const": "gate-signoff"
+                      },
+                      "gate_outcome": {
+                        "const": "reject"
+                      }
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "kind": {
+                        "const": "change-approval"
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ]
+                  },
+                  "then": {
+                    "required": [
+                      "change_disposition"
+                    ]
+                  }
+                },
+                {
+                  "if": {
+                    "required": [
+                      "change_disposition"
+                    ]
+                  },
+                  "then": {
+                    "properties": {
+                      "kind": {
+                        "const": "change-approval"
+                      }
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "change_disposition": {
+                        "const": "defer"
+                      }
+                    },
+                    "required": [
+                      "change_disposition"
+                    ]
+                  },
+                  "then": {
+                    "required": [
+                      "change_reactivation_condition"
+                    ]
+                  }
+                },
+                {
+                  "if": {
+                    "required": [
+                      "change_reactivation_condition"
+                    ]
+                  },
+                  "then": {
+                    "properties": {
+                      "kind": {
+                        "const": "change-approval"
+                      },
+                      "change_disposition": {
+                        "const": "defer"
+                      }
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "kind": {
+                        "const": "authority-delegation"
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ]
+                  },
+                  "then": {
+                    "required": [
+                      "delegation"
+                    ]
+                  }
+                },
+                {
+                  "if": {
+                    "required": [
+                      "delegation"
+                    ]
+                  },
+                  "then": {
+                    "properties": {
+                      "kind": {
+                        "const": "authority-delegation"
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "outgoingLinks": [
+          {
+            "id": "resolves",
+            "description": "Exact question revision answered, deferred, or cancelled by this decision.",
+            "targets": [
+              {
+                "kind": "datum",
+                "types": [
+                  "QST"
+                ],
+                "identity": "revision"
+              }
+            ],
+            "cardinality": {
+              "minimum": 0,
+              "maximum": "many"
+            },
+            "freeze_resolution": "already-exact",
+            "inverse_label": "resolved-by"
+          },
+          {
+            "id": "justifies",
+            "description": "Exact lifecycle claim for which this decision supplies rationale or authorization.",
+            "targets": [
+              {
+                "kind": "datum",
+                "types": [
+                  "MAP",
+                  "PSP",
+                  "STK",
+                  "SYS",
+                  "ASP",
+                  "ICSP",
+                  "DWP",
+                  "VSP",
+                  "ENV",
+                  "VER",
+                  "VAI",
+                  "RUN",
+                  "RES",
+                  "REV",
+                  "BSL",
+                  "QST",
+                  "DEC",
+                  "ART",
+                  "PRB",
+                  "CHG",
+                  "PAS"
+                ],
+                "identity": "revision"
+              }
+            ],
+            "cardinality": {
+              "minimum": 0,
+              "maximum": "many"
+            },
+            "freeze_resolution": "already-exact",
+            "inverse_label": "justified-by"
+          },
+          {
+            "id": "blocks",
+            "description": "Exact candidate or permitted candidate member implicated by this gate rejection.",
+            "targets": [
+              {
+                "kind": "datum",
+                "types": [
+                  "MAP",
+                  "PSP",
+                  "STK",
+                  "BSL"
+                ],
+                "identity": "revision"
+              }
+            ],
+            "cardinality": {
+              "minimum": 0,
+              "maximum": "many"
+            },
+            "freeze_resolution": "already-exact",
+            "inverse_label": "blocked-by-gate-rejection"
+          },
+          {
+            "id": "corrects-review",
+            "description": "Exact failed Reviews whose blocking findings this replacement Decision Revision addresses.",
+            "targets": [
+              {
+                "kind": "datum",
+                "types": [
+                  "REV"
+                ],
+                "identity": "revision"
+              }
+            ],
+            "cardinality": {
+              "minimum": 0,
+              "maximum": "many"
+            },
+            "freeze_resolution": "already-exact",
+            "inverse_label": "corrected-by-decision"
+          },
+          {
+            "id": "confirms-revision",
+            "description": "Exact replacement requirement Revisions confirmed by a change-closure Decision.",
+            "targets": [
+              {
+                "kind": "datum",
+                "types": [
+                  "STK",
+                  "SYS"
+                ],
+                "identity": "revision"
+              }
+            ],
+            "cardinality": {
+              "minimum": 0,
+              "maximum": "many"
+            },
+            "freeze_resolution": "already-exact",
+            "inverse_label": "confirmed-by-closure"
+          },
+          {
+            "id": "closes-with",
+            "description": "Exact replacement context, Review, baseline, and verification evidence cited by a change-closure Decision.",
+            "targets": [
+              {
+                "kind": "datum",
+                "types": [
+                  "BSL",
+                  "REV",
+                  "RES"
+                ],
+                "identity": "revision"
+              }
+            ],
+            "cardinality": {
+              "minimum": 0,
+              "maximum": "many"
+            },
+            "freeze_resolution": "already-exact",
+            "inverse_label": "closure-evidence"
+          },
+          {
+            "id": "relies-on-review",
+            "description": "Exact passing Review whose judgment authorizes this Decision.",
+            "targets": [
+              {
+                "kind": "datum",
+                "types": [
+                  "REV"
+                ],
+                "identity": "revision"
+              }
+            ],
+            "cardinality": {
+              "minimum": 0,
+              "maximum": "many"
+            },
+            "freeze_resolution": "already-exact",
+            "inverse_label": "relied-on-by-decision"
+          },
+          {
+            "id": "waives",
+            "description": "Exact computed obligation instance suppressed by this structured waiver.",
+            "targets": [
+              {
+                "kind": "obligation-instance",
+                "identity": "exact-obligation-instance"
+              }
+            ],
+            "cardinality": {
+              "minimum": 0,
+              "maximum": "many"
+            },
+            "freeze_resolution": "not-applicable",
+            "inverse_label": "waived-by"
+          }
+        ]
+      },
+      {
+        "type": "QST",
+        "envelope": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "$id": "https://mdlm.dev/kernel/process-interface/v1/datum-envelope.schema.json",
+          "title": "Kernel-owned MDLM datum envelope",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "revision",
+            "revision_id",
+            "type",
+            "payload",
+            "links",
+            "created_by",
+            "body"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^[A-Z]{3,8}-[0-9A-HJKMNP-TV-Z]{10,12}$"
+            },
+            "revision": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "revision_id": {
+              "type": "string",
+              "pattern": "^[A-Z]{3,8}-[0-9A-HJKMNP-TV-Z]{10,12}-r[0-9]{5}$"
+            },
+            "type": {
+              "type": "string",
+              "pattern": "^[A-Z]{3,8}$"
+            },
+            "payload": {
+              "type": "object"
+            },
+            "links": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "type",
+                  "target"
+                ],
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]*$"
+                  },
+                  "target": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              },
+              "uniqueItems": true
+            },
+            "created_by": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "scenario",
+                "prompt_ref",
+                "process_ref",
+                "loaded_skill_refs",
+                "policy_refs"
+              ],
+              "properties": {
+                "scenario": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9-]*@[1-9][0-9]*$"
+                },
+                "prompt_ref": {
+                  "type": "string",
+                  "pattern": "^prompts/.+\\.md@[1-9][0-9]*$"
+                },
+                "process_ref": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "loaded_skill_refs": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^skills/.+\\.md@[1-9][0-9]*$"
+                  },
+                  "uniqueItems": true
+                },
+                "policy_refs": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]*@[1-9][0-9]*$"
+                  },
+                  "uniqueItems": true
+                }
+              }
+            },
+            "body": {
+              "type": "string"
+            }
+          },
+          "x-mdlm-kernel-invariants": [
+            "id prefix equals type",
+            "revision_id equals id plus zero-padded revision",
+            "frozen revisions are immutable",
+            "at most one local editable revision exists per stable id"
+          ]
+        },
+        "payload": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "blocking_impact",
+            "kind",
+            "question",
+            "state",
+            "title"
+          ],
+          "properties": {
+            "title": {
+              "type": "string",
+              "minLength": 1
+            },
+            "kind": {
+              "enum": [
+                "preferential",
+                "empirical"
+              ]
+            },
+            "intent_scope": {
+              "enum": [
+                "product"
+              ]
+            },
+            "question": {
+              "type": "string",
+              "minLength": 1
+            },
+            "attended_answer": {
+              "type": "string",
+              "minLength": 1
+            },
+            "state": {
+              "enum": [
+                "open",
+                "answered",
+                "deferred",
+                "cancelled"
+              ]
+            },
+            "blocking_impact": {
+              "type": "string",
+              "minLength": 1
+            },
+            "reactivation_condition": {
+              "type": "string",
+              "minLength": 1
+            },
+            "owner": {
+              "type": "string",
+              "minLength": 1
+            },
+            "evidence_available": {
+              "type": "boolean"
+            },
+            "resolution_disposition": {
+              "enum": [
+                "answer",
+                "defer",
+                "cancel"
+              ]
+            },
+            "attention_checkpoint": {
+              "enum": [
+                "phase-0-gate",
+                "phase-2-system-gate"
+              ]
+            },
+            "consolidation_group": {
+              "enum": [
+                "phase-0-stakeholder-questions",
+                "phase-2-system-stakeholder-questions"
+              ]
+            },
+            "resolution_evidence": {
+              "enum": [
+                "prototype"
+              ]
+            },
+            "prototype_evidence": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "repository_ref",
+                "supported_behavior",
+                "unsupported_behavior",
+                "finding_if_supported",
+                "finding_if_not_supported"
+              ],
+              "properties": {
+                "repository_ref": {
+                  "type": "string",
+                  "pattern": "^git:[0-9a-f]{40}$"
+                },
+                "supported_behavior": {
+                  "type": "array",
+                  "minItems": 1,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "unsupported_behavior": {
+                  "type": "array",
+                  "minItems": 1,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "finding_if_supported": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "finding_if_not_supported": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          },
+          "allOf": [
+            {
+              "dependentRequired": {
+                "attention_checkpoint": [
+                  "consolidation_group"
+                ],
+                "consolidation_group": [
+                  "attention_checkpoint"
+                ],
+                "resolution_evidence": [
+                  "prototype_evidence"
+                ],
+                "prototype_evidence": [
+                  "resolution_evidence"
+                ]
+              },
+              "allOf": [
+                {
+                  "if": {
+                    "properties": {
+                      "intent_scope": {
+                        "const": "product"
+                      },
+                      "state": {
+                        "const": "answered"
+                      }
+                    },
+                    "required": [
+                      "intent_scope",
+                      "state"
+                    ]
+                  },
+                  "then": {
+                    "required": [
+                      "attended_answer"
+                    ]
+                  }
+                },
+                {
+                  "if": {
+                    "required": [
+                      "attended_answer"
+                    ]
+                  },
+                  "then": {
+                    "properties": {
+                      "kind": {
+                        "const": "preferential"
+                      },
+                      "state": {
+                        "const": "answered"
+                      }
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "state": {
+                        "const": "deferred"
+                      }
+                    },
+                    "required": [
+                      "state"
+                    ]
+                  },
+                  "then": {
+                    "required": [
+                      "reactivation_condition"
+                    ]
+                  }
+                },
+                {
+                  "if": {
+                    "required": [
+                      "evidence_available"
+                    ]
+                  },
+                  "then": {
+                    "properties": {
+                      "kind": {
+                        "const": "empirical"
+                      }
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "anyOf": [
+                      {
+                        "required": [
+                          "attention_checkpoint"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "consolidation_group"
+                        ]
+                      }
+                    ]
+                  },
+                  "then": {
+                    "properties": {
+                      "kind": {
+                        "const": "preferential"
+                      }
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "required": [
+                      "resolution_evidence"
+                    ]
+                  },
+                  "then": {
+                    "properties": {
+                      "kind": {
+                        "const": "empirical"
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "outgoingLinks": [
+          {
+            "id": "blocks",
+            "description": "Lifecycle concepts whose progress depends on this open question.",
+            "targets": [
+              {
+                "kind": "datum",
+                "types": [
+                  "PSP",
+                  "STK",
+                  "SYS",
+                  "ASP",
+                  "ICSP",
+                  "DWP",
+                  "VSP",
+                  "ENV",
+                  "VER",
+                  "VAI",
+                  "BSL",
+                  "QST",
+                  "DEC"
+                ],
+                "identity": "stable"
+              }
+            ],
+            "cardinality": {
+              "minimum": 0,
+              "maximum": "many"
+            },
+            "freeze_resolution": "exact-revision",
+            "inverse_label": "blocked-by"
+          }
+        ]
+      },
+      {
+        "type": "REV",
+        "envelope": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "$id": "https://mdlm.dev/kernel/process-interface/v1/datum-envelope.schema.json",
+          "title": "Kernel-owned MDLM datum envelope",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "revision",
+            "revision_id",
+            "type",
+            "payload",
+            "links",
+            "created_by",
+            "body"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^[A-Z]{3,8}-[0-9A-HJKMNP-TV-Z]{10,12}$"
+            },
+            "revision": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "revision_id": {
+              "type": "string",
+              "pattern": "^[A-Z]{3,8}-[0-9A-HJKMNP-TV-Z]{10,12}-r[0-9]{5}$"
+            },
+            "type": {
+              "type": "string",
+              "pattern": "^[A-Z]{3,8}$"
+            },
+            "payload": {
+              "type": "object"
+            },
+            "links": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "type",
+                  "target"
+                ],
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]*$"
+                  },
+                  "target": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              },
+              "uniqueItems": true
+            },
+            "created_by": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "scenario",
+                "prompt_ref",
+                "process_ref",
+                "loaded_skill_refs",
+                "policy_refs"
+              ],
+              "properties": {
+                "scenario": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9-]*@[1-9][0-9]*$"
+                },
+                "prompt_ref": {
+                  "type": "string",
+                  "pattern": "^prompts/.+\\.md@[1-9][0-9]*$"
+                },
+                "process_ref": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "loaded_skill_refs": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^skills/.+\\.md@[1-9][0-9]*$"
+                  },
+                  "uniqueItems": true
+                },
+                "policy_refs": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]*@[1-9][0-9]*$"
+                  },
+                  "uniqueItems": true
+                }
+              }
+            },
+            "body": {
+              "type": "string"
+            }
+          },
+          "x-mdlm-kernel-invariants": [
+            "id prefix equals type",
+            "revision_id equals id plus zero-padded revision",
+            "frozen revisions are immutable",
+            "at most one local editable revision exists per stable id"
+          ]
+        },
+        "payload": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "outcome",
+            "rubric_ref",
+            "title"
+          ],
+          "properties": {
+            "title": {
+              "type": "string",
+              "minLength": 1
+            },
+            "review_kind": {
+              "enum": [
+                "contextual",
+                "simplification-product-definition",
+                "simplification-architecture-interfaces",
+                "cross-group",
+                "gate"
+              ]
+            },
+            "decomposition_plan_revision": {
+              "type": "string",
+              "pattern": "^DWP-[0-9A-HJKMNP-TV-Z]{10,12}-r[0-9]{5}$"
+            },
+            "rubric_ref": {
+              "type": "string",
+              "pattern": "^policies/rubrics/.+\\.md@[1-9][0-9]*$"
+            },
+            "findings": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "id",
+                  "target",
+                  "relationship",
+                  "severity",
+                  "summary"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^F-[0-9]{3,}$"
+                  },
+                  "target": {
+                    "type": "string",
+                    "pattern": "^[A-Z]{3,8}-[0-9A-HJKMNP-TV-Z]{10,12}-r[0-9]{5}$"
+                  },
+                  "relationship": {
+                    "enum": [
+                      "primary",
+                      "collateral"
+                    ]
+                  },
+                  "severity": {
+                    "enum": [
+                      "blocking",
+                      "needs-triage",
+                      "advisory"
+                    ]
+                  },
+                  "summary": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "criterion": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "evidence": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "material_consequence": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "allOf": [
+                  {
+                    "if": {
+                      "properties": {
+                        "severity": {
+                          "const": "blocking"
+                        }
+                      },
+                      "required": [
+                        "severity"
+                      ]
+                    },
+                    "then": {
+                      "required": [
+                        "criterion",
+                        "evidence",
+                        "material_consequence"
+                      ]
+                    }
+                  }
+                ]
+              }
+            },
+            "simplification": {
+              "description": "One exact correction target with every blocking Phase 0 or planning-DWP simplification finding that applies to it.",
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "target",
+                "findings"
+              ],
+              "properties": {
+                "target": {
+                  "type": "string",
+                  "pattern": "^[A-Z]{3,8}-[0-9A-HJKMNP-TV-Z]{10,12}-r[0-9]{5}$"
+                },
+                "findings": {
+                  "type": "array",
+                  "minItems": 1,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "id",
+                      "severity",
+                      "summary",
+                      "criterion",
+                      "evidence",
+                      "material_consequence"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "pattern": "^F-[0-9]{3,}$"
+                      },
+                      "severity": {
+                        "const": "blocking"
+                      },
+                      "summary": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "criterion": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "evidence": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "material_consequence": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "definition_simplification": {
+              "description": "Exact Phase 2 subject or declared definition-consistency set selected by blocking simplification findings.",
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "primary_target",
+                "correction_set",
+                "primary_findings"
+              ],
+              "properties": {
+                "primary_target": {
+                  "type": "string",
+                  "pattern": "^(SYS|ASP|ICSP|DWP)-[0-9A-HJKMNP-TV-Z]{10,12}-r[0-9]{5}$"
+                },
+                "correction_set": {
+                  "enum": [
+                    "subject",
+                    "definition-consistency"
+                  ]
+                },
+                "primary_findings": {
+                  "description": "Every blocking Finding owned by the declared exact primary target.",
+                  "type": "array",
+                  "minItems": 1,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "id",
+                      "severity",
+                      "summary",
+                      "criterion",
+                      "evidence",
+                      "material_consequence"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "pattern": "^F-[0-9]{3,}$"
+                      },
+                      "severity": {
+                        "const": "blocking"
+                      },
+                      "summary": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "criterion": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "evidence": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "material_consequence": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    }
+                  }
+                },
+                "collateral_findings": {
+                  "description": "Findings owned collectively by the exact canonical blockers of a declared definition-consistency set.",
+                  "type": "array",
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "id",
+                      "severity",
+                      "summary"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "pattern": "^F-[0-9]{3,}$"
+                      },
+                      "severity": {
+                        "enum": [
+                          "blocking",
+                          "needs-triage",
+                          "advisory"
+                        ]
+                      },
+                      "summary": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "criterion": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "evidence": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "material_consequence": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "allOf": [
+                      {
+                        "if": {
+                          "properties": {
+                            "severity": {
+                              "const": "blocking"
+                            }
+                          },
+                          "required": [
+                            "severity"
+                          ]
+                        },
+                        "then": {
+                          "required": [
+                            "criterion",
+                            "evidence",
+                            "material_consequence"
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                },
+                "scope_reduction": {
+                  "description": "Rationale for exact SYS outputs named by this Review's removes links.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "rationale"
+                  ],
+                  "properties": {
+                    "rationale": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                }
+              },
+              "allOf": [
+                {
+                  "if": {
+                    "properties": {
+                      "correction_set": {
+                        "const": "subject"
+                      }
+                    },
+                    "required": [
+                      "correction_set"
+                    ]
+                  },
+                  "then": {
+                    "not": {
+                      "anyOf": [
+                        {
+                          "required": [
+                            "collateral_findings"
+                          ]
+                        },
+                        {
+                          "required": [
+                            "scope_reduction"
+                          ]
+                        }
+                      ]
+                    }
+                  }
+                }
+              ]
+            },
+            "correction_authority": {
+              "description": "Classifies whether a failed Review needs stakeholder judgment or can be corrected from exact package evidence.",
+              "enum": [
+                "stakeholder",
+                "package-evidence"
+              ]
+            },
+            "outcome": {
+              "enum": [
+                "open",
+                "pass",
+                "fail",
+                "cancelled"
+              ]
+            },
+            "cancellation_reason": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "allOf": [
+            {
+              "allOf": [
+                {
+                  "if": {
+                    "properties": {
+                      "outcome": {
+                        "const": "fail"
+                      }
+                    },
+                    "required": [
+                      "outcome"
+                    ]
+                  },
+                  "then": {
+                    "required": [
+                      "correction_authority"
+                    ]
+                  },
+                  "else": {
+                    "not": {
+                      "required": [
+                        "correction_authority"
+                      ]
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "findings": {
+                        "contains": {
+                          "type": "object",
+                          "required": [
+                            "relationship",
+                            "severity"
+                          ],
+                          "properties": {
+                            "relationship": {
+                              "const": "primary"
+                            },
+                            "severity": {
+                              "const": "blocking"
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "required": [
+                      "findings"
+                    ]
+                  },
+                  "then": {
+                    "properties": {
+                      "outcome": {
+                        "const": "fail"
+                      }
+                    },
+                    "required": [
+                      "outcome"
+                    ]
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "review_kind": {
+                        "const": "simplification-product-definition"
+                      }
+                    },
+                    "required": [
+                      "review_kind"
+                    ]
+                  },
+                  "then": {
+                    "not": {
+                      "required": [
+                        "findings"
+                      ]
+                    },
+                    "allOf": [
+                      {
+                        "if": {
+                          "properties": {
+                            "outcome": {
+                              "const": "fail"
+                            }
+                          },
+                          "required": [
+                            "outcome"
+                          ]
+                        },
+                        "then": {
+                          "required": [
+                            "simplification"
+                          ]
+                        }
+                      },
+                      {
+                        "if": {
+                          "properties": {
+                            "outcome": {
+                              "const": "pass"
+                            }
+                          },
+                          "required": [
+                            "outcome"
+                          ]
+                        },
+                        "then": {
+                          "not": {
+                            "required": [
+                              "simplification"
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "else": {
+                    "not": {
+                      "required": [
+                        "simplification"
+                      ]
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "review_kind": {
+                        "const": "simplification-architecture-interfaces"
+                      }
+                    },
+                    "required": [
+                      "review_kind"
+                    ]
+                  },
+                  "then": {
+                    "allOf": [
+                      {
+                        "not": {
+                          "required": [
+                            "findings"
+                          ]
+                        }
+                      },
+                      {
+                        "if": {
+                          "properties": {
+                            "outcome": {
+                              "const": "fail"
+                            }
+                          },
+                          "required": [
+                            "outcome"
+                          ]
+                        },
+                        "then": {
+                          "required": [
+                            "definition_simplification"
+                          ]
+                        }
+                      },
+                      {
+                        "if": {
+                          "properties": {
+                            "outcome": {
+                              "enum": [
+                                "pass",
+                                "cancelled"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "outcome"
+                          ]
+                        },
+                        "then": {
+                          "not": {
+                            "required": [
+                              "definition_simplification"
+                            ]
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "else": {
+                    "not": {
+                      "required": [
+                        "definition_simplification"
+                      ]
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "review_kind": {
+                        "enum": [
+                          "simplification-product-definition",
+                          "simplification-architecture-interfaces"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "review_kind"
+                    ]
+                  },
+                  "else": {
+                    "required": [
+                      "findings"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "outgoingLinks": [
+          {
+            "id": "reviews",
+            "description": "The one exact primary artifact revision judged by this review.",
+            "targets": [
+              {
+                "kind": "datum",
+                "types": [
+                  "MAP",
+                  "PSP",
+                  "STK",
+                  "SYS",
+                  "ASP",
+                  "ICSP",
+                  "DWP",
+                  "VSP",
+                  "ENV",
+                  "VER",
+                  "VAI",
+                  "BSL",
+                  "DEC",
+                  "PRB",
+                  "CHG",
+                  "PAS"
+                ],
+                "identity": "revision"
+              }
+            ],
+            "cardinality": {
+              "minimum": 1,
+              "maximum": 1
+            },
+            "freeze_resolution": "already-exact",
+            "inverse_label": "reviewed-by"
+          },
+          {
+            "id": "contextualizes",
+            "description": "Exact frozen review-context baseline used for judgment.",
+            "targets": [
+              {
+                "kind": "datum",
+                "types": [
+                  "BSL"
+                ],
+                "identity": "revision"
+              }
+            ],
+            "cardinality": {
+              "minimum": 1,
+              "maximum": 1
+            },
+            "freeze_resolution": "already-exact",
+            "inverse_label": "context-for"
+          },
+          {
+            "id": "depends-on",
+            "description": "Stable claim dependency used only to decide whether this exact historical Review remains reusable after change.",
+            "targets": [
+              {
+                "kind": "datum",
+                "types": [
+                  "MAP",
+                  "PSP",
+                  "STK",
+                  "SYS",
+                  "ASP",
+                  "ICSP",
+                  "DWP",
+                  "VSP",
+                  "ENV",
+                  "VER",
+                  "VAI",
+                  "BSL",
+                  "DEC",
+                  "PRB",
+                  "CHG",
+                  "PAS"
+                ],
+                "identity": "stable"
+              }
+            ],
+            "cardinality": {
+              "minimum": 0,
+              "maximum": "many"
+            },
+            "freeze_resolution": "exact-revision",
+            "inverse_label": "review-dependency"
+          },
+          {
+            "id": "blocks",
+            "description": "Canonical exact candidate, member, or Phase 2 definition set selected by blocking simplification findings.",
+            "targets": [
+              {
+                "kind": "datum",
+                "types": [
+                  "MAP",
+                  "PSP",
+                  "STK",
+                  "SYS",
+                  "ASP",
+                  "ICSP",
+                  "DWP",
+                  "BSL"
+                ],
+                "identity": "revision"
+              }
+            ],
+            "cardinality": {
+              "minimum": 0,
+              "maximum": "many"
+            },
+            "freeze_resolution": "already-exact",
+            "inverse_label": "blocked-by-review"
+          },
+          {
+            "id": "flags",
+            "description": "Exact Phase 2 definition subjects selected by collateral Review Findings for local correction or attended escalation.",
+            "targets": [
+              {
+                "kind": "datum",
+                "types": [
+                  "SYS",
+                  "ASP",
+                  "ICSP",
+                  "DWP"
+                ],
+                "identity": "revision"
+              }
+            ],
+            "cardinality": {
+              "minimum": 0,
+              "maximum": "many"
+            },
+            "freeze_resolution": "already-exact",
+            "inverse_label": "flagged-by-review"
+          },
+          {
+            "id": "removes",
+            "description": "Exact SYS outputs removed from current scope by observed Phase 2 simplification evidence.",
+            "targets": [
+              {
+                "kind": "datum",
+                "types": [
+                  "SYS"
+                ],
+                "identity": "revision"
+              }
+            ],
+            "cardinality": {
+              "minimum": 0,
+              "maximum": "many"
+            },
+            "freeze_resolution": "already-exact",
+            "inverse_label": "removed-by-review"
+          },
+          {
+            "id": "changed-under",
+            "description": "Exact approved Change Request requiring this replacement review evidence.",
+            "targets": [
+              {
+                "kind": "datum",
+                "types": [
+                  "CHG"
+                ],
+                "identity": "revision"
+              }
+            ],
+            "cardinality": {
+              "minimum": 0,
+              "maximum": 1
+            },
+            "freeze_resolution": "already-exact",
+            "inverse_label": "changed-review"
+          }
+        ]
+      }
+    ],
+    "outputSchemas": [
+      {
+        "type": "DEC",
+        "envelope": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "$id": "https://mdlm.dev/kernel/process-interface/v1/datum-envelope.schema.json",
+          "title": "Kernel-owned MDLM datum envelope",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "revision",
+            "revision_id",
+            "type",
+            "payload",
+            "links",
+            "created_by",
+            "body"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^[A-Z]{3,8}-[0-9A-HJKMNP-TV-Z]{10,12}$"
+            },
+            "revision": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "revision_id": {
+              "type": "string",
+              "pattern": "^[A-Z]{3,8}-[0-9A-HJKMNP-TV-Z]{10,12}-r[0-9]{5}$"
+            },
+            "type": {
+              "type": "string",
+              "pattern": "^[A-Z]{3,8}$"
+            },
+            "payload": {
+              "type": "object"
+            },
+            "links": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "type",
+                  "target"
+                ],
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]*$"
+                  },
+                  "target": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              },
+              "uniqueItems": true
+            },
+            "created_by": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "scenario",
+                "prompt_ref",
+                "process_ref",
+                "loaded_skill_refs",
+                "policy_refs"
+              ],
+              "properties": {
+                "scenario": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9-]*@[1-9][0-9]*$"
+                },
+                "prompt_ref": {
+                  "type": "string",
+                  "pattern": "^prompts/.+\\.md@[1-9][0-9]*$"
+                },
+                "process_ref": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "loaded_skill_refs": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^skills/.+\\.md@[1-9][0-9]*$"
+                  },
+                  "uniqueItems": true
+                },
+                "policy_refs": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]*@[1-9][0-9]*$"
+                  },
+                  "uniqueItems": true
+                }
+              }
+            },
+            "body": {
+              "type": "string"
+            }
+          },
+          "x-mdlm-kernel-invariants": [
+            "id prefix equals type",
+            "revision_id equals id plus zero-padded revision",
+            "frozen revisions are immutable",
+            "at most one local editable revision exists per stable id"
+          ]
+        },
+        "payload": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "alternatives",
+            "decision",
+            "effective_scope",
+            "kind",
+            "rationale",
+            "title"
+          ],
+          "properties": {
+            "title": {
+              "type": "string",
+              "minLength": 1
+            },
+            "rationale": {
+              "type": "string",
+              "minLength": 1
+            },
+            "kind": {
+              "enum": [
+                "decision",
+                "assumption",
+                "scope",
+                "waiver",
+                "deferral",
+                "authority-delegation",
+                "gate-signoff",
+                "change-approval",
+                "change-closure",
+                "pilot-observation",
+                "pilot-expansion",
+                "retirement",
+                "cancellation"
+              ]
+            },
+            "change_disposition": {
+              "enum": [
+                "approve",
+                "reject",
+                "defer",
+                "cancel"
+              ]
+            },
+            "change_reactivation_condition": {
+              "type": "string",
+              "minLength": 1
+            },
+            "decision": {
+              "type": "string",
+              "minLength": 1
+            },
+            "alternatives": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "effective_scope": {
+              "type": "string",
+              "minLength": 1
+            },
+            "attended_answer_change": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "disposition",
+                "previous_answer",
+                "revised_answer",
+                "rationale"
+              ],
+              "properties": {
+                "disposition": {
+                  "enum": [
+                    "narrow",
+                    "defer",
+                    "remove"
+                  ]
+                },
+                "previous_answer": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "revised_answer": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "rationale": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            },
+            "scope_correction": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "disposition",
+                "options",
+                "necessity"
+              ],
+              "properties": {
+                "disposition": {
+                  "enum": [
+                    "bound",
+                    "defer-or-remove",
+                    "retain"
+                  ]
+                },
+                "options": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "bounded",
+                    "defer_or_remove",
+                    "retain"
+                  ],
+                  "properties": {
+                    "bounded": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "defer_or_remove": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "retain": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                },
+                "necessity": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "reactivation_condition": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "allOf": [
+                {
+                  "if": {
+                    "properties": {
+                      "disposition": {
+                        "const": "defer-or-remove"
+                      }
+                    },
+                    "required": [
+                      "disposition"
+                    ]
+                  },
+                  "then": {
+                    "required": [
+                      "reactivation_condition"
+                    ]
+                  }
+                }
+              ]
+            },
+            "pilot_observation": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "availability",
+                "review",
+                "agent_effort",
+                "evidence_reuse",
+                "loose_ends",
+                "gate_ceremony",
+                "environment_profiles",
+                "verification_discrimination",
+                "scope_reduction"
+              ],
+              "properties": {
+                "availability": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "review",
+                    "agent_effort",
+                    "evidence_reuse",
+                    "loose_ends",
+                    "gate_ceremony",
+                    "environment_profiles",
+                    "verification_discrimination",
+                    "scope_reduction"
+                  ],
+                  "properties": {
+                    "review": {
+                      "enum": [
+                        "observed",
+                        "unavailable"
+                      ]
+                    },
+                    "agent_effort": {
+                      "enum": [
+                        "observed",
+                        "unavailable"
+                      ]
+                    },
+                    "evidence_reuse": {
+                      "enum": [
+                        "observed",
+                        "unavailable"
+                      ]
+                    },
+                    "loose_ends": {
+                      "enum": [
+                        "observed",
+                        "unavailable"
+                      ]
+                    },
+                    "gate_ceremony": {
+                      "enum": [
+                        "observed",
+                        "unavailable"
+                      ]
+                    },
+                    "environment_profiles": {
+                      "enum": [
+                        "observed",
+                        "unavailable"
+                      ]
+                    },
+                    "verification_discrimination": {
+                      "enum": [
+                        "observed",
+                        "unavailable"
+                      ]
+                    },
+                    "scope_reduction": {
+                      "enum": [
+                        "observed",
+                        "unavailable"
+                      ]
+                    }
+                  }
+                },
+                "review": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "contexts",
+                    "completed_reviews",
+                    "findings",
+                    "quality_improved",
+                    "volume_assessment"
+                  ],
+                  "properties": {
+                    "contexts": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "completed_reviews": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "findings": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "quality_improved": {
+                      "type": "boolean"
+                    },
+                    "volume_assessment": {
+                      "enum": [
+                        "low",
+                        "acceptable",
+                        "high"
+                      ]
+                    }
+                  }
+                },
+                "agent_effort": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "tracer_issues",
+                    "implementation_commits",
+                    "implementation_commit_refs",
+                    "effort_assessment"
+                  ],
+                  "properties": {
+                    "tracer_issues": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "implementation_commits": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "implementation_commit_refs": {
+                      "type": "array",
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "pattern": "^git:[0-9a-f]{40}$"
+                      }
+                    },
+                    "effort_assessment": {
+                      "enum": [
+                        "low",
+                        "acceptable",
+                        "high"
+                      ]
+                    }
+                  },
+                  "allOf": [
+                    {
+                      "if": {
+                        "properties": {
+                          "implementation_commits": {
+                            "const": 0
+                          }
+                        },
+                        "required": [
+                          "implementation_commits"
+                        ]
+                      },
+                      "then": {
+                        "properties": {
+                          "implementation_commit_refs": {
+                            "maxItems": 0
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "if": {
+                        "properties": {
+                          "implementation_commits": {
+                            "minimum": 1
+                          }
+                        },
+                        "required": [
+                          "implementation_commits"
+                        ]
+                      },
+                      "then": {
+                        "properties": {
+                          "implementation_commit_refs": {
+                            "minItems": 1
+                          }
+                        }
+                      }
+                    }
+                  ]
+                },
+                "evidence_reuse": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "eligible",
+                    "reused",
+                    "stale",
+                    "explanation_checks",
+                    "explanations_correct"
+                  ],
+                  "properties": {
+                    "eligible": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "reused": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "stale": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "explanation_checks": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "explanations_correct": {
+                      "type": "boolean"
+                    }
+                  }
+                },
+                "loose_ends": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "sampled",
+                    "actionable",
+                    "useful",
+                    "assessment"
+                  ],
+                  "properties": {
+                    "sampled": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "actionable": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "useful": {
+                      "type": "boolean"
+                    },
+                    "assessment": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                },
+                "gate_ceremony": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "gates",
+                    "signoffs",
+                    "decision_reviews",
+                    "proportionate"
+                  ],
+                  "properties": {
+                    "gates": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "signoffs": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "decision_reviews": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "proportionate": {
+                      "type": "boolean"
+                    }
+                  }
+                },
+                "environment_profiles": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "profiles_assessed",
+                    "sufficient"
+                  ],
+                  "properties": {
+                    "profiles_assessed": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "sufficient": {
+                      "type": "boolean"
+                    }
+                  }
+                },
+                "verification_discrimination": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "supported_successes",
+                    "unsupported_rejections",
+                    "discriminates"
+                  ],
+                  "properties": {
+                    "supported_successes": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "unsupported_rejections": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "discriminates": {
+                      "type": "boolean"
+                    }
+                  }
+                },
+                "scope_reduction": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "proposed_items",
+                    "removed_items",
+                    "retained_items",
+                    "demonstrated"
+                  ],
+                  "properties": {
+                    "proposed_items": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "removed_items": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "retained_items": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "demonstrated": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            },
+            "gate_outcome": {
+              "enum": [
+                "approve",
+                "reject"
+              ]
+            },
+            "gate_rejection": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "findings"
+              ],
+              "properties": {
+                "findings": {
+                  "type": "array",
+                  "minItems": 1,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "id",
+                      "summary"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "pattern": "^G-[0-9]{3,}$"
+                      },
+                      "summary": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "delegation": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "authority",
+                "delegate",
+                "scenario",
+                "expires_when",
+                "reactivation_requires"
+              ],
+              "properties": {
+                "authority": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "delegate": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "scenario": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9-]*@[1-9][0-9]*$"
+                },
+                "expires_when": {
+                  "const": "target-revised"
+                },
+                "reactivation_requires": {
+                  "const": "new-delegation-decision"
+                }
+              }
+            },
+            "waiver": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "instance",
+                "obligation",
+                "subject",
+                "scope",
+                "expires_when"
+              ],
+              "properties": {
+                "instance": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "obligation": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "subject": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "scope": {
+                  "enum": [
+                    "this-revision",
+                    "this-baseline",
+                    "one-execution"
+                  ]
+                },
+                "expires_when": {
+                  "type": "array",
+                  "minItems": 1,
+                  "uniqueItems": true,
+                  "items": {
+                    "enum": [
+                      "subject-revised",
+                      "dependency-revised",
+                      "baseline-superseded",
+                      "process-explicitly-reassessed"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "allOf": [
+            {
+              "allOf": [
+                {
+                  "if": {
+                    "properties": {
+                      "kind": {
+                        "const": "pilot-observation"
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ]
+                  },
+                  "then": {
+                    "required": [
+                      "pilot_observation"
+                    ]
+                  }
+                },
+                {
+                  "if": {
+                    "required": [
+                      "pilot_observation"
+                    ]
+                  },
+                  "then": {
+                    "properties": {
+                      "kind": {
+                        "const": "pilot-observation"
+                      }
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "kind": {
+                        "const": "gate-signoff"
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ]
+                  },
+                  "then": {
+                    "required": [
+                      "gate_outcome"
+                    ]
+                  }
+                },
+                {
+                  "if": {
+                    "required": [
+                      "gate_outcome"
+                    ]
+                  },
+                  "then": {
+                    "properties": {
+                      "kind": {
+                        "const": "gate-signoff"
+                      }
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "gate_outcome": {
+                        "const": "reject"
+                      }
+                    },
+                    "required": [
+                      "gate_outcome"
+                    ]
+                  },
+                  "then": {
+                    "required": [
+                      "gate_rejection"
+                    ]
+                  }
+                },
+                {
+                  "if": {
+                    "required": [
+                      "gate_rejection"
+                    ]
+                  },
+                  "then": {
+                    "properties": {
+                      "kind": {
+                        "const": "gate-signoff"
+                      },
+                      "gate_outcome": {
+                        "const": "reject"
+                      }
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "kind": {
+                        "const": "change-approval"
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ]
+                  },
+                  "then": {
+                    "required": [
+                      "change_disposition"
+                    ]
+                  }
+                },
+                {
+                  "if": {
+                    "required": [
+                      "change_disposition"
+                    ]
+                  },
+                  "then": {
+                    "properties": {
+                      "kind": {
+                        "const": "change-approval"
+                      }
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "change_disposition": {
+                        "const": "defer"
+                      }
+                    },
+                    "required": [
+                      "change_disposition"
+                    ]
+                  },
+                  "then": {
+                    "required": [
+                      "change_reactivation_condition"
+                    ]
+                  }
+                },
+                {
+                  "if": {
+                    "required": [
+                      "change_reactivation_condition"
+                    ]
+                  },
+                  "then": {
+                    "properties": {
+                      "kind": {
+                        "const": "change-approval"
+                      },
+                      "change_disposition": {
+                        "const": "defer"
+                      }
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "kind": {
+                        "const": "authority-delegation"
+                      }
+                    },
+                    "required": [
+                      "kind"
+                    ]
+                  },
+                  "then": {
+                    "required": [
+                      "delegation"
+                    ]
+                  }
+                },
+                {
+                  "if": {
+                    "required": [
+                      "delegation"
+                    ]
+                  },
+                  "then": {
+                    "properties": {
+                      "kind": {
+                        "const": "authority-delegation"
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "outgoingLinks": [
+          {
+            "id": "resolves",
+            "description": "Exact question revision answered, deferred, or cancelled by this decision.",
+            "targets": [
+              {
+                "kind": "datum",
+                "types": [
+                  "QST"
+                ],
+                "identity": "revision"
+              }
+            ],
+            "cardinality": {
+              "minimum": 0,
+              "maximum": "many"
+            },
+            "freeze_resolution": "already-exact",
+            "inverse_label": "resolved-by"
+          },
+          {
+            "id": "justifies",
+            "description": "Exact lifecycle claim for which this decision supplies rationale or authorization.",
+            "targets": [
+              {
+                "kind": "datum",
+                "types": [
+                  "MAP",
+                  "PSP",
+                  "STK",
+                  "SYS",
+                  "ASP",
+                  "ICSP",
+                  "DWP",
+                  "VSP",
+                  "ENV",
+                  "VER",
+                  "VAI",
+                  "RUN",
+                  "RES",
+                  "REV",
+                  "BSL",
+                  "QST",
+                  "DEC",
+                  "ART",
+                  "PRB",
+                  "CHG",
+                  "PAS"
+                ],
+                "identity": "revision"
+              }
+            ],
+            "cardinality": {
+              "minimum": 0,
+              "maximum": "many"
+            },
+            "freeze_resolution": "already-exact",
+            "inverse_label": "justified-by"
+          },
+          {
+            "id": "blocks",
+            "description": "Exact candidate or permitted candidate member implicated by this gate rejection.",
+            "targets": [
+              {
+                "kind": "datum",
+                "types": [
+                  "MAP",
+                  "PSP",
+                  "STK",
+                  "BSL"
+                ],
+                "identity": "revision"
+              }
+            ],
+            "cardinality": {
+              "minimum": 0,
+              "maximum": "many"
+            },
+            "freeze_resolution": "already-exact",
+            "inverse_label": "blocked-by-gate-rejection"
+          },
+          {
+            "id": "corrects-review",
+            "description": "Exact failed Reviews whose blocking findings this replacement Decision Revision addresses.",
+            "targets": [
+              {
+                "kind": "datum",
+                "types": [
+                  "REV"
+                ],
+                "identity": "revision"
+              }
+            ],
+            "cardinality": {
+              "minimum": 0,
+              "maximum": "many"
+            },
+            "freeze_resolution": "already-exact",
+            "inverse_label": "corrected-by-decision"
+          },
+          {
+            "id": "confirms-revision",
+            "description": "Exact replacement requirement Revisions confirmed by a change-closure Decision.",
+            "targets": [
+              {
+                "kind": "datum",
+                "types": [
+                  "STK",
+                  "SYS"
+                ],
+                "identity": "revision"
+              }
+            ],
+            "cardinality": {
+              "minimum": 0,
+              "maximum": "many"
+            },
+            "freeze_resolution": "already-exact",
+            "inverse_label": "confirmed-by-closure"
+          },
+          {
+            "id": "closes-with",
+            "description": "Exact replacement context, Review, baseline, and verification evidence cited by a change-closure Decision.",
+            "targets": [
+              {
+                "kind": "datum",
+                "types": [
+                  "BSL",
+                  "REV",
+                  "RES"
+                ],
+                "identity": "revision"
+              }
+            ],
+            "cardinality": {
+              "minimum": 0,
+              "maximum": "many"
+            },
+            "freeze_resolution": "already-exact",
+            "inverse_label": "closure-evidence"
+          },
+          {
+            "id": "relies-on-review",
+            "description": "Exact passing Review whose judgment authorizes this Decision.",
+            "targets": [
+              {
+                "kind": "datum",
+                "types": [
+                  "REV"
+                ],
+                "identity": "revision"
+              }
+            ],
+            "cardinality": {
+              "minimum": 0,
+              "maximum": "many"
+            },
+            "freeze_resolution": "already-exact",
+            "inverse_label": "relied-on-by-decision"
+          },
+          {
+            "id": "waives",
+            "description": "Exact computed obligation instance suppressed by this structured waiver.",
+            "targets": [
+              {
+                "kind": "obligation-instance",
+                "identity": "exact-obligation-instance"
+              }
+            ],
+            "cardinality": {
+              "minimum": 0,
+              "maximum": "many"
+            },
+            "freeze_resolution": "not-applicable",
+            "inverse_label": "waived-by"
+          }
+        ]
+      }
+    ]
+  },
+  "policies": [
+    {
+      "role": "review",
+      "reference": "review-applicability@1",
+      "definition": {
+        "id": "review-applicability",
+        "version": 1
+      }
+    },
+    {
+      "role": "waiver",
+      "reference": "waiver-applicability@1",
+      "definition": {
+        "id": "waiver-applicability",
+        "version": 1
+      },
+      "result": {
+        "permitted": false,
+        "approval_required": true,
+        "applicable": false,
+        "scope": null
+      }
+    }
+  ],
+  "participation": [
+    {
+      "policy": "consequential-decision-participation@1",
+      "authorityRequirement": {
+        "mode": "attended",
+        "authority": "stakeholder",
+        "delegationAllowed": false
+      },
+      "attentionSchedule": {
+        "timing": "immediate",
+        "checkpoint": null,
+        "consolidationGroup": null
+      },
+      "transactionBatching": "single"
+    }
+  ],
+  "authority": {
+    "evidence": {
+      "output": "replacement",
+      "type": "DEC"
+    },
+    "requirements": [
+      {
+        "invocation": 0,
+        "policy": "consequential-decision-participation@1",
+        "authorityRequirement": {
+          "mode": "attended",
+          "authority": "stakeholder",
+          "delegationAllowed": false
+        },
+        "attentionSchedule": {
+          "timing": "immediate",
+          "checkpoint": null,
+          "consolidationGroup": null
+        }
+      }
+    ],
+    "standingDelegation": null
+  },
+  "prohibitions": [
+    "changed Question scope",
+    "invented stakeholder preference",
+    "mutation of immutable history",
+    "suppression of failed Reviews"
+  ],
+  "outputs": [
+    {
+      "name": "replacement",
+      "types": [
+        "DEC"
+      ],
+      "cardinality": "one",
+      "requiredLinks": [
+        {
+          "link": "resolves",
+          "target": {
+            "input": "question"
+          }
+        },
+        {
+          "link": "corrects-review",
+          "target": {
+            "input": "prior_failed_reviews"
+          }
+        },
+        {
+          "link": "corrects-review",
+          "target": {
+            "input": "failed_reviews"
+          }
+        }
+      ]
+    }
+  ],
+  "outputLinks": [
+    {
+      "output": "replacement",
+      "requiredLinks": [
+        {
+          "link": "resolves",
+          "target": {
+            "input": "question"
+          }
+        },
+        {
+          "link": "corrects-review",
+          "target": {
+            "input": "prior_failed_reviews"
+          }
+        },
+        {
+          "link": "corrects-review",
+          "target": {
+            "input": "failed_reviews"
+          }
+        }
+      ]
+    }
+  ],
+  "completion": {
+    "expression": "execution.integrity.contract_valid == true && replacement.identity.id == decision.identity.id && replacement.payload.kind == decision.payload.kind && replacement.payload.effective_scope == question.identity.revision_id && replacement.payload.kind in [\"scope\", \"deferral\", \"cancellation\"] && (\n  question.payload.intent_scope != \"product\"\n  || replacement.payload.decision == question.payload.attended_answer\n  || (\n    present(replacement.payload.attended_answer_change)\n    && replacement.payload.attended_answer_change.previous_answer == question.payload.attended_answer\n    && replacement.payload.attended_answer_change.revised_answer == replacement.payload.decision\n  )\n) && exists(\"valid-question-decision-replacements-for@1\", {decision: decision})",
+    "status": "pending-output",
+    "genericChecks": [
+      "declared-output-cardinality",
+      "no-undeclared-outputs",
+      "output-schema-validity",
+      "source-owned-required-links"
+    ]
+  },
+  "responseSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://mdlm.dev/contracts/mdlm-assignment-response@1",
+    "title": "MDLM Assignment Response",
+    "oneOf": [
+      {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contract",
+          "assignment",
+          "kind",
+          "proposal"
+        ],
+        "properties": {
+          "contract": {
+            "const": "mdlm-assignment-response@1"
+          },
+          "assignment": {
+            "type": "string",
+            "minLength": 1
+          },
+          "kind": {
+            "const": "proposal"
+          },
+          "proposal": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "outputs",
+              "completionEvidence",
+              "loadedSkillRefs",
+              "authoritySupplies",
+              "standingDelegations"
+            ],
+            "properties": {
+              "outputs": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "localId",
+                    "name",
+                    "invocation",
+                    "lifecycleDatum"
+                  ],
+                  "properties": {
+                    "localId": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z][A-Za-z0-9_-]*$",
+                      "description": "Proposal-local identity used by $proposal.<localId>.id and $proposal.<localId>.revision_id references"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "invocation": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "lifecycleDatum": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "type",
+                        "payload",
+                        "links",
+                        "body"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "description": "Existing Stable Datum identity for a same-lineage replacement; omit for a new Stable Datum"
+                        },
+                        "type": {
+                          "type": "string",
+                          "pattern": "^[A-Z]{3,8}$"
+                        },
+                        "payload": {
+                          "type": "object"
+                        },
+                        "links": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "type",
+                              "target"
+                            ],
+                            "properties": {
+                              "type": {
+                                "type": "string"
+                              },
+                              "target": {
+                                "type": "string"
+                              }
+                            }
+                          }
+                        },
+                        "body": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "completionEvidence": {},
+              "loadedSkillRefs": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "uniqueItems": true
+              },
+              "authoritySupplies": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "uniqueItems": true
+              },
+              "standingDelegations": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "uniqueItems": true
+              }
+            }
+          }
+        }
+      },
+      {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contract",
+          "assignment",
+          "kind",
+          "unable"
+        ],
+        "properties": {
+          "contract": {
+            "const": "mdlm-assignment-response@1"
+          },
+          "assignment": {
+            "type": "string",
+            "minLength": 1
+          },
+          "kind": {
+            "const": "unable"
+          },
+          "unable": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "reason",
+              "diagnostics"
+            ],
+            "properties": {
+              "reason": {
+                "enum": [
+                  "stale-scope",
+                  "insufficient-declared-inputs",
+                  "prohibited-input-conflict",
+                  "ambiguity",
+                  "execution-failure"
+                ]
+              },
+              "diagnostics": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "code",
+                    "message"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "message": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "path": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    ]
+  },
+  "diagnostics": []
+}

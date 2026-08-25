@@ -1,0 +1,10 @@
+{
+  "status": "operational-failure",
+  "error": "MDLM command exceeded 30000ms",
+  "details": {
+    "arguments": [
+      "status",
+      "--json"
+    ]
+  }
+}

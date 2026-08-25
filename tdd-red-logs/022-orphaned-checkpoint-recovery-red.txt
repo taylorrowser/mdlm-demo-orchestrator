@@ -1,0 +1,31 @@
+✖ operator-pinned orphaned child checkpoint completes A once and runs B without replaying A (16672.573385ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 0
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 17545.517307
+
+✖ failing tests:
+
+test at test/run.test.mjs:1674:1
+✖ operator-pinned orphaned child checkpoint completes A once and runs B without replaying A (16672.573385ms)
+  AssertionError [ERR_ASSERTION]: {"contract":"mdlm-demo-run-result@2","status":"stopped","snapshot":{"contract":"mdlm-demo-snapshot-created@1","status":"complete","snapshotDirectory":"/tmp/issue-213-run-RYix0Z/recovery-run-snapshot/snapshot-000001","digest":"sha256:ef02bee650e16a67c68bbd63a4017dc3a213eeafa750fd1c211d079b85360cf1"},"assignmentId":"1b7355d0-b445-4c70-b76d-2242299e3170","recoverable":false,"reason":"checkpoint-reconciliation-failure","detail":"retained Assignment checkpoint is not authentic: checkpointRecovery with an operator-pinned prior post-run snapshot is required","postRunSnapshot":{"contract":"mdlm-demo-snapshot-created@1","status":"complete","snapshotDirectory":"/tmp/issue-213-run-RYix0Z/recovery-run-snapshot/snapshot-000002","digest":"sha256:cc68231ac0e31f07ab2b14057b11ea36f4e6d655f534322470ce892a61a26c54"}}
+  
+  + actual - expected
+  
+  + 'checkpoint-reconciliation-failure'
+  - 'lock-conflict'
+  
+      at TestContext.<anonymous> (file:///home/ubuntu/git/mdlm-demo-orchestrator/test/run.test.mjs:1681:10)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'checkpoint-reconciliation-failure',
+    expected: 'lock-conflict',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
