@@ -1,0 +1,47 @@
+
+> mdlm-demo-orchestrator@0.1.0 test
+> node --test --test-concurrency=1
+
+✔ adapter generates and preflights the #215 environment proposal from packet exact inputs (770.703064ms)
+✔ product-specific adapters return exact supplied bytes and require matching observations (14.085604ms)
+✔ a pre-submission adapter failure can resume without changing the Assignment packet (859.135704ms)
+✔ classify keeps an attended Review correction in the active Assignment (89.401025ms)
+✔ classify accepts only named recoverable stops at matching healthy boundaries (270.168718ms)
+✔ classify rejects malformed, exhausted, uncertain, drifted, terminal, and provenance-invalid states (920.715529ms)
+✔ a lost correction session resumes only with durable correction context (249.1629ms)
+✔ installed mdlm-pi consumes attended Review-correction wording in the same Assignment without replaying accepted Scenarios (107.988094ms)
+✔ installed controller serializes accepted A publication before it prepares external B (48.286062ms)
+✔ test/provenance-fixture.mjs (75.497544ms)
+✔ snapshot retains complete immutable evidence and classifies malformed command output (600.251804ms)
+✔ snapshot records exact lifecycle and Assignment repository fingerprints separately (677.917013ms)
+✔ installed tooling closure is path-independent and rejects neighboring dependency mutation (770.987986ms)
+✔ snapshot contract-validates successful MDLM JSON before exposing semantic state (669.619239ms)
+✔ run and resume submit and commit an external Assignment exactly once (1911.536247ms)
+✔ an uncertain submission is never repeated on resume (1788.526131ms)
+✔ resume commits a durably accepted publication without resubmitting (1730.712786ms)
+✔ run refuses command provenance drift before preparing or submitting (837.168941ms)
+✔ dirty tracked or untracked lifecycle state stops before prepare or submit (1746.884012ms)
+✔ harness repository locator is pinned in durable run identity (1852.680424ms)
+✔ a clean extra commit is nonrecoverable on resume (1811.126766ms)
+✔ changed executable bytes cannot be blessed by changing configured provenance (1790.299211ms)
+✔ lost correction session is not fed shell stdin or restarted without controller resume support (1778.26259ms)
+✔ ordinary mdlm-pi submitting journal resumes through its controller without stdin replay (996.97774ms)
+✔ mdlm-pi exit codes and typed results distinguish lifecycle outcomes from operational failures (6730.083127ms)
+✔ typed reserved stops distinguish pre-submission interception from an accepted Assignment checkpoint (3129.21986ms)
+✔ controlled worker environment strips Git, Node, and shell startup injection variables (940.997402ms)
+✔ successive ordinary Assignments use immutable Assignment-keyed state (1856.279096ms)
+✔ publication rejects traversal, malformed execution identities, and symlink parents before Git staging (3016.560049ms)
+✔ durable submitting transition prevents duplicate submit across injected crash seams (3182.080507ms)
+✔ canonical lifecycle repository lock excludes an independent state directory before snapshot (3088.020481ms)
+✔ attended correction re-entry passes an operator-selected catalog decision to mdlm-pi (995.811206ms)
+✔ shim emits a typed stop for a reserved Scenario before worker execution (192.488515ms)
+✔ shim reports accepted A and pre-submission external B as one typed boundary (171.018438ms)
+✔ snapshot writes raw command and Git evidence once and cannot replace it (616.736491ms)
+ℹ tests 35
+ℹ suites 0
+ℹ pass 35
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 48857.055202

@@ -15,11 +15,12 @@ Without `--input`, each command reads one JSON value from standard input. It wri
 
 ## Approved seams
 
-Tests use the three approved public seams.
+Tests use the approved public seams.
 
 1. The JSON CLI is the operator boundary. `snapshot`, `classify`, `run`, and `resume` do not require imports from MDLM.
 2. `src/adapter.mjs` consumes exact `mdlm-assignment-packet@2` bytes. It returns exact `mdlm-assignment-response@1` bytes or `mdlm-demo-reserved-stop@1` before submission.
 3. Process tests run fake `mdlm` and `mdlm-pi` executables in scratch Git repositories. They check raw process evidence, transaction counts, and Git commit counts.
+4. Deterministic integrations import the installed `mdlm-pi` controller and Assignment runner. They prove attended Review-correction wording reaches proposal authority context, accepted Scenarios are not replayed, and publication A is committed before external Assignment B reaches the worker boundary.
 
 `bin/mdlm-demo-mdlm-shim.mjs` inspects only successful `scenario prepare` JSON. It intercepts these exact Scenario references before a worker starts:
 
@@ -27,7 +28,7 @@ Tests use the three approved public seams.
 - `register-pilot-target@1`
 - `execute-verification-run@1`
 
-The shim also stops before the next Assignment. It does not inspect worker text, terminal output, or transcript phrases.
+The shim also stops before the next Assignment. When Assignment A has completed and the next prepared Assignment B is external, it emits `accepted-assignment-then-external`: A is a trusted completion and B remains pre-submission. The orchestrator authenticates the stop against the exact packet retained in its private stop directory; arbitrary process text is not enough. The shim does not inspect worker text, terminal output, or transcript phrases.
 
 ## Recovery rules
 
@@ -44,7 +45,8 @@ Every `run` and `resume` first resolves the lifecycle repository and worktree-pr
 | Accepted execution with journaled output paths and Git blob identities | Finish or recognize the one exact publication commit |
 | Completed transaction journal | Return `already-completed`; do not submit or commit again |
 | Malformed, exhausted, stale, or abandoned Assignment | Stop as nonrecoverable |
-| Repository, package, artifact, or source drift | Stop as nonrecoverable |
+| Tracked or untracked lifecycle changes before prepare or submit | Stop as nonrecoverable repository dirtiness |
+| Repository, package, artifact, installed-tool closure, or source drift | Stop as nonrecoverable |
 | Invalid provenance or failed integrity check | Stop as nonrecoverable |
 | Submission started without accepted execution evidence | Stop as an uncertain transaction; never retry automatically |
 | Accepted execution with missing, mismatched, or ambiguous Git publication evidence | Stop as uncertain publication; never retry automatically |
@@ -64,10 +66,11 @@ A clean unrelated lifecycle-repository commit is drift, not recovery. Expected v
 - lifecycle repository identity kept separate from Assignment repository identity
 - Assignment identity and state
 - the transaction journal bytes and digest, when present
-- exact source and qualification-harness commit/tree identities, harness manifest bytes, package artifact bytes, and configured/real `mdlm` and `mdlm-pi` identities
+- exact source and qualification-harness commit/tree identities, harness repository locator, and harness manifest bytes
+- separate MDLM and MDLM-Pi archive identities, configured/real executable identities, the lockfile identity, and a path-independent digest of the complete installed tooling tree (relative entry names, types, modes, symlink targets, sizes, and file digests)
 - `manifest.json` with byte lengths and SHA-256 values
 
-Every command record includes spawn errors and output-limit state as well as exit/signal/deadline evidence. Nonzero commands and malformed JSON produce a complete immutable snapshot whose result is `command-failure`; evidence capture does not substitute an exception for the failed command. Every run also returns a post-run snapshot.
+Every command record includes spawn errors and output-limit state as well as exit/signal/deadline evidence. Nonzero commands, malformed JSON, and semantic contract violations produce a complete immutable snapshot whose result is `command-failure`; evidence capture does not substitute an exception for the failed command. Successful MDLM JSON is checked for its exact command and contract, `ok`, supported outcome/allocation/disposition, Process Package, repository fingerprint, and Assignment shapes before semantic state is exposed. Every run also returns a post-run snapshot.
 
 The runner removes write permission from completed snapshot files and directories. Process commands after the snapshot go into create-once files under the Assignment directory. The transaction journal remains mutable only through durable atomic replacement. Each later snapshot captures its then-current bytes.
 
@@ -155,8 +158,20 @@ The runner records the origin, authority basis, and digest. It does not label th
       "tree": "SOURCE_TREE"
     },
     "package": {
-      "artifact": "/absolute/path/to/package.tgz",
-      "digest": "sha256:ARTIFACT_SHA256"
+      "artifact": "/absolute/path/to/mdlm.tgz",
+      "digest": "sha256:MDLM_ARCHIVE_SHA256"
+    },
+    "piPackage": {
+      "artifact": "/absolute/path/to/mdlm-pi.tgz",
+      "digest": "sha256:MDLM_PI_ARCHIVE_SHA256"
+    },
+    "tooling": {
+      "root": "/absolute/path/to/installed-tooling-root",
+      "digest": "sha256:PATH_INDEPENDENT_TREE_SHA256",
+      "lock": {
+        "path": "/absolute/path/to/installed-tooling-root/package-lock.json",
+        "digest": "sha256:LOCKFILE_SHA256"
+      }
     },
     "tools": {
       "mdlm": {
@@ -172,6 +187,7 @@ The runner records the origin, authority basis, and digest. It does not label th
       "repository": "/absolute/path/to/mdlm-phase1-qualification-harness",
       "commit": "79c87627aaf48ca3261a3476aa82c52524f3c938",
       "tree": "e7311ce6e36df8df6fa840ea2df70ff00fe316c1",
+      "repositoryLocator": "https://github.com/taylorrowser/mdlm-phase1-qualification-harness.git",
       "manifest": {
         "path": "/absolute/path/to/tracked-qualification-manifest.json",
         "digest": "sha256:MANIFEST_SHA256"
@@ -181,7 +197,7 @@ The runner records the origin, authority basis, and digest. It does not label th
 }
 ```
 
-The artifact digest is the SHA-256 of the configured file bytes. Configured paths and resolved real paths are both recorded. The MDLM Process Package digest is a separate lifecycle identity. The runner compares that identity across status, Assignment state, and packet data. It does not claim that a tarball digest equals the Process Package digest unless the operator supplies evidence for that relationship.
+Each archive digest is the SHA-256 of its configured file bytes. Archive identities, installed-tree identity, lock identity, executable identities, and the MDLM Process Package identity remain separate. The installed-tree digest is independent of its absolute root and covers neighboring dependencies as well as `mdlm` and `mdlm-pi`; both configured executables and the lockfile must resolve within that tree. Configured paths and resolved real paths are recorded where applicable. The runner compares the Process Package identity across status, Assignment state, and packet data. It does not claim that a tarball digest equals the Process Package digest unless the operator supplies evidence for that relationship.
 
 ## Commands
 
@@ -205,4 +221,4 @@ That command has not been run. No remote has been created, and no result from th
 - `mdlm-pi` owns worker-session correction recovery. The inspected packaged controller reports `assignment-correction-session-lost` but exposes no correction-session resume command, so this runner currently stops without stdin replay or Assignment restart even when the durable context is authentic.
 - Accepted publication paths must use a UUIDv4 execution ID and remain canonical regular files below `.lifecycle/data/.transactions/<execution-id>`. Traversal, duplicate paths, symlink components, and canonical-path changes are rejected before hashing or staging.
 - Child processes receive an allowlisted environment. Git subprocesses additionally use isolated system/global configuration; ambient Git, Node, and shell-startup injection variables are removed. The policy is recorded in each snapshot.
-- For the issue #212 run, the authoritative `mdlm` archive is SHA-256 `8f7eb4b7d4e04a053713c72debc2a4a71d7878a0a9ed084ade8c964e9eef6cf7`, rebuilt from source commit `516f9e0ef52bb5fcc47cce56282a44075c5af4f2` and tree `623575c22b53bd6a2a21c73c4420ca5f26aaa172`. Its installed Process Package independently recomputes as `sha256:ee99e698d36e406a836a796a36fc1db2d2451072ad662c0e06805ab5c20fe5ac`. The archive digest and Process Package digest remain distinct identities and both must match their configured boundaries.
+- For the issue #212 run, the authoritative `mdlm` archive is SHA-256 `8f7eb4b7d4e04a053713c72debc2a4a71d7878a0a9ed084ade8c964e9eef6cf7`, and the separate `mdlm-pi` archive is SHA-256 `d3e99c2ebd13f1167ac2041f586b9bbe8fa738388020d9103cad10b90f17df3b`. The read-only installed tooling root currently hashes to `sha256:a16e6aeeb1ee082a500e11494d5c924f29a44f71736d4681e2895ee653f4c5f0` across 17,276 entries, with lock identity `sha256:028cb194bc2b0bfdaf8e631cd03cd3bf3aeadb64e2284eaad7e19061da90b294`. The MDLM archive was rebuilt from source commit `516f9e0ef52bb5fcc47cce56282a44075c5af4f2` and tree `623575c22b53bd6a2a21c73c4420ca5f26aaa172`. Its installed Process Package independently recomputes as `sha256:ee99e698d36e406a836a796a36fc1db2d2451072ad662c0e06805ab5c20fe5ac`. Archive, installed closure, and Process Package digests remain distinct identities and must match their configured boundaries.

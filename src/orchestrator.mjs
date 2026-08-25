@@ -31,7 +31,9 @@ export async function run(request, mode) {
     try {
       output = initial.status === 'complete'
         ? await executeRun(request, context, assignmentDirectory, journalPath, initial)
-        : stopped('command-failure', 'initial snapshot contains a failed or malformed command', initial, assignmentId, { failures: initial.failures });
+        : initial.status === 'provenance-failure'
+          ? stopped('provenance-violation', 'initial snapshot contains provenance drift', initial, assignmentId)
+          : stopped('command-failure', 'initial snapshot contains a failed or malformed command', initial, assignmentId, { failures: initial.failures });
     } catch (error) {
       output = stopped('orchestration-failure', error instanceof Error ? error.message : String(error), initial, assignmentId);
     }
@@ -59,7 +61,8 @@ async function executeRun(request, context, assignmentDirectory, journalPath, sn
       !sameConfiguredPath(request.commands?.mdlmPi, request.provenance?.tools?.mdlmPi?.path) ||
       (request.harness && (!sameConfiguredPath(request.harness.directory, request.provenance?.qualificationHarness?.repository) ||
         request.harness.commit !== request.provenance?.qualificationHarness?.commit ||
-        request.harness.tree !== request.provenance?.qualificationHarness?.tree))) {
+        request.harness.tree !== request.provenance?.qualificationHarness?.tree ||
+        request.harness.repositoryLocator !== request.provenance?.qualificationHarness?.repositoryLocator))) {
     return stopped('provenance-configuration-mismatch', 'runtime command or harness configuration differs from the measured provenance input', snapshotResult, assignmentId);
   }
   if (!captured.lifecycleRepository || !captured.assignment || !captured.status || !captured.diagnosis) {
@@ -90,6 +93,9 @@ async function executeRun(request, context, assignmentDirectory, journalPath, sn
   }
   if (journal?.phase === 'uncertain-publication') {
     return stopped('uncertain-partial-publication', 'Git publication state is uncertain', snapshotResult, assignmentId);
+  }
+  if (journal?.phase !== 'published-uncommitted' && captured.lifecycleRepository.clean !== true) {
+    return stopped('repository-dirty', 'lifecycle repository has tracked or untracked changes before submission', snapshotResult, assignmentId);
   }
 
   const repositoryMatch = await reconcileRepositoryIdentity(context.identityDirectory, assignmentDirectory, assignmentId, captured.lifecycleRepository, assignment.repository);
@@ -130,9 +136,10 @@ async function executeRun(request, context, assignmentDirectory, journalPath, sn
   if (!commandSucceeded(prepare)) return stopped('prepare-command-failure', 'MDLM could not prepare the active Assignment', snapshotResult, assignmentId, { process: commandRecord(prepare) });
   let packet;
   try { packet = parseJsonBytes(prepare.stdout, 'scenario prepare'); }
-  catch (error) { return stopped('malformed-assignment', error.message, snapshotResult, assignmentId); }
-  if (packet.contract !== 'mdlm-assignment-packet@2' || packet.assignment?.id !== assignmentId || packet.command !== 'scenario.prepare') {
-    return stopped('malformed-assignment', 'prepared packet identity or contract is invalid', snapshotResult, assignmentId);
+  catch (error) { return stopped('malformed-assignment', error.message, snapshotResult, assignmentId, { process: commandRecord(prepare) }); }
+  if (packet.contract !== 'mdlm-assignment-packet@2' || packet.ok !== true || packet.assignment?.id !== assignmentId || packet.command !== 'scenario.prepare' ||
+      typeof packet.scenario?.reference !== 'string' || !packet.responseSchema || typeof packet.responseSchema !== 'object' || Array.isArray(packet.responseSchema) || !Array.isArray(packet.exactInputs)) {
+    return stopped('malformed-assignment', 'prepared packet identity or contract is invalid', snapshotResult, assignmentId, { process: commandRecord(prepare) });
   }
   if (!sameJson(packet.package, assignment.package) || !sameJson(packet.repository, assignment.repository)) {
     return stopped('assignment-fingerprint-drift', 'prepared packet differs from the snapshotted Assignment', snapshotResult, assignmentId);
@@ -216,9 +223,17 @@ async function runPiAssignment(request, context, assignmentDirectory, assignment
     ...(decision === null ? {} : { decision: decision.evidence }),
   };
   if (decoded.kind === 'reserved-stop') {
-    const accepted = decoded.stop.type === 'assignment-checkpoint';
+    const trustedStop = await authenticateReservedStop(decoded.stop, shimDirectory);
+    if (!trustedStop.ok) {
+      return stopped('mdlm-pi-contract-failure', trustedStop.detail, snapshotResult, assignmentId, common);
+    }
+    const accepted = decoded.stop.type === 'accepted-assignment-then-external' &&
+      decoded.stop.completedAssignment === assignmentId &&
+      typeof decoded.stop.assignment === 'string' && decoded.stop.assignment !== assignmentId &&
+      externalScenarios.has(decoded.stop.scenario);
     return result(accepted ? 'completed' : 'stopped', snapshotResult, {
       ...common, recoverable: true, reason: 'reserved-shim-stop', stop: decoded.stop,
+      ...(accepted ? { nextAssignment: { id: decoded.stop.assignment, scenario: decoded.stop.scenario, phase: 'pre-submission' } } : {}),
       outcome: accepted ? 'accepted-publication' : 'pre-submission-stop', trustedRepositoryAdvance: accepted,
     });
   }
@@ -280,12 +295,32 @@ function trailingJson(bytes) {
 }
 function findReservedStop(value) {
   if (!value || typeof value !== 'object') return null;
-  if (value.contract === 'mdlm-demo-reserved-stop@1' && value.phase === 'before-worker') return value;
+  if (value.contract === 'mdlm-demo-reserved-stop@1' && value.phase === 'before-worker' &&
+      typeof value.type === 'string' && typeof value.assignment === 'string' && typeof value.scenario === 'string') return value;
   for (const child of Object.values(value)) {
     const found = findReservedStop(child);
     if (found !== null) return found;
   }
   return null;
+}
+
+async function authenticateReservedStop(stop, shimDirectory) {
+  try {
+    if (typeof stop.packetPath !== 'string') throw new Error('reserved stop has no packet path');
+    const stopsDirectory = await realpath(path.join(shimDirectory, 'stops'));
+    const packetPath = await realpath(stop.packetPath);
+    if (path.dirname(packetPath) !== stopsDirectory) throw new Error('reserved stop packet is outside the private stop directory');
+    const information = await lstat(packetPath);
+    if (!information.isFile() || information.isSymbolicLink()) throw new Error('reserved stop packet is not a regular file');
+    const packet = JSON.parse(await readFile(packetPath, 'utf8'));
+    if (packet.contract !== 'mdlm-assignment-packet@2' || packet.command !== 'scenario.prepare' || packet.ok !== true ||
+        packet.assignment?.id !== stop.assignment || packet.scenario?.reference !== stop.scenario) {
+      throw new Error('reserved stop does not match its exact prepared Assignment packet');
+    }
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, detail: `reserved stop evidence is not authentic: ${error.message}` };
+  }
 }
 
 async function inspectCorrectionContext(context, assignment, resultDocument) {
@@ -294,10 +329,26 @@ async function inspectCorrectionContext(context, assignment, resultDocument) {
   try { journal = JSON.parse(await readFile(journalPath, 'utf8')); }
   catch (error) { return { authentic: false, controllerResumeSupported: false, journalPath, detail: `durable mdlm-pi journal unavailable: ${error.message}` }; }
   const responseDigest = resultDocument?.responseDigest ?? journal.submission?.digest;
-  const authentic = journal.contract === 'mdlm-pi-run-journal@1' && journal.phase === 'submitting' &&
-    journal.assignment?.id === assignment.id && sameJson(journal.assignment?.package, assignment.package) &&
-    sameJson(journal.assignment?.repository, assignment.repository) &&
-    /^sha256:[0-9a-f]{64}$/.test(responseDigest ?? '') && journal.submission?.digest === responseDigest;
+  const submission = journal.submission;
+  const previous = submission?.previousMalformedResponseDigests;
+  const current = Array.isArray(assignment.malformedResponses) ? assignment.malformedResponses.map(item => item?.digest) : null;
+  const processValid = value => value && typeof value === 'object' && typeof value.id === 'string' && value.id.length > 0 &&
+    Number.isSafeInteger(value.pid) && value.pid > 0 && typeof value.stdoutPath === 'string' && value.stdoutPath.length > 0 &&
+    typeof value.stderrPath === 'string' && value.stderrPath.length > 0;
+  const journalShapeValid = journal.contract === 'mdlm-pi-run-journal@1' && journal.phase === 'submitting' &&
+    journal.assignment?.id === assignment.id && journal.assignment?.scenario === assignment.scenarioReference &&
+    sameJson(journal.assignment?.package, assignment.package) && sameJson(journal.assignment?.repository, assignment.repository) &&
+    typeof submission?.source === 'string' && /^sha256:[0-9a-f]{64}$/.test(submission?.digest ?? '') &&
+    sha256(Buffer.from(submission.source)) === submission.digest &&
+    (submission.previousTransactionId === null || typeof submission.previousTransactionId === 'string') &&
+    typeof submission.baseCommit === 'string' && submission.baseCommit.length > 0 &&
+    Array.isArray(previous) && previous.every(digest => /^sha256:[0-9a-f]{64}$/.test(digest)) &&
+    Array.isArray(submission.completedProcesses) && submission.completedProcesses.every(processValid) &&
+    (submission.process === undefined || processValid(submission.process));
+  const exactCorrectionHistory = journalShapeValid && Array.isArray(current) && current.every(digest => /^sha256:[0-9a-f]{64}$/.test(digest)) &&
+    current.length === previous.length + 1 && previous.every((digest, index) => current[index] === digest) &&
+    current.at(-1) === submission.digest;
+  const authentic = exactCorrectionHistory && /^sha256:[0-9a-f]{64}$/.test(responseDigest ?? '') && submission.digest === responseDigest;
   return {
     authentic,
     controllerResumeSupported: false,
@@ -327,12 +378,22 @@ function observedRunIdentity(provenance, processPackage) {
   const gitIdentity = value => ({ repository: value.repository, commit: value.observedCommit, tree: value.observedTree });
   const file = value => ({ realpath: value.realpath, digest: value.digest, bytes: value.bytes });
   return {
-    contract: 'mdlm-demo-run-identity@2',
+    contract: 'mdlm-demo-run-identity@3',
     processPackage,
     source: gitIdentity(provenance.source),
     packageArtifact: file(provenance.package),
+    piPackageArtifact: file(provenance.piPackage),
+    tooling: {
+      contract: provenance.tooling.contract, digest: provenance.tooling.digest, entries: provenance.tooling.entries,
+      files: provenance.tooling.files, symlinks: provenance.tooling.symlinks, bytes: provenance.tooling.bytes,
+      lock: file(provenance.tooling.lock),
+    },
     tools: { mdlm: file(provenance.tools.mdlm), mdlmPi: file(provenance.tools.mdlmPi) },
-    qualificationHarness: { ...gitIdentity(provenance.qualificationHarness), manifest: file(provenance.qualificationHarness.manifest) },
+    qualificationHarness: {
+      ...gitIdentity(provenance.qualificationHarness),
+      repositoryLocator: provenance.qualificationHarness.repositoryLocator,
+      manifest: file(provenance.qualificationHarness.manifest),
+    },
   };
 }
 async function pinRunIdentity(identityDirectory, current) {
@@ -392,7 +453,7 @@ async function finishTrustedRun(context, assignmentDirectory, journalPath, assig
 }
 
 async function publicationFromSubmission(output, journal, repository) {
-  if (output.contract !== 'mdlm-scenario-execution@4' || output.command !== 'scenario.submit') throw new Error('submission did not return an accepted Scenario execution');
+  if (output.contract !== 'mdlm-scenario-execution@4' || output.command !== 'scenario.submit' || output.ok !== true) throw new Error('submission did not return an accepted Scenario execution');
   const execution = output.execution;
   if (execution?.status !== 'completed' || execution.response?.assignment !== journal.assignmentId || execution.response?.digest !== journal.responseDigest || execution.definition?.scenario !== journal.scenario) {
     throw new Error('accepted execution does not match the journaled Assignment response');

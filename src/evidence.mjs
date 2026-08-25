@@ -1,8 +1,8 @@
-import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import {
   commandRecord, commandSucceeded, environmentPolicy, fileIdentity, gitEnvironment,
-  parseJsonBytes, requireContract, runProcess, sha256,
+  parseJsonBytes, requireContract, runProcess, sha256, toolingTreeIdentity,
 } from './util.mjs';
 
 const commandNames = ['head', 'tree', 'status', 'stagedDiff', 'worktreeDiff', 'doctor', 'mdlmStatus', 'assignment'];
@@ -41,8 +41,19 @@ export async function snapshot(request) {
   const parsed = {};
   for (const [name, label] of [['doctor', 'doctor'], ['mdlmStatus', 'status'], ['assignment', 'assignment']]) {
     if (!commandSucceeded(invocations[name])) continue;
-    try { parsed[name] = parseJsonBytes(invocations[name].stdout, label); }
-    catch (error) { failures.push({ command: name === 'mdlmStatus' ? 'status' : name, kind: 'malformed-json', detail: error.message }); }
+    try {
+      const value = parseJsonBytes(invocations[name].stdout, label);
+      if (name === 'doctor') validateDoctor(value);
+      else if (name === 'mdlmStatus') validateStatus(value);
+      else validateAssignmentState(value, assignmentId);
+      parsed[name] = value;
+    } catch (error) {
+      failures.push({
+        command: name === 'mdlmStatus' ? 'status' : name,
+        kind: error.message.includes('returned invalid JSON') ? 'malformed-json' : 'semantic-contract',
+        detail: error.message,
+      });
+    }
   }
   const lifecycleRepository = lifecycleFingerprint(invocations, failures);
   const assignment = parsed.assignment?.assignment && typeof parsed.assignment.assignment === 'object'
@@ -100,7 +111,7 @@ export async function snapshot(request) {
   await makeReadOnly(directory, [path.join(directory, 'manifest.json'), ...files.map(item => path.join(directory, item.path))]);
   return {
     contract: 'mdlm-demo-snapshot-created@1',
-    status: uniqueFailures.length === 0 ? 'complete' : 'command-failure',
+    status: uniqueFailures.length > 0 ? 'command-failure' : provenance.valid ? 'complete' : 'provenance-failure',
     snapshotDirectory: directory,
     digest: sha256(manifestBytes),
     ...(uniqueFailures.length === 0 ? {} : { failures: uniqueFailures }),
@@ -152,15 +163,23 @@ async function inspectProvenance(provenance, timeoutMs) {
     'qualification harness manifest',
   );
   qualificationHarness.matches &&= qualificationHarness.manifest.matches;
-  const packageIdentity = await expectedFileRecord(provenance?.package?.artifact, provenance?.package?.digest, 'package artifact');
+  qualificationHarness.repositoryLocator = typeof provenance?.qualificationHarness?.repositoryLocator === 'string'
+    ? provenance.qualificationHarness.repositoryLocator
+    : null;
+  qualificationHarness.matches &&= qualificationHarness.repositoryLocator !== null && qualificationHarness.repositoryLocator.length > 0;
+  const packageIdentity = await expectedFileRecord(provenance?.package?.artifact, provenance?.package?.digest, 'mdlm package artifact');
+  const piPackageIdentity = await expectedFileRecord(provenance?.piPackage?.artifact, provenance?.piPackage?.digest, 'mdlm-pi package artifact');
   const mdlm = await expectedFileRecord(provenance?.tools?.mdlm?.path, provenance?.tools?.mdlm?.digest, 'mdlm');
   const mdlmPi = await expectedFileRecord(provenance?.tools?.mdlmPi?.path, provenance?.tools?.mdlmPi?.digest, 'mdlm-pi');
+  const tooling = await expectedToolingRecord(provenance?.tooling, { mdlm, mdlmPi });
   return {
     source,
     package: packageIdentity,
+    piPackage: piPackageIdentity,
+    tooling,
     tools: { mdlm, mdlmPi },
     qualificationHarness,
-    valid: [source, packageIdentity, mdlm, mdlmPi, qualificationHarness].every(item => item.matches),
+    valid: [source, packageIdentity, piPackageIdentity, tooling, mdlm, mdlmPi, qualificationHarness].every(item => item.matches),
   };
 }
 
@@ -203,6 +222,107 @@ async function expectedFileRecord(file, expectedDigest, label) {
     return { path: typeof file === 'string' ? path.resolve(file) : null, realpath: null, digest: null, bytes: null, expectedDigest: expectedDigest ?? null, matches: false, error: error.message };
   }
 }
+
+async function expectedToolingRecord(value, tools) {
+  try {
+    const expectedDigest = requiredDigest(value?.digest, 'tooling closure digest');
+    const identity = await toolingTreeIdentity(requiredString(value?.root, 'tooling closure root'));
+    const canonicalRoot = await realpath(identity.root);
+    const lock = await expectedFileRecord(value?.lock?.path, value?.lock?.digest, 'tooling lock');
+    const containedTools = [tools.mdlm, tools.mdlmPi].every(tool =>
+      typeof tool.realpath === 'string' && isPathWithin(canonicalRoot, tool.realpath)
+    );
+    const lockContained = typeof lock.realpath === 'string' && isPathWithin(canonicalRoot, lock.realpath);
+    return {
+      ...identity,
+      expectedDigest,
+      lock,
+      containedTools,
+      matches: identity.digest === expectedDigest && lock.matches && containedTools && lockContained,
+    };
+  } catch (error) {
+    return {
+      root: typeof value?.root === 'string' ? path.resolve(value.root) : null,
+      contract: 'mdlm-demo-tooling-tree@1', digest: null, expectedDigest: value?.digest ?? null,
+      entries: null, files: null, symlinks: null, bytes: null, lock: { matches: false },
+      containedTools: false, matches: false, error: error.message,
+    };
+  }
+}
+
+function isPathWithin(root, candidate) {
+  const relative = path.relative(root, candidate);
+  return relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative));
+}
+
+function validateDoctor(value) {
+  requireJsonObject(value, 'doctor');
+  requireLiteral(value, 'contract', 'mdlm-doctor@1', 'doctor');
+  requireLiteral(value, 'command', 'doctor', 'doctor');
+  requireBoolean(value, 'ok', 'doctor');
+}
+
+function validateStatus(value) {
+  requireJsonObject(value, 'status');
+  requireLiteral(value, 'contract', 'mdlm-status@1', 'status');
+  requireLiteral(value, 'command', 'status', 'status');
+  requireBoolean(value, 'ok', 'status');
+  validateProcessPackage(value.package, 'status.package');
+  const outcome = requireJsonObject(value.currentOutcome, 'status.currentOutcome');
+  const supported = ['assignment', 'attention-required', 'profile-boundary-reached', 'lifecycle-complete', 'process-dead-end', 'invalid'];
+  if (!supported.includes(outcome.outcome)) throw new Error(`status.currentOutcome.outcome '${outcome.outcome}' is unsupported`);
+  if (outcome.outcome === 'assignment' || outcome.outcome === 'attention-required') {
+    const assignment = requireJsonObject(outcome.assignment, 'status.currentOutcome.assignment');
+    if (!['active', 'not-allocated'].includes(assignment.allocation)) throw new Error(`status Assignment allocation '${assignment.allocation}' is unsupported`);
+    if (assignment.allocation === 'active' || assignment.id !== undefined) requiredNonempty(assignment.id, 'status.currentOutcome.assignment.id');
+  }
+  const recent = requireJsonObject(value.recentTransaction, 'status.recentTransaction');
+  requireBoolean(recent, 'available', 'status.recentTransaction');
+  if (recent.available) requiredNonempty(recent.id, 'status.recentTransaction.id');
+}
+
+function validateAssignmentState(value, expectedId) {
+  requireJsonObject(value, 'assignment');
+  requireLiteral(value, 'contract', 'mdlm-assignment-state@1', 'assignment');
+  requireLiteral(value, 'command', 'assignment.show', 'assignment');
+  requireBoolean(value, 'ok', 'assignment');
+  const assignment = requireJsonObject(value.assignment, 'assignment.assignment');
+  requiredNonempty(assignment.id, 'assignment.assignment.id');
+  if (assignment.id !== expectedId) throw new Error(`assignment.assignment.id does not match requested Assignment '${expectedId}'`);
+  requireBoolean(value, 'selected', 'assignment');
+  if (!value.selected) return;
+  validateProcessPackage(value.package, 'assignment.package');
+  validateRepositoryFingerprint(value.repository, 'assignment.repository');
+  requiredNonempty(value.scenarioReference, 'assignment.scenarioReference');
+  if (!['active', 'abandoned', 'exhausted', 'stale'].includes(value.disposition)) throw new Error(`assignment disposition '${value.disposition}' is unsupported`);
+  requireJsonObject(value.retryAvailability, 'assignment.retryAvailability');
+  if (!Array.isArray(value.malformedResponses)) throw new Error('assignment.malformedResponses must be an array');
+  for (const [index, response] of value.malformedResponses.entries()) {
+    requireJsonObject(response, `assignment.malformedResponses[${index}]`);
+    if (!/^sha256:[0-9a-f]{64}$/.test(response.digest ?? '')) throw new Error(`assignment.malformedResponses[${index}].digest is invalid`);
+  }
+}
+
+function validateProcessPackage(value, label) {
+  const packageIdentity = requireJsonObject(value, label);
+  requiredNonempty(packageIdentity.reference, `${label}.reference`);
+  if (!/^sha256:[0-9a-f]{64}$/.test(packageIdentity.digest ?? '')) throw new Error(`${label}.digest is invalid`);
+  requiredNonempty(packageIdentity.language, `${label}.language`);
+}
+
+function validateRepositoryFingerprint(value, label) {
+  const repository = requireJsonObject(value, label);
+  if (!/^[0-9a-f]{40,64}$/.test(repository.head ?? '')) throw new Error(`${label}.head is invalid`);
+  if (!/^sha256:[0-9a-f]{64}$/.test(repository.trackedState ?? '')) throw new Error(`${label}.trackedState is invalid`);
+}
+
+function requireJsonObject(value, label) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${label} must be an object`);
+  return value;
+}
+function requireLiteral(value, key, expected, label) { if (value[key] !== expected) throw new Error(`${label}.${key} must equal '${expected}'`); }
+function requireBoolean(value, key, label) { if (typeof value[key] !== 'boolean') throw new Error(`${label}.${key} must be boolean`); return value[key]; }
+function requiredNonempty(value, label) { if (typeof value !== 'string' || value.length === 0) throw new Error(`${label} must be a nonempty string`); return value; }
 
 async function captureOptional(file) {
   if (typeof file !== 'string') return { present: false };

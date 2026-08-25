@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { lstat, readFile, realpath } from 'node:fs/promises';
+import { lstat, readFile, readlink, realpath, readdir } from 'node:fs/promises';
 import path from 'node:path';
 
 export const sha256 = bytes => `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
@@ -63,6 +63,50 @@ export async function fileIdentity(file) {
     digest: sha256(bytes),
     bytes: bytes.length,
   };
+}
+
+export async function toolingTreeIdentity(root) {
+  const configuredRoot = path.resolve(root);
+  const rootInformation = await lstat(configuredRoot);
+  if (!rootInformation.isDirectory() || rootInformation.isSymbolicLink()) throw new Error('tooling closure root must be a real directory');
+  const canonicalRoot = await realpath(configuredRoot);
+  const entries = [];
+  await visitToolingEntry(configuredRoot, canonicalRoot, '.', entries);
+  const manifest = Buffer.from(`${JSON.stringify({ contract: 'mdlm-demo-tooling-tree@1', entries })}\n`);
+  return {
+    root: configuredRoot,
+    contract: 'mdlm-demo-tooling-tree@1',
+    digest: sha256(manifest),
+    entries: entries.length,
+    files: entries.filter(entry => entry.type === 'file').length,
+    symlinks: entries.filter(entry => entry.type === 'symlink').length,
+    bytes: entries.reduce((total, entry) => total + (entry.bytes ?? 0), 0),
+  };
+}
+
+async function visitToolingEntry(root, canonicalRoot, relative, entries) {
+  const absolute = relative === '.' ? root : path.join(root, ...relative.split('/'));
+  const information = await lstat(absolute);
+  const mode = (information.mode & 0o7777).toString(8).padStart(4, '0');
+  if (information.isSymbolicLink()) {
+    const resolvedTarget = await realpath(absolute);
+    const targetRelative = path.relative(canonicalRoot, resolvedTarget);
+    if (targetRelative === '..' || targetRelative.startsWith(`..${path.sep}`) || path.isAbsolute(targetRelative)) {
+      throw new Error(`tooling closure symlink escapes its root: '${relative}'`);
+    }
+    entries.push({ path: relative, type: 'symlink', mode, targetBase64: Buffer.from(await readlink(absolute)).toString('base64') });
+    return;
+  }
+  if (information.isDirectory()) {
+    entries.push({ path: relative, type: 'directory', mode });
+    const names = await readdir(absolute);
+    names.sort();
+    for (const name of names) await visitToolingEntry(root, canonicalRoot, relative === '.' ? name : `${relative}/${name}`, entries);
+    return;
+  }
+  if (!information.isFile()) throw new Error(`tooling closure contains unsupported entry '${relative}'`);
+  const bytes = await readFile(absolute);
+  entries.push({ path: relative, type: 'file', mode, bytes: bytes.length, digest: sha256(bytes) });
 }
 
 export async function runProcess(program, args, options = {}) {

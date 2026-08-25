@@ -1,0 +1,216 @@
+
+> mdlm-demo-orchestrator@0.1.0 test
+> node --test --test-concurrency=1
+
+✔ adapter generates and preflights the #215 environment proposal from packet exact inputs (1665.519982ms)
+✔ product-specific adapters return exact supplied bytes and require matching observations (28.07032ms)
+✔ a pre-submission adapter failure can resume without changing the Assignment packet (1725.670558ms)
+✔ classify keeps an attended Review correction in the active Assignment (238.969758ms)
+✔ classify accepts only named recoverable stops at matching healthy boundaries (672.517501ms)
+✔ classify rejects malformed, exhausted, uncertain, drifted, terminal, and provenance-invalid states (2078.595331ms)
+✔ a lost correction session resumes only with durable correction context (451.989772ms)
+✖ installed mdlm-pi consumes attended Review-correction wording in the same Assignment without replaying accepted Scenarios (29.197789ms)
+✔ test/provenance-fixture.mjs (132.477667ms)
+✔ snapshot retains complete immutable evidence and classifies malformed command output (1373.039631ms)
+✔ snapshot records exact lifecycle and Assignment repository fingerprints separately (1209.729044ms)
+✖ installed tooling closure is path-independent and rejects neighboring dependency mutation (1683.980093ms)
+✖ snapshot contract-validates successful MDLM JSON before exposing semantic state (1233.632154ms)
+✔ run and resume submit and commit an external Assignment exactly once (4490.688747ms)
+✔ an uncertain submission is never repeated on resume (4005.871282ms)
+✔ resume commits a durably accepted publication without resubmitting (4010.886619ms)
+✔ run refuses command provenance drift before preparing or submitting (1977.236656ms)
+✖ dirty tracked or untracked lifecycle state stops before prepare or submit (2462.368565ms)
+✖ harness repository locator is pinned in durable run identity (4033.898462ms)
+✔ a clean extra commit is nonrecoverable on resume (3305.206438ms)
+✔ changed executable bytes cannot be blessed by changing configured provenance (3267.486529ms)
+✔ lost correction session is not fed shell stdin or restarted without controller resume support (2664.53289ms)
+✖ ordinary mdlm-pi submitting journal resumes through its controller without stdin replay (1301.439536ms)
+✔ mdlm-pi exit codes and typed results distinguish lifecycle outcomes from operational failures (10492.230474ms)
+✖ typed reserved stops distinguish pre-submission interception from an accepted Assignment checkpoint (2470.393589ms)
+✔ controlled worker environment strips Git, Node, and shell startup injection variables (1125.072473ms)
+✔ successive ordinary Assignments use immutable Assignment-keyed state (1942.268002ms)
+✔ publication rejects traversal, malformed execution identities, and symlink parents before Git staging (3426.523175ms)
+✔ durable submitting transition prevents duplicate submit across injected crash seams (3362.108875ms)
+✔ canonical lifecycle repository lock excludes an independent state directory before snapshot (3073.919098ms)
+✔ attended correction re-entry passes an operator-selected catalog decision to mdlm-pi (1070.459034ms)
+✔ shim emits a typed stop for a reserved Scenario before worker execution (169.655576ms)
+✖ shim reports accepted A and pre-submission external B as one typed boundary (171.514886ms)
+✔ snapshot writes raw command and Git evidence once and cannot replace it (748.235847ms)
+ℹ tests 34
+ℹ suites 0
+ℹ pass 26
+ℹ fail 8
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 78263.610674
+
+✖ failing tests:
+
+test at test/installed-mdlm-pi-integration.test.mjs:24:1
+✖ installed mdlm-pi consumes attended Review-correction wording in the same Assignment without replaying accepted Scenarios (29.197789ms)
+  AssertionError [ERR_ASSERTION]: Expected "actual" to be reference-equal to "expected":
+  + actual - expected
+  ... Skipped lines
+
+    {
+      assignment: {
+        allocation: 'active',
+        id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+      },
+  ...
+      outcome: 'attention-required',
+  +   package: {
+  +     digest: 'sha256:1111111111111111111111111111111111111111111111111111111111111111',
+  +     language: 'lang@1',
+  +     reference: 'pkg@1'
+  +   }
+    }
+
+      at Object.attention (file:///home/ubuntu/git/mdlm-demo-orchestrator/test/installed-mdlm-pi-integration.test.mjs:89:14)
+      at #attendedContext (file:///home/ubuntu/git/mdlm-successor-demos/.tooling-issue-214/node_modules/mdlm-pi/dist/run-controller.js:129:73)
+      at async RunController.run (file:///home/ubuntu/git/mdlm-successor-demos/.tooling-issue-214/node_modules/mdlm-pi/dist/run-controller.js:91:35)
+      at async TestContext.<anonymous> (file:///home/ubuntu/git/mdlm-demo-orchestrator/test/installed-mdlm-pi-integration.test.mjs:108:18)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: { outcome: 'attention-required', assignment: { allocation: 'active', id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }, authorityRequirement: { mode: 'attended', authority: 'stakeholder', delegationAllowed: false }, attentionContext: { question: 'What exact Review correction is authorized?' }, package: { reference: 'pkg@1', digest: 'sha256:1111111111111111111111111111111111111111111111111111111111111111', language: 'lang@1' } },
+    expected: { outcome: 'attention-required', assignment: { allocation: 'active', id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }, authorityRequirement: { mode: 'attended', authority: 'stakeholder', delegationAllowed: false }, attentionContext: { question: 'What exact Review correction is authorized?' } },
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/remediation.test.mjs:141:1
+✖ installed tooling closure is path-independent and rejects neighboring dependency mutation (1683.980093ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+
+  + 'complete'
+  - 'provenance-failure'
+
+      at TestContext.<anonymous> (file:///home/ubuntu/git/mdlm-demo-orchestrator/test/remediation.test.mjs:150:10)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'complete',
+    expected: 'provenance-failure',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/remediation.test.mjs:158:1
+✖ snapshot contract-validates successful MDLM JSON before exposing semantic state (1233.632154ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+
+  + 'complete'
+  - 'command-failure'
+        ^
+
+      at TestContext.<anonymous> (file:///home/ubuntu/git/mdlm-demo-orchestrator/test/remediation.test.mjs:167:10)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'complete',
+    expected: 'command-failure',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/run.test.mjs:175:1
+✖ dirty tracked or untracked lifecycle state stops before prepare or submit (2462.368565ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+
+  + 'uncertain-partial-publication'
+  - 'repository-dirty'
+
+      at TestContext.<anonymous> (file:///home/ubuntu/git/mdlm-demo-orchestrator/test/run.test.mjs:182:10)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'uncertain-partial-publication',
+    expected: 'repository-dirty',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/run.test.mjs:189:1
+✖ harness repository locator is pinned in durable run identity (4033.898462ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+
+  + undefined
+  - 'run-identity-drift'
+
+      at TestContext.<anonymous> (file:///home/ubuntu/git/mdlm-demo-orchestrator/test/run.test.mjs:207:10)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: 'run-identity-drift',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/run.test.mjs:273:1
+✖ ordinary mdlm-pi submitting journal resumes through its controller without stdin replay (1301.439536ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+
+  + 'stopped'
+  - 'completed'
+
+      at TestContext.<anonymous> (file:///home/ubuntu/git/mdlm-demo-orchestrator/test/run.test.mjs:291:10)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'stopped',
+    expected: 'completed',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/run.test.mjs:319:1
+✖ typed reserved stops distinguish pre-submission interception from an accepted Assignment checkpoint (2470.393589ms)
+  AssertionError [ERR_ASSERTION]: assignment-checkpoint
+  + actual - expected
+
+  + 'completed'
+  - 'stopped'
+
+      at TestContext.<anonymous> (file:///home/ubuntu/git/mdlm-demo-orchestrator/test/run.test.mjs:337:12)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 'completed',
+    expected: 'stopped',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/shim.test.mjs:31:1
+✖ shim reports accepted A and pre-submission external B as one typed boundary (171.514886ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+
+  + 'external-adapter'
+  - 'accepted-assignment-then-external'
+
+      at TestContext.<anonymous> (file:///home/ubuntu/git/mdlm-demo-orchestrator/test/shim.test.mjs:43:10)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'external-adapter',
+    expected: 'accepted-assignment-then-external',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

@@ -24,10 +24,13 @@ try {
       await mkdir(config.stopDirectory, { recursive: true, mode: 0o700 });
       const packetPath = path.join(config.stopDirectory, `${safeId(assignment)}.json`);
       await writeOnceOrMatch(packetPath, result.stdout);
+      const type = external && checkpoint
+        ? 'accepted-assignment-then-external'
+        : external ? 'external-adapter' : 'assignment-checkpoint';
       process.stdout.write(`${JSON.stringify({
-        contract: 'mdlm-demo-reserved-stop@1',
-        type: external ? 'external-adapter' : 'assignment-checkpoint',
+        contract: 'mdlm-demo-reserved-stop@1', type,
         phase: 'before-worker', assignment, scenario, packetPath,
+        ...(type === 'accepted-assignment-then-external' ? { completedAssignment: config.allowedAssignment } : {}),
       })}\n`);
       process.stderr.write(result.stderr);
       process.exitCode = 97;

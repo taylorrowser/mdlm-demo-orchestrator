@@ -5,6 +5,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { toolingTreeDigest } from './provenance-fixture.mjs';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const cli = path.join(root, 'bin/mdlm-demo-runner.mjs');
@@ -32,12 +33,18 @@ test('snapshot writes raw command and Git evidence once and cannot replace it', 
   const sourceCommit = command('git', ['rev-parse', 'HEAD'], source);
   const sourceTree = command('git', ['rev-parse', 'HEAD^{tree}'], source);
   const harnessCommit = sourceCommit;
-  const fakeMdlm = path.join(scratch, 'mdlm');
-  const fakePi = path.join(scratch, 'mdlm-pi');
-  const packageArtifact = path.join(scratch, 'package.tgz');
-  await writeFile(fakeMdlm, `#!/usr/bin/env node\nconst a=process.argv.slice(2);\nif(a[0]==='doctor') console.log(JSON.stringify({contract:'mdlm-doctor@1',ok:true,command:'doctor'}));\nelse if(a[0]==='status') console.log(JSON.stringify({contract:'mdlm-status@1',ok:true,command:'status',package:{reference:'pkg@1',digest:'sha256:${'1'.repeat(64)}',language:'lang@1'},currentOutcome:{outcome:'assignment',assignment:{id:'assignment-1'}},recentTransaction:{available:false}}));\nelse console.log(JSON.stringify({contract:'mdlm-assignment-state@1',ok:true,command:'assignment.show',assignment:{id:'assignment-1'},selected:true,package:{reference:'pkg@1',digest:'sha256:${'1'.repeat(64)}',language:'lang@1'},repository:{head:'${command('git', ['rev-parse', 'HEAD'], repository)}',trackedState:'sha256:${'2'.repeat(64)}'},scenarioReference:'review@1',disposition:'active',retryAvailability:{},malformedResponses:[]}));\n`);
+  const tooling = path.join(scratch, 'tooling');
+  await mkdir(tooling);
+  const fakeMdlm = path.join(tooling, 'mdlm');
+  const fakePi = path.join(tooling, 'mdlm-pi');
+  const lock = path.join(tooling, 'package-lock.json');
+  const packageArtifact = path.join(scratch, 'mdlm.tgz');
+  const piPackageArtifact = path.join(scratch, 'mdlm-pi.tgz');
+  await writeFile(fakeMdlm, `#!/usr/bin/env node\nconst a=process.argv.slice(2);\nif(a[0]==='doctor') console.log(JSON.stringify({contract:'mdlm-doctor@1',ok:true,command:'doctor'}));\nelse if(a[0]==='status') console.log(JSON.stringify({contract:'mdlm-status@1',ok:true,command:'status',package:{reference:'pkg@1',digest:'sha256:${'1'.repeat(64)}',language:'lang@1'},currentOutcome:{outcome:'assignment',assignment:{allocation:'active',id:'assignment-1'}},recentTransaction:{available:false}}));\nelse console.log(JSON.stringify({contract:'mdlm-assignment-state@1',ok:true,command:'assignment.show',assignment:{id:'assignment-1'},selected:true,package:{reference:'pkg@1',digest:'sha256:${'1'.repeat(64)}',language:'lang@1'},repository:{head:'${command('git', ['rev-parse', 'HEAD'], repository)}',trackedState:'sha256:${'2'.repeat(64)}'},scenarioReference:'review@1',disposition:'active',retryAvailability:{},malformedResponses:[]}));\n`);
   await writeFile(fakePi, '#!/bin/sh\nexit 0\n');
-  await writeFile(packageArtifact, 'package bytes\n');
+  await writeFile(lock, '{"lockfileVersion":3}\n');
+  await writeFile(packageArtifact, 'mdlm package bytes\n');
+  await writeFile(piPackageArtifact, 'mdlm-pi package bytes\n');
   await chmod(fakeMdlm, 0o755);
   await chmod(fakePi, 0o755);
   const sha = file => command('sha256sum', [file], scratch).split(' ')[0];
@@ -52,12 +59,15 @@ test('snapshot writes raw command and Git evidence once and cannot replace it', 
     provenance: {
       source: { repository: source, commit: sourceCommit, tree: sourceTree },
       package: { artifact: packageArtifact, digest: `sha256:${sha(packageArtifact)}` },
+      piPackage: { artifact: piPackageArtifact, digest: `sha256:${sha(piPackageArtifact)}` },
+      tooling: { root: tooling, digest: await toolingTreeDigest(tooling), lock: { path: lock, digest: `sha256:${sha(lock)}` } },
       tools: {
         mdlm: { path: fakeMdlm, digest: `sha256:${sha(fakeMdlm)}` },
         mdlmPi: { path: fakePi, digest: `sha256:${sha(fakePi)}` },
       },
       qualificationHarness: {
         repository: source, commit: harnessCommit, tree: sourceTree,
+        repositoryLocator: 'https://example.invalid/qualification-harness.git',
         manifest: { path: path.join(source, 'tracked.txt'), digest: `sha256:${sha(path.join(source, 'tracked.txt'))}` },
       },
     },

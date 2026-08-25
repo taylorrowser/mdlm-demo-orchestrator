@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { toolingTreeDigest } from './provenance-fixture.mjs';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const cli = path.join(root, 'bin/mdlm-demo-runner.mjs');
@@ -37,15 +38,20 @@ async function fixture({
   await writeFile(path.join(sourceRepository, 'README.md'), 'source fixture\n'); git(['add', '.'], sourceRepository); git(['commit', '-m', 'source'], sourceRepository);
   const sourceCommit = git(['rev-parse', 'HEAD'], sourceRepository);
   const sourceTree = git(['rev-parse', 'HEAD^{tree}'], sourceRepository);
-  const mdlm = path.join(scratch, 'mdlm');
-  const mdlmPi = path.join(scratch, 'mdlm-pi');
-  const packageArtifact = path.join(scratch, 'package.tgz');
+  const tooling = path.join(scratch, 'tooling');
+  await mkdir(tooling);
+  const mdlm = path.join(tooling, 'mdlm');
+  const mdlmPi = path.join(tooling, 'mdlm-pi');
+  const lock = path.join(tooling, 'package-lock.json');
+  const packageArtifact = path.join(scratch, 'mdlm.tgz');
+  const piPackageArtifact = path.join(scratch, 'mdlm-pi.tgz');
   const responsePath = path.join(scratch, 'response.json');
   const observationsPath = path.join(scratch, 'observations.json');
   const adapterInputsPath = path.join(scratch, 'adapter-inputs.json');
   const assignment = '44444444-4444-4444-8444-444444444444';
   const assignmentStatePath = path.join(scratch, 'assignment-id');
   const scenarioStatePath = path.join(scratch, 'scenario-reference');
+  const malformedDigestPath = path.join(scratch, 'malformed-digest');
   await writeFile(assignmentStatePath, assignment);
   await writeFile(scenarioStatePath, scenarioReference);
   const scenario = scenarioReference;
@@ -58,19 +64,22 @@ const fs=require('node:fs'),crypto=require('node:crypto'),path=require('node:pat
 const a=process.argv.slice(2), root=process.cwd(), log=${JSON.stringify(path.join(scratch, 'calls.log'))};
 fs.appendFileSync(log,JSON.stringify(a)+'\\n');
 const assignment=fs.readFileSync(${JSON.stringify(assignmentStatePath)},'utf8'), scenario=fs.readFileSync(${JSON.stringify(scenarioStatePath)},'utf8'), head=${JSON.stringify(base)};
+const malformedPath=${JSON.stringify(malformedDigestPath)}, malformedResponses=fs.existsSync(malformedPath)?[{digest:fs.readFileSync(malformedPath,'utf8'),diagnostics:[{code:'FIX',message:'correct it'}]}]:[];
 const pkg={reference:'pkg@1',digest:'sha256:${'1'.repeat(64)}',language:'lang@1'};
 const repo={head,trackedState:${JSON.stringify(trackedState)}};
 function out(x){process.stdout.write(JSON.stringify(x)+'\\n')}
 if(a[0]==='doctor') out({contract:'mdlm-doctor@1',ok:true,command:'doctor'});
-else if(a[0]==='status') out({contract:'mdlm-status@1',ok:true,command:'status',package:pkg,currentOutcome:{outcome:'assignment',assignment:{id:assignment}},recentTransaction:{available:false}});
-else if(a[0]==='assignment') out({contract:'mdlm-assignment-state@1',ok:true,command:'assignment.show',assignment:{id:assignment},selected:true,package:pkg,repository:repo,scenarioReference:scenario,disposition:'active',retryAvailability:{},malformedResponses:[]});
+else if(a[0]==='status') out({contract:'mdlm-status@1',ok:true,command:'status',package:pkg,currentOutcome:{outcome:'assignment',assignment:{allocation:'active',id:assignment}},recentTransaction:{available:false}});
+else if(a[0]==='assignment') out({contract:'mdlm-assignment-state@1',ok:true,command:'assignment.show',assignment:{id:assignment},selected:true,package:pkg,repository:repo,scenarioReference:scenario,disposition:'active',retryAvailability:{},malformedResponses});
 else if(a[0]==='scenario'&&a[1]==='prepare') out({contract:'mdlm-assignment-packet@2',ok:true,command:'scenario.prepare',assignment:{id:assignment},package:pkg,repository:repo,scenario:{reference:scenario},responseSchema:{},exactInputs:[]});
 else if(a[0]==='scenario'&&a[1]==='submit') { let chunks=[]; process.stdin.on('data',x=>chunks.push(x)); process.stdin.on('end',()=>{const bytes=Buffer.concat(chunks); fs.appendFileSync(${JSON.stringify(path.join(scratch, 'submit-count'))},'1\\n'); const id=${JSON.stringify(executionId)}; const dir=path.join(root,'.lifecycle/data/.transactions',id); fs.mkdirSync(dir,{recursive:true}); fs.writeFileSync(path.join(dir,'execution.json'),'execution\\n'); fs.writeFileSync(path.join(dir,'target.json'),'target\\n'); if(${uncertainSubmit}) process.exit(9); else out({contract:'mdlm-scenario-execution@4',ok:true,command:'scenario.submit',execution:{contract:'mdlm-scenario-execution@4',id,status:'completed',response:{assignment,digest:'sha256:'+crypto.createHash('sha256').update(bytes).digest('hex')},definition:{scenario},outputs:[{lifecycleDatum:{path:${publicationPath ? JSON.stringify(publicationPath) : "'.lifecycle/data/.transactions/'+id+'/target.json'"}}}]}}); }); }
 else {process.stderr.write('unexpected '+JSON.stringify(a));process.exit(8)}
 `;
   await writeFile(mdlm, script); await chmod(mdlm, 0o755);
   await writeFile(mdlmPi, piScript); await chmod(mdlmPi, 0o755);
-  await writeFile(packageArtifact, 'package\n');
+  await writeFile(lock, '{"lockfileVersion":3}\n');
+  await writeFile(packageArtifact, 'mdlm package\n');
+  await writeFile(piPackageArtifact, 'mdlm-pi package\n');
   const request = {
     contract: 'mdlm-demo-run-request@1', repository,
     stateDirectory: path.join(scratch, 'state'), evidenceDirectory: path.join(scratch, 'evidence'), timeoutMs: 10_000,
@@ -78,14 +87,17 @@ else {process.stderr.write('unexpected '+JSON.stringify(a));process.exit(8)}
     commands: { mdlm, mdlmPi },
     provenance: {
       source: { repository: sourceRepository, commit: sourceCommit, tree: sourceTree }, package: { artifact: packageArtifact, digest: digest(packageArtifact, scratch) },
+      piPackage: { artifact: piPackageArtifact, digest: digest(piPackageArtifact, scratch) },
+      tooling: { root: tooling, digest: await toolingTreeDigest(tooling), lock: { path: lock, digest: digest(lock, scratch) } },
       tools: { mdlm: { path: mdlm, digest: digest(mdlm, scratch) }, mdlmPi: { path: mdlmPi, digest: digest(mdlmPi, scratch) } },
       qualificationHarness: {
         repository: sourceRepository, commit: sourceCommit, tree: sourceTree,
+        repositoryLocator: 'https://example.invalid/qualification-harness.git',
         manifest: { path: path.join(sourceRepository, 'README.md'), digest: digest(path.join(sourceRepository, 'README.md'), scratch) },
       },
     },
   };
-  return { scratch, repository, request, mdlm, mdlmPi, assignment, assignmentStatePath, scenarioStatePath, executionId };
+  return { scratch, repository, request, mdlm, mdlmPi, tooling, assignment, assignmentStatePath, scenarioStatePath, malformedDigestPath, executionId };
 }
 
 test('run and resume submit and commit an external Assignment exactly once', async () => {
@@ -160,6 +172,46 @@ test('run refuses command provenance drift before preparing or submitting', asyn
   assert.equal(calls.some(a => a[0] === 'scenario' && a[1] === 'prepare'), false);
 });
 
+test('dirty tracked or untracked lifecycle state stops before prepare or submit', async () => {
+  for (const tracked of [false, true]) {
+    const { scratch, repository, request } = await fixture();
+    await writeFile(
+      path.join(repository, tracked ? 'tracked.txt' : 'untracked.txt'),
+      tracked ? 'changed before submission\n' : 'must not be consumed\n',
+    );
+    const execution = exec(process.execPath, [cli, 'run'], root, JSON.stringify(request));
+    assert.equal(execution.status, 0, execution.stderr);
+    const output = JSON.parse(execution.stdout);
+    assert.equal(output.status, 'stopped');
+    assert.equal(output.reason, 'repository-dirty');
+    assert.equal(output.recoverable, false);
+    const calls = (await readFile(path.join(scratch, 'calls.log'), 'utf8')).trim().split('\n').map(JSON.parse);
+    assert.equal(calls.some(a => a[0] === 'scenario' && a[1] === 'prepare'), false);
+    assert.equal(calls.some(a => a[0] === 'scenario' && a[1] === 'submit'), false);
+  }
+});
+
+test('harness repository locator is pinned in durable run identity', async () => {
+  const piScript = '#!/bin/sh\nprintf \'{"status":"process-dead-end"}\\n\'\nexit 2\n';
+  const { request } = await fixture({ scenarioReference: 'ordinary@1', piScript });
+  const qualified = request.provenance.qualificationHarness;
+  request.harness = {
+    directory: qualified.repository,
+    commit: qualified.commit,
+    tree: qualified.tree,
+    repositoryLocator: qualified.repositoryLocator,
+  };
+  request.signal = 'clean-interrupted-command';
+  const first = exec(process.execPath, [cli, 'run'], root, JSON.stringify(request));
+  assert.equal(first.status, 0, first.stderr);
+  const changed = 'https://mirror.invalid/qualification-harness.git';
+  request.harness.repositoryLocator = changed;
+  request.provenance.qualificationHarness.repositoryLocator = changed;
+  const resumed = exec(process.execPath, [cli, 'resume'], root, JSON.stringify({ ...request, contract: 'mdlm-demo-resume-request@1' }));
+  assert.equal(resumed.status, 0, resumed.stderr);
+  assert.equal(JSON.parse(resumed.stdout).reason, 'run-identity-drift');
+});
+
 test('a clean extra commit is nonrecoverable on resume', async () => {
   const piScript = '#!/bin/sh\nprintf \'{"status":"lifecycle-complete"}\\n\'\nexit 0\n';
   const { repository, request } = await fixture({ scenarioReference: 'ordinary@1', piScript });
@@ -181,13 +233,14 @@ test('a clean extra commit is nonrecoverable on resume', async () => {
 
 test('changed executable bytes cannot be blessed by changing configured provenance', async () => {
   const piScript = '#!/bin/sh\nprintf \'{"status":"process-dead-end"}\\n\'\nexit 2\n';
-  const { scratch, request, mdlmPi } = await fixture({ scenarioReference: 'ordinary@1', piScript });
+  const { scratch, request, mdlmPi, tooling } = await fixture({ scenarioReference: 'ordinary@1', piScript });
   request.signal = 'clean-interrupted-command';
   const first = exec(process.execPath, [cli, 'run'], root, JSON.stringify(request));
   assert.equal(first.status, 0, first.stderr);
   await writeFile(mdlmPi, `${piScript}# changed\n`);
   await chmod(mdlmPi, 0o755);
   request.provenance.tools.mdlmPi.digest = digest(mdlmPi, scratch);
+  request.provenance.tooling.digest = await toolingTreeDigest(tooling);
   const resumed = exec(process.execPath, [cli, 'resume'], root, JSON.stringify({ ...request, contract: 'mdlm-demo-resume-request@1' }));
   assert.equal(resumed.status, 0, resumed.stderr);
   assert.equal(JSON.parse(resumed.stdout).reason, 'run-identity-drift');
@@ -195,8 +248,10 @@ test('changed executable bytes cannot be blessed by changing configured provenan
 
 test('lost correction session is not fed shell stdin or restarted without controller resume support', async () => {
   const inputPath = path.join(os.tmpdir(), `mdlm-demo-correction-input-${process.pid}-${Date.now()}`);
-  const piScript = `#!/bin/sh\ncat > ${inputPath}\nmkdir -p .git/mdlm-pi\nprintf '%s\\n' '{"contract":"mdlm-pi-run-journal@1","phase":"submitting","assignment":{"id":"44444444-4444-4444-8444-444444444444","scenario":"ordinary@1","package":{"reference":"pkg@1","digest":"sha256:${'1'.repeat(64)}","language":"lang@1"},"repository":{"head":"PLACEHOLDER","trackedState":"TRACKED"}},"submission":{"source":"{}\\n","digest":"sha256:${'3'.repeat(64)}","previousTransactionId":null,"baseCommit":"PLACEHOLDER","previousMalformedResponseDigests":[],"completedProcesses":[]}}' > .git/mdlm-pi/run.json\nprintf '%s\\n' '{"status":"assignment-correction-session-lost","assignment":{"id":"44444444-4444-4444-8444-444444444444"},"responseDigest":"sha256:${'3'.repeat(64)}","diagnostics":[]}'\nexit 4\n`;
+  const responseDigest = `sha256:${createHash('sha256').update('{}\n').digest('hex')}`;
+  const piScript = `#!/bin/sh\ncat > ${inputPath}\nmkdir -p .git/mdlm-pi\nprintf '%s\\n' '{"contract":"mdlm-pi-run-journal@1","phase":"submitting","assignment":{"id":"44444444-4444-4444-8444-444444444444","scenario":"ordinary@1","package":{"reference":"pkg@1","digest":"sha256:${'1'.repeat(64)}","language":"lang@1"},"repository":{"head":"PLACEHOLDER","trackedState":"TRACKED"}},"submission":{"source":"{}\\n","digest":"${responseDigest}","previousTransactionId":null,"baseCommit":"PLACEHOLDER","previousMalformedResponseDigests":[],"completedProcesses":[]}}' > .git/mdlm-pi/run.json\nprintf '%s\\n' '{"status":"assignment-correction-session-lost","assignment":{"id":"44444444-4444-4444-8444-444444444444"},"responseDigest":"${responseDigest}","diagnostics":[]}'\nexit 4\n`;
   const fixtureValue = await fixture({ scenarioReference: 'ordinary@1', piScript });
+  await writeFile(fixtureValue.malformedDigestPath, responseDigest);
   const correctionHead = git(['rev-parse', 'HEAD'], fixtureValue.repository);
   const correctionTracked = `sha256:${createHash('sha256').update(`${correctionHead}\0staged\0\0worktree\0`).digest('hex')}`;
   const resolvedScript = (await readFile(fixtureValue.mdlmPi, 'utf8'))
@@ -205,6 +260,7 @@ test('lost correction session is not fed shell stdin or restarted without contro
   await writeFile(fixtureValue.mdlmPi, resolvedScript);
   await chmod(fixtureValue.mdlmPi, 0o755);
   fixtureValue.request.provenance.tools.mdlmPi.digest = digest(fixtureValue.mdlmPi, fixtureValue.scratch);
+  fixtureValue.request.provenance.tooling.digest = await toolingTreeDigest(fixtureValue.tooling);
   fixtureValue.request.signal = 'clean-interrupted-command';
   const first = exec(process.execPath, [cli, 'run'], root, JSON.stringify(fixtureValue.request));
   assert.equal(first.status, 0, first.stderr);
@@ -216,6 +272,28 @@ test('lost correction session is not fed shell stdin or restarted without contro
   const stopped = JSON.parse(resumed.stdout);
   assert.equal(stopped.reason, 'correction-session-unresumable');
   assert.equal(stopped.recoverable, false);
+  assert.equal(await readFile(inputPath, 'utf8'), '');
+});
+
+test('ordinary mdlm-pi submitting journal resumes through its controller without stdin replay', async () => {
+  const inputPath = path.join(os.tmpdir(), `mdlm-demo-ordinary-recovery-${process.pid}-${Date.now()}`);
+  const piScript = `#!/bin/sh\ncat > ${inputPath}\nprintf '{"status":"lifecycle-complete"}\\n'\nexit 0\n`;
+  const value = await fixture({ scenarioReference: 'ordinary@1', piScript });
+  const source = '{}\n';
+  const responseDigest = `sha256:${createHash('sha256').update(source).digest('hex')}`;
+  const head = git(['rev-parse', 'HEAD'], value.repository);
+  const trackedState = `sha256:${createHash('sha256').update(`${head}\0staged\0\0worktree\0`).digest('hex')}`;
+  const piState = path.join(value.repository, '.git', 'mdlm-pi');
+  await mkdir(piState, { recursive: true });
+  await writeFile(path.join(piState, 'run.json'), JSON.stringify({
+    contract: 'mdlm-pi-run-journal@1', phase: 'submitting',
+    assignment: { id: value.assignment, scenario: 'ordinary@1', package: { reference: 'pkg@1', digest: `sha256:${'1'.repeat(64)}`, language: 'lang@1' }, repository: { head, trackedState } },
+    submission: { source, digest: responseDigest, previousTransactionId: null, baseCommit: head, previousMalformedResponseDigests: [], completedProcesses: [] },
+  }));
+  value.request.signal = 'clean-interrupted-command';
+  const execution = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
+  assert.equal(execution.status, 0, execution.stderr);
+  assert.equal(JSON.parse(execution.stdout).status, 'completed');
   assert.equal(await readFile(inputPath, 'utf8'), '');
 });
 
@@ -246,10 +324,20 @@ test('mdlm-pi exit codes and typed results distinguish lifecycle outcomes from o
 test('typed reserved stops distinguish pre-submission interception from an accepted Assignment checkpoint', async () => {
   for (const [type, expectedStatus, outcome] of [
     ['external-adapter', 'stopped', 'pre-submission-stop'],
-    ['assignment-checkpoint', 'completed', 'accepted-publication'],
+    ['assignment-checkpoint', 'stopped', 'pre-submission-stop'],
+    ['accepted-assignment-then-external', 'completed', 'accepted-publication'],
   ]) {
-    const stop = { contract: 'mdlm-demo-reserved-stop@1', type, phase: 'before-worker', reason: 'fixture' };
-    const piScript = `#!/bin/sh\nprintf '%s\\n' '${JSON.stringify({ status: 'operational-failure', cause: stop })}' >&2\nexit 1\n`;
+    const stop = {
+      contract: 'mdlm-demo-reserved-stop@1', type, phase: 'before-worker', reason: 'fixture',
+      assignment: type === 'accepted-assignment-then-external'
+        ? 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+        : '44444444-4444-4444-8444-444444444444',
+      scenario: type === 'accepted-assignment-then-external' ? 'execute-verification-run@1' : 'ordinary@1',
+      ...(type === 'accepted-assignment-then-external'
+        ? { completedAssignment: '44444444-4444-4444-8444-444444444444' }
+        : {}),
+    };
+    const piScript = `#!/usr/bin/env node\nconst fs=require('node:fs'); const path=require('node:path'); const config=JSON.parse(fs.readFileSync(process.env.MDLM_DEMO_SHIM_CONFIG,'utf8')); fs.mkdirSync(config.stopDirectory,{recursive:true}); const packetPath=path.join(config.stopDirectory,'${type}.json'); fs.writeFileSync(packetPath,JSON.stringify({contract:'mdlm-assignment-packet@2',command:'scenario.prepare',ok:true,assignment:{id:'${stop.assignment}'},scenario:{reference:'${stop.scenario}'}}),{flag:'wx'}); const stop=${JSON.stringify(stop)}; stop.packetPath=packetPath; console.error(JSON.stringify({status:'operational-failure',cause:stop})); process.exit(1);\n`;
     const value = await fixture({ scenarioReference: 'ordinary@1', piScript });
     value.request.signal = 'clean-interrupted-command';
     const execution = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
@@ -258,6 +346,13 @@ test('typed reserved stops distinguish pre-submission interception from an accep
     assert.equal(output.status, expectedStatus, type);
     assert.equal(output.outcome, outcome, type);
     assert.equal(output.reason, 'reserved-shim-stop', type);
+    if (type === 'accepted-assignment-then-external') {
+      assert.deepEqual(output.nextAssignment, {
+        id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        scenario: 'execute-verification-run@1',
+        phase: 'pre-submission',
+      });
+    }
   }
 });
 
@@ -324,7 +419,7 @@ test('publication rejects traversal, malformed execution identities, and symlink
   await mkdir(transaction, { recursive: true });
   await symlink(outside, path.join(transaction, 'linked'));
   const linkedResult = exec(process.execPath, [cli, 'run'], root, JSON.stringify(linked.request));
-  assert.equal(JSON.parse(linkedResult.stdout).reason, 'uncertain-partial-publication');
+  assert.equal(JSON.parse(linkedResult.stdout).reason, 'repository-dirty');
   assert.equal(Number(git(['rev-list', '--count', 'HEAD'], linked.repository)), 1);
 });
 
