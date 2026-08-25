@@ -273,7 +273,7 @@ async function executeRun(request, context, assignmentDirectory, journalPath, sn
     return withCheckpointRecovery(stopped('assignment-fingerprint-drift', 'prepared packet differs from the snapshotted Assignment', snapshotResult, assignmentId));
   }
   if (!externalScenarios.has(packet.scenario?.reference)) {
-    return withCheckpointRecovery(await runPiAssignment(request, context, assignmentDirectory, assignment, snapshotResult));
+    return withCheckpointRecovery(await runPiAssignment(request, context, assignmentDirectory, assignment, status, snapshotResult));
   }
   return withCheckpointRecovery(await runExternalAssignment(
     request, context, assignmentDirectory, journalPath, assignment, packet, prepare.stdout, snapshotResult, journal, runIdentity,
@@ -597,9 +597,12 @@ async function finalizePublicationClosure(output, postSnapshot) {
   }
 }
 
-async function runPiAssignment(request, context, assignmentDirectory, assignment, snapshotResult) {
+async function runPiAssignment(request, context, assignmentDirectory, assignment, status, snapshotResult) {
   const assignmentId = assignment.id;
-  const attended = request.signal === 'attended-answer' || request.signal === 'attended-review-correction';
+  const outcome = status.currentOutcome;
+  const attended = outcome.outcome === 'attention-required' &&
+    outcome.assignment?.allocation === 'active' && outcome.assignment.id === assignmentId &&
+    outcome.authorityRequirement?.mode === 'attended';
   const decision = attended ? await selectedDecision(request.decisionCatalogPath, assignmentId) : null;
   if (attended && decision === null) return stopped('operator-decision-unavailable', 'no valid operator-selected decision matches the attended Assignment', snapshotResult, assignmentId);
   const shimDirectory = path.join(assignmentDirectory, 'shim');

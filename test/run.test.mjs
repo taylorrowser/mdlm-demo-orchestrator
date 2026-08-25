@@ -32,6 +32,7 @@ async function fixture({
   doctorPackage = { id: 'pkg', version: '1', ...statusPackage },
   packetPackage = assignmentPackage,
   materializedNext = false,
+  attentionRequired = false,
 } = {}) {
   const scratch = await mkdtemp(path.join(os.tmpdir(), 'issue-213-run-'));
   const repository = path.join(scratch, 'repository');
@@ -82,7 +83,7 @@ function repository(){const head=execFileSync('git',['rev-parse','HEAD^{commit}'
 const repo=repository();
 function out(x){process.stdout.write(JSON.stringify(x)+'\\n')}
 if(a[0]==='doctor') out({ok:true,command:'doctor',package:doctorPackage,baselineRepositoryVerification:{verifiedBaselines:0,processDrift:0},index:{rebuilt:false,data:0,path:'.lifecycle/generated/indexes/data.json'},report:{rebuilt:false,data:0,path:'.lifecycle/generated/reports/lifecycle.json'},diagnostics:[]});
-else if(a[0]==='status') out({contract:'mdlm-status@1',ok:true,command:'status',package:statusPackage,currentOutcome:{outcome:'assignment',assignment:{allocation:'active',id:assignment}},recentTransaction:{available:false}});
+else if(a[0]==='status') out({contract:'mdlm-status@1',ok:true,command:'status',package:statusPackage,currentOutcome:${attentionRequired ? "{outcome:'attention-required',assignment:{allocation:'active',id:assignment},authorityRequirement:{mode:'attended',authority:'stakeholder',delegationAllowed:false}}" : "{outcome:'assignment',assignment:{allocation:'active',id:assignment}}"},recentTransaction:{available:false}});
 else if(a[0]==='assignment') { const requested=a[2]; if(requested!==assignment) out({contract:'mdlm-assignment-state@1',ok:true,command:'assignment.show',assignment:{id:requested},selected:false,diagnostics:[]}); else out({contract:'mdlm-assignment-state@1',ok:true,command:'assignment.show',assignment:{id:assignment},selected:true,package:assignmentPackage,repository:repo,scenarioReference:scenario,disposition:'active',retryAvailability:{},malformedResponses}); }
 else if(a[0]==='scenario'&&a[1]==='prepare') out({contract:'mdlm-assignment-packet@2',ok:true,command:'scenario.prepare',assignment:{id:assignment},package:packetPackage,repository:repo,scenario:{reference:scenario},responseSchema:{},exactInputs:[]});
 else if(a[0]==='scenario'&&a[1]==='submit') { let chunks=[]; process.stdin.on('data',x=>chunks.push(x)); process.stdin.on('end',()=>{const bytes=Buffer.concat(chunks); fs.appendFileSync(${JSON.stringify(path.join(scratch, 'submit-count'))},'1\\n'); const id=${JSON.stringify(executionId)}; const dir=path.join(root,'.lifecycle/data/.transactions',id); fs.mkdirSync(dir,{recursive:true}); fs.writeFileSync(path.join(dir,'execution.json'),'execution\\n'); fs.writeFileSync(path.join(dir,'target.json'),'target\\n'); if(${uncertainSubmit}) process.exit(9); else out({contract:'mdlm-scenario-execution@4',ok:true,command:'scenario.submit',execution:{contract:'mdlm-scenario-execution@4',id,status:'completed',response:{assignment,digest:'sha256:'+crypto.createHash('sha256').update(bytes).digest('hex')},definition:{scenario},outputs:[{lifecycleDatum:{path:${publicationPath ? JSON.stringify(publicationPath) : "'.lifecycle/data/.transactions/'+id+'/target.json'"}}}]}}); }); }
@@ -1318,7 +1319,7 @@ test('exact run-008 typed operational failure becomes recoverable only after a c
   const piScript = `#!/usr/bin/env node
 const fs=require('node:fs'); let input=''; process.stdin.on('data',chunk=>input+=chunk); process.stdin.on('end',()=>{fs.appendFileSync(${JSON.stringify(inputPath)},input); const attempts=fs.existsSync(${JSON.stringify(attemptsPath)})?Number(fs.readFileSync(${JSON.stringify(attemptsPath)},'utf8')):0; fs.writeFileSync(${JSON.stringify(attemptsPath)},String(attempts+1)); if(attempts===0){process.stderr.write(Buffer.from(${JSON.stringify(failureBytes.toString('base64'))},'base64')); process.exit(1);} console.log('{"status":"lifecycle-complete"}');});
 `;
-  const value = await fixture({ scenarioReference: 'revise-question-decision-after-review@1', piScript });
+  const value = await fixture({ scenarioReference: 'revise-question-decision-after-review@1', piScript, attentionRequired: true });
   const wording = 'Print zero as `0`; otherwise print ordinary decimal notation without trailing fractional zeros.';
   const decisionCatalogPath = path.join(value.scratch, 'decisions.json');
   const wordingDigest = `sha256:${createHash('sha256').update(wording).digest('hex')}`;
@@ -2581,7 +2582,7 @@ test('canonical lifecycle repository lock excludes an independent state director
 test('attended correction re-entry passes an operator-selected catalog decision to mdlm-pi', async () => {
   const inputPath = path.join(os.tmpdir(), `issue-213-pi-input-${process.pid}-${Date.now()}`);
   const piScript = `#!/bin/sh\ncat > ${inputPath}\nprintf '%s\\n' '{"status":"lifecycle-complete"}'\nexit 0\n`;
-  const { scratch, request } = await fixture({ scenarioReference: 'review-correction@1', piScript });
+  const { scratch, request } = await fixture({ scenarioReference: 'review-correction@1', piScript, attentionRequired: true });
   const wording = 'Use the smallest correction that preserves the accepted evidence boundary.';
   const decisionCatalogPath = path.join(scratch, 'decisions.json');
   const digestValue = `sha256:${createHash('sha256').update(wording).digest('hex')}`;
@@ -2595,5 +2596,28 @@ test('attended correction re-entry passes an operator-selected catalog decision 
   const output = JSON.parse(runResult.stdout);
   assert.equal(output.status, 'completed');
   assert.deepEqual(output.decision, { origin: 'operator-selected', authorityBasis: 'Standing authorization permits operator selection without pausing for user input.', digest: digestValue });
+  assert.equal(await readFile(inputPath, 'utf8'), `${wording}\n`);
+});
+
+test('authoritative attended Assignment overrides a clean-interrupted-command signal', async () => {
+  const inputPath = path.join(os.tmpdir(), `issue-4-pi-input-${process.pid}-${Date.now()}`);
+  const piScript = `#!/bin/sh\ncat > ${inputPath}\nprintf '%s\\n' '{"status":"lifecycle-complete"}'\nexit 0\n`;
+  const { scratch, request } = await fixture({ scenarioReference: 'resolve-question@2', piScript, attentionRequired: true });
+  const wording = 'Build the smallest useful CLI temperature converter with exact invocation `<value> <from-unit> <to-unit>`.';
+  const authorityBasis = 'Standing authorization permits the sole lifecycle operator to answer the intended-product question without pausing for user input.';
+  const digestValue = `sha256:${createHash('sha256').update(wording).digest('hex')}`;
+  const decisionCatalogPath = path.join(scratch, 'decisions.json');
+  await writeFile(decisionCatalogPath, JSON.stringify({ contract: 'mdlm-demo-decision-catalog@1', decisions: [{
+    assignment: request.assignmentId, wording, origin: 'operator-selected', authorityBasis, digest: digestValue,
+  }] }));
+  request.signal = 'clean-interrupted-command';
+  request.decisionCatalogPath = decisionCatalogPath;
+
+  const runResult = exec(process.execPath, [cli, 'run'], root, JSON.stringify(request));
+
+  assert.equal(runResult.status, 0, runResult.stderr);
+  const output = JSON.parse(runResult.stdout);
+  assert.equal(output.status, 'completed');
+  assert.deepEqual(output.decision, { origin: 'operator-selected', authorityBasis, digest: digestValue });
   assert.equal(await readFile(inputPath, 'utf8'), `${wording}\n`);
 });
