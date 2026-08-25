@@ -139,6 +139,11 @@ The runner records the origin, authority basis, and digest. It does not label th
   "evidenceDirectory": "/absolute/path/to/immutable-evidence",
   "timeoutMs": 30000,
   "signal": "clean-interrupted-command",
+  "operator": {
+    "provider": "openai-codex",
+    "model": "gpt-5.6-sol",
+    "thinking": "high"
+  },
   "commands": {
     "mdlm": "/absolute/path/to/mdlm",
     "mdlmPi": "/absolute/path/to/mdlm-pi"
@@ -197,6 +202,8 @@ The runner records the origin, authority basis, and digest. It does not label th
 }
 ```
 
+The `operator` object is mandatory for `run` and `resume`. Provider and model are safe nonempty scalar tokens. Thinking is one of `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`. The runner validates these values before resolving or snapshotting the lifecycle repository, pins them in durable run identity, rejects exact drift on resume, and passes them to `mdlm-pi` as explicit `--provider`, `--model`, and `--thinking` arguments.
+
 Each archive digest is the SHA-256 of its configured file bytes. Archive identities, installed-tree identity, lock identity, executable identities, and the MDLM Process Package identity remain separate. The installed-tree digest is independent of its absolute root and covers neighboring dependencies as well as `mdlm` and `mdlm-pi`; both configured executables and the lockfile must resolve within that tree. Configured paths and resolved real paths are recorded where applicable. The runner compares the Process Package identity across status, Assignment state, and packet data. It does not claim that a tarball digest equals the Process Package digest unless the operator supplies evidence for that relationship.
 
 ## Commands
@@ -206,7 +213,7 @@ npm test
 npm run check
 ```
 
-After an operator creates and reviews `operator-inputs/issue-213-first-run.json`, the exact first real-demo command is:
+For issue #212, `operator-inputs/issue-213-first-run.json` must select provider `openai-codex`, model `gpt-5.6-sol`, and thinking `high`. After an operator creates and reviews that request, the exact first real-demo command is:
 
 ```bash
 cd /home/ubuntu/git/mdlm-demo-orchestrator && node ./bin/mdlm-demo-runner.mjs run --input ./operator-inputs/issue-213-first-run.json

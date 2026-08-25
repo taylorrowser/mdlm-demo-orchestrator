@@ -1,0 +1,104 @@
+✔ run and resume submit and commit an external Assignment exactly once (1867.627918ms)
+✖ ordinary Assignments invoke mdlm-pi with the exact operator provider, model, and thinking argv (1028.374998ms)
+✖ run and resume reject missing or unsafe operator configuration before snapshots or lifecycle commands (1116.215852ms)
+✖ resume rejects provider, model, or thinking drift without invoking mdlm-pi (1015.632199ms)
+✔ an uncertain submission is never repeated on resume (1848.607938ms)
+✔ resume commits a durably accepted publication without resubmitting (1693.094942ms)
+✔ run refuses command provenance drift before preparing or submitting (825.154984ms)
+✔ dirty tracked or untracked lifecycle state stops before prepare or submit (1729.87183ms)
+✔ harness repository locator is pinned in durable run identity (1710.200968ms)
+✔ a clean extra commit is nonrecoverable on resume (1741.759464ms)
+✔ changed executable bytes cannot be blessed by changing configured provenance (1662.797561ms)
+✔ lost correction session is not fed shell stdin or restarted without controller resume support (1675.721372ms)
+✔ ordinary mdlm-pi submitting journal resumes through its controller without stdin replay (971.851695ms)
+✔ mdlm-pi exit codes and typed results distinguish lifecycle outcomes from operational failures (7056.690695ms)
+✔ typed reserved stops distinguish pre-submission interception from an accepted Assignment checkpoint (3309.162124ms)
+✔ controlled worker environment strips Git, Node, and shell startup injection variables (993.055574ms)
+✔ successive ordinary Assignments use immutable Assignment-keyed state (1863.700562ms)
+✔ publication rejects traversal, malformed execution identities, and symlink parents before Git staging (3392.64334ms)
+✔ durable submitting transition prevents duplicate submit across injected crash seams (3512.651288ms)
+✔ resume recognizes a commit completed immediately before the publication journal update (2603.681359ms)
+✔ an unrelated HEAD after a journaled publication remains repository drift (1831.547595ms)
+✔ simultaneous starts publish only one fully initialized canonical repository lock (2732.063826ms)
+✔ a fresh ownerless canonical lock is treated as initializing, not stale (261.212046ms)
+✔ canonical lifecycle repository lock excludes an independent state directory before snapshot (3018.738867ms)
+✔ attended correction re-entry passes an operator-selected catalog decision to mdlm-pi (1001.165259ms)
+ℹ tests 25
+ℹ suites 0
+ℹ pass 22
+ℹ fail 3
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 50598.149076
+
+✖ failing tests:
+
+test at test/run.test.mjs:119:1
+✖ ordinary Assignments invoke mdlm-pi with the exact operator provider, model, and thinking argv (1028.374998ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+
+    [
+      'run',
+      '/tmp/issue-213-run-HLFmD4/repository',
+      '--mdlm',
+      '/home/ubuntu/git/mdlm-demo-orchestrator/bin/mdlm-demo-mdlm-shim.mjs',
+  -   '--provider',
+  -   'openai-codex',
+  -   '--model',
+  -   'gpt-5.6-sol',
+  -   '--thinking',
+  -   'high'
+    ]
+
+      at TestContext.<anonymous> (file:///home/ubuntu/git/mdlm-demo-orchestrator/test/run.test.mjs:136:10)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: [ 'run', '/tmp/issue-213-run-HLFmD4/repository', '--mdlm', '/home/ubuntu/git/mdlm-demo-orchestrator/bin/mdlm-demo-mdlm-shim.mjs' ],
+    expected: [ 'run', '/tmp/issue-213-run-HLFmD4/repository', '--mdlm', '/home/ubuntu/git/mdlm-demo-orchestrator/bin/mdlm-demo-mdlm-shim.mjs', '--provider', 'openai-codex', '--model', 'gpt-5.6-sol', '--thinking', 'high' ],
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+test at test/run.test.mjs:140:1
+✖ run and resume reject missing or unsafe operator configuration before snapshots or lifecycle commands (1116.215852ms)
+  AssertionError [ERR_ASSERTION]: run/undefined:
+
+  0 !== 1
+
+      at TestContext.<anonymous> (file:///home/ubuntu/git/mdlm-demo-orchestrator/test/run.test.mjs:156:14)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 0,
+    expected: 1,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/run.test.mjs:164:1
+✖ resume rejects provider, model, or thinking drift without invoking mdlm-pi (1015.632199ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+
+  + undefined
+  - {
+  -   model: 'gpt-5.6-sol',
+  -   provider: 'openai-codex',
+  -   thinking: 'high'
+  - }
+
+      at TestContext.<anonymous> (file:///home/ubuntu/git/mdlm-demo-orchestrator/test/run.test.mjs:173:10)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: { provider: 'openai-codex', model: 'gpt-5.6-sol', thinking: 'high' },
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }

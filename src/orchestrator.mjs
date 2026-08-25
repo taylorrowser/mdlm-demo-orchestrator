@@ -13,9 +13,12 @@ import {
 const externalScenarios = new Set(['realize-verification-environment@1', 'register-pilot-target@1', 'execute-verification-run@1']);
 const mdlmShim = fileURLToPath(new URL('../bin/mdlm-demo-mdlm-shim.mjs', import.meta.url));
 const executionIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const operatorScalarPattern = /^[A-Za-z0-9][A-Za-z0-9._/@:+-]{0,255}$/;
+const thinkingLevels = new Set(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
 
 export async function run(request, mode) {
   requireContract(request, mode === 'resume' ? 'mdlm-demo-resume-request@1' : 'mdlm-demo-run-request@1');
+  validateOperator(request.operator);
   const assignmentId = required(request.assignmentId, 'assignmentId');
   const context = await repositoryContext(required(request.repository, 'repository'), request.timeoutMs);
   const release = await acquireRepositoryLock(context, assignmentId);
@@ -76,9 +79,9 @@ async function executeRun(request, context, assignmentDirectory, journalPath, sn
   const status = captured.status;
   const processPackage = reconcileProcessPackage(status.package, assignment.package);
   if (processPackage === null) return stopped('package-drift', 'status and Assignment Process Package identities differ', snapshotResult, assignmentId);
-  const runIdentity = observedRunIdentity(captured.provenance, processPackage);
+  const runIdentity = observedRunIdentity(captured.provenance, processPackage, request.operator);
   const identityMatch = await pinRunIdentity(context.identityDirectory, runIdentity);
-  if (!identityMatch) return stopped('run-identity-drift', 'artifact, installed Process Package, executable target, source, or harness identity changed', snapshotResult, assignmentId);
+  if (!identityMatch) return stopped('run-identity-drift', 'operator, artifact, installed Process Package, executable target, source, or harness identity changed', snapshotResult, assignmentId);
 
   const journal = await optionalJson(journalPath);
   if (journal?.phase === 'completed') {
@@ -221,7 +224,13 @@ async function runPiAssignment(request, context, assignmentDirectory, assignment
     package: assignment.package, repository: assignment.repository,
     stopDirectory: path.join(shimDirectory, 'stops'), timeoutMs: request.timeoutMs ?? 30_000,
   }, null, 2)}\n`));
-  const args = ['run', context.repository, '--mdlm', mdlmShim];
+  const args = [
+    'run', context.repository,
+    '--mdlm', mdlmShim,
+    '--provider', request.operator.provider,
+    '--model', request.operator.model,
+    '--thinking', request.operator.thinking,
+  ];
   const environment = controlledEnvironment({ MDLM_DEMO_SHIM_CONFIG: shimConfigPath });
   const processResult = await invoke(
     assignmentDirectory, request.commands.mdlmPi, args, context.repository, request.timeoutMs,
@@ -386,11 +395,12 @@ async function selectedDecision(file, assignmentId) {
   return { wording: selected.wording, evidence: { origin: selected.origin, authorityBasis: selected.authorityBasis, digest: selected.digest } };
 }
 
-function observedRunIdentity(provenance, processPackage) {
+function observedRunIdentity(provenance, processPackage, operator) {
   const gitIdentity = value => ({ repository: value.repository, commit: value.observedCommit, tree: value.observedTree });
   const file = value => ({ realpath: value.realpath, digest: value.digest, bytes: value.bytes });
   return {
-    contract: 'mdlm-demo-run-identity@3',
+    contract: 'mdlm-demo-run-identity@4',
+    operator: { provider: operator.provider, model: operator.model, thinking: operator.thinking },
     processPackage,
     source: gitIdentity(provenance.source),
     packageArtifact: file(provenance.package),
@@ -767,6 +777,16 @@ async function optionalJson(file) { try { return JSON.parse(await readFile(file,
 function result(status, snapshotResult, extra) { return { contract: 'mdlm-demo-run-result@2', status, snapshot: snapshotResult, ...extra }; }
 function stopped(reason, detail, snapshotResult, assignmentId, extra = {}) { return result('stopped', snapshotResult, { assignmentId, recoverable: false, reason, detail, ...extra }); }
 function required(value, label) { if (typeof value !== 'string' || value.length === 0) throw new Error(`${label} must be a nonempty string`); return value; }
+function validateOperator(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('operator must be an object');
+  if (!sameJson(Object.keys(value).sort(), ['model', 'provider', 'thinking'])) throw new Error('operator must contain exactly provider, model, and thinking');
+  for (const name of ['provider', 'model']) {
+    if (typeof value[name] !== 'string' || !operatorScalarPattern.test(value[name])) throw new Error(`operator.${name} must be a safe nonempty scalar string`);
+  }
+  if (typeof value.thinking !== 'string' || !thinkingLevels.has(value.thinking)) {
+    throw new Error(`operator.thinking must be one of ${[...thinkingLevels].join(', ')}`);
+  }
+}
 function assignmentKey(value) { return `${value.replace(/[^A-Za-z0-9._-]/g, '_')}-${sha256(Buffer.from(value)).slice(-12)}`; }
 function sameJson(left, right) { return JSON.stringify(left) === JSON.stringify(right); }
 function sameConfiguredPath(left, right) { return typeof left === 'string' && typeof right === 'string' && path.resolve(left) === path.resolve(right); }

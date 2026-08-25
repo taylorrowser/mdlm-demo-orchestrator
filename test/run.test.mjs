@@ -84,6 +84,7 @@ else {process.stderr.write('unexpected '+JSON.stringify(a));process.exit(8)}
     contract: 'mdlm-demo-run-request@1', repository,
     stateDirectory: path.join(scratch, 'state'), evidenceDirectory: path.join(scratch, 'evidence'), timeoutMs: 10_000,
     signal: 'adapter-failure-before-submission', assignmentId: assignment, adapterInputsPath,
+    operator: { provider: 'openai-codex', model: 'gpt-5.6-sol', thinking: 'high' },
     commands: { mdlm, mdlmPi },
     provenance: {
       source: { repository: sourceRepository, commit: sourceCommit, tree: sourceTree }, package: { artifact: packageArtifact, digest: digest(packageArtifact, scratch) },
@@ -113,6 +114,78 @@ test('run and resume submit and commit an external Assignment exactly once', asy
   assert.equal(Number(git(['rev-list', '--count', 'HEAD'], repository)), 2);
   const calls = (await readFile(path.join(scratch, 'calls.log'), 'utf8')).trim().split('\n').map(JSON.parse);
   assert.equal(calls.filter(a => a[0] === 'scenario' && a[1] === 'submit').length, 1);
+});
+
+test('ordinary Assignments invoke mdlm-pi with the exact operator provider, model, and thinking argv', async () => {
+  const argvPath = path.join(os.tmpdir(), `mdlm-demo-operator-argv-${process.pid}-${Date.now()}`);
+  const piScript = `#!/usr/bin/env node\nrequire('node:fs').writeFileSync(${JSON.stringify(argvPath)}, JSON.stringify(process.argv.slice(2))); console.log('{"status":"process-dead-end"}'); process.exit(2);\n`;
+  const value = await fixture({ scenarioReference: 'ordinary@1', piScript });
+  value.request.signal = 'clean-interrupted-command';
+
+  const execution = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
+
+  assert.equal(execution.status, 0, execution.stderr);
+  const output = JSON.parse(execution.stdout);
+  const expected = [
+    'run', value.repository,
+    '--mdlm', path.join(root, 'bin/mdlm-demo-mdlm-shim.mjs'),
+    '--provider', 'openai-codex',
+    '--model', 'gpt-5.6-sol',
+    '--thinking', 'high',
+  ];
+  assert.deepEqual(JSON.parse(await readFile(argvPath, 'utf8')), expected);
+  assert.deepEqual(output.process.argv, [value.mdlmPi, ...expected]);
+});
+
+test('run and resume reject missing or unsafe operator configuration before snapshots or lifecycle commands', async () => {
+  const invalidOperators = [
+    undefined,
+    { provider: '', model: 'gpt-5.6-sol', thinking: 'high' },
+    { provider: 'openai-codex', model: 'gpt 5.6-sol', thinking: 'high' },
+    { provider: 'openai-codex', model: 'gpt-5.6-sol', thinking: 'turbo' },
+  ];
+  for (const mode of ['run', 'resume']) {
+    for (const operator of invalidOperators) {
+      const value = await fixture();
+      if (operator === undefined) delete value.request.operator;
+      else value.request.operator = operator;
+      value.request.contract = mode === 'run' ? 'mdlm-demo-run-request@1' : 'mdlm-demo-resume-request@1';
+
+      const execution = exec(process.execPath, [cli, mode], root, JSON.stringify(value.request));
+
+      assert.equal(execution.status, 1, `${mode}/${JSON.stringify(operator)}: ${execution.stderr}`);
+      assert.equal(await stat(value.request.evidenceDirectory).then(() => true, () => false), false);
+      assert.equal(await stat(path.join(value.scratch, 'calls.log')).then(() => true, () => false), false);
+      assert.equal(await stat(path.join(value.scratch, 'submit-count')).then(() => true, () => false), false);
+    }
+  }
+});
+
+test('resume rejects provider, model, or thinking drift without invoking mdlm-pi', async () => {
+  const argvLog = path.join(os.tmpdir(), `mdlm-demo-operator-resume-${process.pid}-${Date.now()}`);
+  const piScript = `#!/usr/bin/env node\nrequire('node:fs').appendFileSync(${JSON.stringify(argvLog)}, JSON.stringify(process.argv.slice(2))+'\\n'); console.log('{"status":"process-dead-end"}'); process.exit(2);\n`;
+  const value = await fixture({ scenarioReference: 'ordinary@1', piScript });
+  value.request.signal = 'clean-interrupted-command';
+  const first = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
+  assert.equal(first.status, 0, first.stderr);
+  assert.equal(JSON.parse(first.stdout).reason, 'process-dead-end');
+  const pinned = JSON.parse(await readFile(path.join(value.repository, '.git', 'mdlm-demo-orchestrator', 'run-identity.json'), 'utf8'));
+  assert.deepEqual(pinned.operator, value.request.operator);
+
+  for (const operator of [
+    { ...value.request.operator, provider: 'different-provider' },
+    { ...value.request.operator, model: 'different-model' },
+    { ...value.request.operator, thinking: 'medium' },
+  ]) {
+    const resumed = exec(process.execPath, [cli, 'resume'], root, JSON.stringify({
+      ...value.request,
+      contract: 'mdlm-demo-resume-request@1',
+      operator,
+    }));
+    assert.equal(resumed.status, 0, resumed.stderr);
+    assert.equal(JSON.parse(resumed.stdout).reason, 'run-identity-drift');
+  }
+  assert.equal((await readFile(argvLog, 'utf8')).trim().split('\n').length, 1);
 });
 
 test('an uncertain submission is never repeated on resume', async () => {
