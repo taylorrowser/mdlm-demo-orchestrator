@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { chmod, mkdtemp, mkdir, readFile, stat, symlink, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, mkdir, readFile, readdir, stat, symlink, writeFile } from 'node:fs/promises';
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import os from 'node:os';
@@ -434,6 +434,105 @@ test('durable submitting transition prevents duplicate submit across injected cr
     assert.ok(submitCount.trim().split('\n').filter(Boolean).length <= 1, seam);
     if (seam.endsWith('after-rename')) assert.equal(JSON.parse(resumed.stdout).reason, 'uncertain-partial-publication');
   }
+});
+
+test('resume recognizes a commit completed immediately before the publication journal update', async () => {
+  const value = await fixture();
+  const crashed = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request), {
+    ...process.env, MDLM_DEMO_TEST_CRASH: 'publication:after-git-commit',
+  });
+  assert.equal(crashed.status, 86, crashed.stderr);
+  assert.equal(Number(git(['rev-list', '--count', 'HEAD'], value.repository)), 2);
+  assert.equal(JSON.parse(await readFile(path.join(assignmentDirectory(value.request), 'transaction.json'), 'utf8')).phase, 'published-uncommitted');
+
+  const resumed = exec(process.execPath, [cli, 'resume'], root, JSON.stringify({ ...value.request, contract: 'mdlm-demo-resume-request@1' }));
+  assert.equal(resumed.status, 0, resumed.stderr);
+  const recovered = JSON.parse(resumed.stdout);
+  assert.equal(recovered.status, 'completed');
+  assert.equal(recovered.recoveredPublication, true);
+  assert.equal(Number(git(['rev-list', '--count', 'HEAD'], value.repository)), 2);
+  assert.equal((await readFile(path.join(value.scratch, 'submit-count'), 'utf8')).trim().split('\n').length, 1);
+  const calls = (await readFile(path.join(value.scratch, 'calls.log'), 'utf8')).trim().split('\n').map(JSON.parse);
+  assert.equal(calls.filter(args => args[0] === 'scenario' && args[1] === 'submit').length, 1);
+
+  const second = exec(process.execPath, [cli, 'resume'], root, JSON.stringify({ ...value.request, contract: 'mdlm-demo-resume-request@1' }));
+  assert.equal(second.status, 0, second.stderr);
+  assert.equal(JSON.parse(second.stdout).status, 'already-completed');
+  assert.equal(Number(git(['rev-list', '--count', 'HEAD'], value.repository)), 2);
+});
+
+test('an unrelated HEAD after a journaled publication remains repository drift', async () => {
+  const value = await fixture();
+  const crashed = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request), {
+    ...process.env, MDLM_DEMO_TEST_CRASH: 'publication:after-git-commit',
+  });
+  assert.equal(crashed.status, 86, crashed.stderr);
+  await writeFile(path.join(value.repository, 'unrelated.txt'), 'unrelated advance\n');
+  git(['add', 'unrelated.txt'], value.repository);
+  git(['commit', '-m', 'unrelated advance'], value.repository);
+
+  const resumed = exec(process.execPath, [cli, 'resume'], root, JSON.stringify({ ...value.request, contract: 'mdlm-demo-resume-request@1' }));
+  assert.equal(resumed.status, 0, resumed.stderr);
+  const stopped = JSON.parse(resumed.stdout);
+  assert.equal(stopped.status, 'stopped');
+  assert.equal(stopped.reason, 'repository-drift');
+  assert.equal(Number(git(['rev-list', '--count', 'HEAD'], value.repository)), 3);
+  assert.equal((await readFile(path.join(value.scratch, 'submit-count'), 'utf8')).trim().split('\n').length, 1);
+});
+
+test('simultaneous starts publish only one fully initialized canonical repository lock', async () => {
+  const writerLog = path.join(os.tmpdir(), `mdlm-demo-lock-writers-${process.pid}-${Date.now()}`);
+  const piScript = `#!/usr/bin/env node\nconst fs=require('node:fs'); fs.appendFileSync(${JSON.stringify(writerLog)},'writer\\n'); setTimeout(()=>{console.log(JSON.stringify({status:'lifecycle-complete'}));},1500);\n`;
+  const value = await fixture({ scenarioReference: 'ordinary@1', piScript });
+  value.request.signal = 'clean-interrupted-command';
+  const barrier = path.join(value.scratch, 'lock-barrier');
+  await mkdir(barrier);
+  const secondRequest = {
+    ...value.request,
+    stateDirectory: path.join(value.scratch, 'independent-state'),
+    evidenceDirectory: path.join(value.scratch, 'independent-evidence'),
+  };
+  const launch = request => {
+    const child = spawn(process.execPath, [cli, 'run'], {
+      cwd: root,
+      env: { ...process.env, MDLM_DEMO_TEST_LOCK_BARRIER: barrier },
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    let stdout = '', stderr = '';
+    child.stdout.on('data', chunk => { stdout += chunk; });
+    child.stderr.on('data', chunk => { stderr += chunk; });
+    child.stdin.end(JSON.stringify(request));
+    return new Promise(resolve => child.once('close', status => resolve({ status, stdout, stderr })));
+  };
+  const first = launch(value.request);
+  const second = launch(secondRequest);
+  let ready = [];
+  for (let attempt = 0; attempt < 200; attempt++) {
+    ready = (await readdir(barrier)).filter(name => name.startsWith('ready-'));
+    if (ready.length === 2) break;
+    await new Promise(resolve => setTimeout(resolve, 25));
+  }
+  assert.equal(ready.length, 2, 'both contenders reached the staged-owner acquisition barrier');
+  const canonicalLock = path.join(value.repository, '.git', 'mdlm-demo-orchestrator', 'writer.lock');
+  await assert.rejects(stat(canonicalLock), error => error.code === 'ENOENT');
+  await writeFile(path.join(barrier, 'release'), 'release\n');
+  const results = await Promise.all([first, second]);
+  assert.deepEqual(results.map(result => result.status).sort(), [0, 1]);
+  const winner = results.find(result => result.status === 0);
+  const excluded = results.find(result => result.status === 1);
+  assert.equal(JSON.parse(winner.stdout).status, 'completed');
+  assert.match(excluded.stderr, /lifecycle repository writer lock is held/);
+  assert.deepEqual((await readFile(writerLog, 'utf8')).trim().split('\n'), ['writer']);
+});
+
+test('a fresh ownerless canonical lock is treated as initializing, not stale', async () => {
+  const value = await fixture();
+  const identityDirectory = path.join(value.repository, '.git', 'mdlm-demo-orchestrator');
+  await mkdir(path.join(identityDirectory, 'writer.lock'), { recursive: true });
+  const execution = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
+  assert.equal(execution.status, 1);
+  assert.match(execution.stderr, /lifecycle repository writer lock is initializing/);
+  await assert.rejects(stat(value.request.evidenceDirectory), error => error.code === 'ENOENT');
 });
 
 test('canonical lifecycle repository lock excludes an independent state directory before snapshot', async () => {

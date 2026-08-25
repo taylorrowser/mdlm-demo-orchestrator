@@ -13,11 +13,16 @@ test('shim emits a typed stop for a reserved Scenario before worker execution', 
   const scratch = await mkdtemp(path.join(os.tmpdir(), 'issue-213-shim-'));
   const real = path.join(scratch, 'mdlm');
   const assignment = '66666666-6666-4666-8666-666666666666';
-  await writeFile(real, `#!/usr/bin/env node\nconsole.log(JSON.stringify({contract:'mdlm-assignment-packet@2',ok:true,command:'scenario.prepare',assignment:{id:'${assignment}'},package:{},repository:{},scenario:{reference:'execute-verification-run@1'},exactInputs:[]}));\n`);
+  await writeFile(real, `#!/usr/bin/env node\nconsole.log(JSON.stringify({contract:'mdlm-assignment-packet@2',ok:true,command:'scenario.prepare',assignment:{id:'${assignment}'},package:{reference:'pkg@1',digest:'sha256:${'1'.repeat(64)}',language:'lang@1'},repository:{head:'${'a'.repeat(40)}',trackedState:'sha256:${'2'.repeat(64)}'},scenario:{reference:'execute-verification-run@1'},responseSchema:{},exactInputs:[]}));\n`);
   await chmod(real, 0o755);
   const config = path.join(scratch, 'config.json');
   const stopDirectory = path.join(scratch, 'stops');
-  await writeFile(config, JSON.stringify({ contract: 'mdlm-demo-shim-config@1', realMdlm: real, allowedAssignment: assignment, stopDirectory, timeoutMs: 5_000 }));
+  await writeFile(config, JSON.stringify({
+    contract: 'mdlm-demo-shim-config@1', realMdlm: real, allowedAssignment: assignment,
+    package: { reference: 'pkg@1', digest: `sha256:${'1'.repeat(64)}`, language: 'lang@1' },
+    repository: { head: 'a'.repeat(40), trackedState: `sha256:${'2'.repeat(64)}` },
+    stopDirectory, timeoutMs: 5_000,
+  }));
   const result = spawnSync(process.execPath, [shim, 'scenario', 'prepare', assignment, '--json'], { cwd: scratch, env: { ...process.env, MDLM_DEMO_SHIM_CONFIG: config }, encoding: 'utf8', timeout: 10_000 });
   assert.equal(result.status, 97);
   const stop = JSON.parse(result.stdout);
@@ -33,10 +38,15 @@ test('shim reports accepted A and pre-submission external B as one typed boundar
   const real = path.join(scratch, 'mdlm');
   const accepted = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
   const external = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
-  await writeFile(real, `#!/usr/bin/env node\nconst id=process.argv[4]; console.log(JSON.stringify({contract:'mdlm-assignment-packet@2',ok:true,command:'scenario.prepare',assignment:{id},package:{},repository:{},scenario:{reference:'execute-verification-run@1'},responseSchema:{},exactInputs:[]}));\n`);
+  await writeFile(real, `#!/usr/bin/env node\nconst id=process.argv[4]; console.log(JSON.stringify({contract:'mdlm-assignment-packet@2',ok:true,command:'scenario.prepare',assignment:{id},package:{reference:'pkg@1',digest:'sha256:${'1'.repeat(64)}',language:'lang@1'},repository:{head:'${'a'.repeat(40)}',trackedState:'sha256:${'2'.repeat(64)}'},scenario:{reference:'execute-verification-run@1'},responseSchema:{},exactInputs:[]}));\n`);
   await chmod(real, 0o755);
   const config = path.join(scratch, 'config.json');
-  await writeFile(config, JSON.stringify({ contract: 'mdlm-demo-shim-config@1', realMdlm: real, allowedAssignment: accepted, stopDirectory: path.join(scratch, 'stops'), timeoutMs: 5_000 }));
+  await writeFile(config, JSON.stringify({
+    contract: 'mdlm-demo-shim-config@1', realMdlm: real, allowedAssignment: accepted,
+    package: { reference: 'pkg@1', digest: `sha256:${'1'.repeat(64)}`, language: 'lang@1' },
+    repository: { head: 'a'.repeat(40), trackedState: `sha256:${'2'.repeat(64)}` },
+    stopDirectory: path.join(scratch, 'stops'), timeoutMs: 5_000,
+  }));
   const result = spawnSync(process.execPath, [shim, 'scenario', 'prepare', external, '--json'], { cwd: scratch, env: { ...process.env, MDLM_DEMO_SHIM_CONFIG: config }, encoding: 'utf8', timeout: 10_000 });
   assert.equal(result.status, 97);
   const stop = JSON.parse(result.stdout);
@@ -44,4 +54,46 @@ test('shim reports accepted A and pre-submission external B as one typed boundar
   assert.equal(stop.completedAssignment, accepted);
   assert.equal(stop.assignment, external);
   assert.equal(stop.scenario, 'execute-verification-run@1');
+});
+
+test('shim rejects malformed successful prepare packets as typed command-contract failures', async t => {
+  const requested = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+  const valid = {
+    contract: 'mdlm-assignment-packet@2', command: 'scenario.prepare', ok: true,
+    assignment: { id: requested },
+    package: { reference: 'pkg@1', digest: `sha256:${'1'.repeat(64)}`, language: 'lang@1' },
+    repository: { head: 'a'.repeat(40), trackedState: `sha256:${'2'.repeat(64)}` },
+    scenario: { reference: 'execute-verification-run@1' }, responseSchema: {}, exactInputs: [],
+  };
+  const cases = [
+    ['missing responseSchema', packet => { delete packet.responseSchema; }],
+    ['wrong Assignment', packet => { packet.assignment.id = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd'; }],
+    ['wrong package fingerprint', packet => { packet.package.reference = 'other-package@1'; }],
+    ['wrong repository fingerprint', packet => { packet.repository.head = 'b'.repeat(40); }],
+  ];
+  for (const [name, mutate] of cases) await t.test(name, async () => {
+    const scratch = await mkdtemp(path.join(os.tmpdir(), 'mdlm-demo-shim-contract-'));
+    const real = path.join(scratch, 'mdlm');
+    await writeFile(real, '#!/usr/bin/env node\nprocess.stdout.write(process.env.PACKET);\n');
+    await chmod(real, 0o755);
+    const config = path.join(scratch, 'config.json');
+    const stopDirectory = path.join(scratch, 'stops');
+    await writeFile(config, JSON.stringify({
+      contract: 'mdlm-demo-shim-config@1', realMdlm: real, allowedAssignment: requested,
+      package: valid.package, repository: valid.repository, stopDirectory, timeoutMs: 5_000,
+    }));
+    const packet = structuredClone(valid);
+    mutate(packet);
+    const result = spawnSync(process.execPath, [shim, 'scenario', 'prepare', requested, '--json'], {
+      cwd: scratch,
+      env: { ...process.env, MDLM_DEMO_SHIM_CONFIG: config, PACKET: JSON.stringify(packet) },
+      encoding: 'utf8', timeout: 10_000,
+    });
+    assert.equal(result.status, 98);
+    assert.equal(result.stdout, '');
+    const failure = JSON.parse(result.stderr);
+    assert.equal(failure.contract, 'mdlm-demo-shim-error@1');
+    assert.equal(failure.type, 'command-contract-failure');
+    assert.equal(failure.command, 'scenario.prepare');
+  });
 });

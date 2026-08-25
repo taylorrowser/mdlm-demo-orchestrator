@@ -1,0 +1,166 @@
+✔ run and resume submit and commit an external Assignment exactly once (2089.806747ms)
+✔ an uncertain submission is never repeated on resume (1883.188988ms)
+✔ resume commits a durably accepted publication without resubmitting (1804.604105ms)
+✔ run refuses command provenance drift before preparing or submitting (980.209114ms)
+✔ dirty tracked or untracked lifecycle state stops before prepare or submit (1759.388992ms)
+✔ harness repository locator is pinned in durable run identity (1854.164395ms)
+✔ a clean extra commit is nonrecoverable on resume (1852.363062ms)
+✔ changed executable bytes cannot be blessed by changing configured provenance (1715.23371ms)
+✔ lost correction session is not fed shell stdin or restarted without controller resume support (1736.718075ms)
+✔ ordinary mdlm-pi submitting journal resumes through its controller without stdin replay (1043.7504ms)
+✔ mdlm-pi exit codes and typed results distinguish lifecycle outcomes from operational failures (7265.892099ms)
+✔ typed reserved stops distinguish pre-submission interception from an accepted Assignment checkpoint (3270.031657ms)
+✔ controlled worker environment strips Git, Node, and shell startup injection variables (993.947994ms)
+✔ successive ordinary Assignments use immutable Assignment-keyed state (1838.120107ms)
+✔ publication rejects traversal, malformed execution identities, and symlink parents before Git staging (3147.411537ms)
+✔ durable submitting transition prevents duplicate submit across injected crash seams (3295.602424ms)
+✖ resume recognizes a commit completed immediately before the publication journal update (1338.325019ms)
+✖ an unrelated HEAD after a journaled publication remains repository drift (1318.835567ms)
+✖ simultaneous starts publish only one fully initialized canonical repository lock (5329.97204ms)
+✔ canonical lifecycle repository lock excludes an independent state directory before snapshot (2987.080954ms)
+✔ attended correction re-entry passes an operator-selected catalog decision to mdlm-pi (1004.978807ms)
+✔ shim emits a typed stop for a reserved Scenario before worker execution (172.282309ms)
+✔ shim reports accepted A and pre-submission external B as one typed boundary (144.751819ms)
+▶ shim rejects malformed successful prepare packets as typed command-contract failures
+  ✖ missing responseSchema (145.747666ms)
+  ✖ wrong Assignment (143.654141ms)
+  ✖ wrong package fingerprint (136.748326ms)
+  ✖ wrong repository fingerprint (145.98416ms)
+✖ shim rejects malformed successful prepare packets as typed command-contract failures (575.189242ms)
+ℹ tests 28
+ℹ suites 0
+ℹ pass 20
+ℹ fail 8
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 49634.181544
+
+✖ failing tests:
+
+test at test/run.test.mjs:439:1
+✖ resume recognizes a commit completed immediately before the publication journal update (1338.325019ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+
+  0 !== 86
+
+      at TestContext.<anonymous> (file:///home/ubuntu/git/mdlm-demo-orchestrator/test/run.test.mjs:444:10)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 0,
+    expected: 86,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/run.test.mjs:464:1
+✖ an unrelated HEAD after a journaled publication remains repository drift (1318.835567ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+
+  0 !== 86
+
+      at TestContext.<anonymous> (file:///home/ubuntu/git/mdlm-demo-orchestrator/test/run.test.mjs:469:10)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 0,
+    expected: 86,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/run.test.mjs:483:1
+✖ simultaneous starts publish only one fully initialized canonical repository lock (5329.97204ms)
+  AssertionError [ERR_ASSERTION]: both contenders reached the staged-owner acquisition barrier
+
+  0 !== 2
+
+      at TestContext.<anonymous> (file:///home/ubuntu/git/mdlm-demo-orchestrator/test/run.test.mjs:515:10)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 0,
+    expected: 2,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/shim.test.mjs:64:47
+✖ missing responseSchema (145.747666ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+
+  97 !== 98
+
+      at TestContext.<anonymous> (file:///home/ubuntu/git/mdlm-demo-orchestrator/test/shim.test.mjs:79:12)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async TestContext.<anonymous> (file:///home/ubuntu/git/mdlm-demo-orchestrator/test/shim.test.mjs:64:39)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 97,
+    expected: 98,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/shim.test.mjs:64:47
+✖ wrong Assignment (143.654141ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+
+  97 !== 98
+
+      at TestContext.<anonymous> (file:///home/ubuntu/git/mdlm-demo-orchestrator/test/shim.test.mjs:79:12)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async TestContext.<anonymous> (file:///home/ubuntu/git/mdlm-demo-orchestrator/test/shim.test.mjs:64:39)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 97,
+    expected: 98,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/shim.test.mjs:64:47
+✖ wrong package fingerprint (136.748326ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+
+  97 !== 98
+
+      at TestContext.<anonymous> (file:///home/ubuntu/git/mdlm-demo-orchestrator/test/shim.test.mjs:79:12)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async TestContext.<anonymous> (file:///home/ubuntu/git/mdlm-demo-orchestrator/test/shim.test.mjs:64:39)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 97,
+    expected: 98,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/shim.test.mjs:64:47
+✖ wrong repository fingerprint (145.98416ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+
+  97 !== 98
+
+      at TestContext.<anonymous> (file:///home/ubuntu/git/mdlm-demo-orchestrator/test/shim.test.mjs:79:12)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async TestContext.<anonymous> (file:///home/ubuntu/git/mdlm-demo-orchestrator/test/shim.test.mjs:64:39)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 97,
+    expected: 98,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

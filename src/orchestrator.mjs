@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import { lstat, mkdir, open, readFile, realpath, readdir, rename, rm, writeFile } from 'node:fs/promises';
+import { link, lstat, mkdir, open, readFile, realpath, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { adaptAssignment } from './adapter.mjs';
+import { validateScenarioPrepare } from './contracts.mjs';
 import { snapshot } from './evidence.mjs';
 import {
   commandRecord, commandSucceeded, controlledEnvironment, gitEnvironment, parseJsonBytes,
@@ -94,6 +95,20 @@ async function executeRun(request, context, assignmentDirectory, journalPath, sn
   if (journal?.phase === 'uncertain-publication') {
     return stopped('uncertain-partial-publication', 'Git publication state is uncertain', snapshotResult, assignmentId);
   }
+  if (journal?.phase === 'published-uncommitted' && captured.lifecycleRepository.head !== journal.baseCommit) {
+    if (captured.lifecycleRepository.clean !== true) {
+      return stopped('repository-drift', 'repository is dirty after HEAD advanced beyond the journaled publication parent', snapshotResult, assignmentId);
+    }
+    const publication = { executionId: journal.executionId, scenario: journal.scenario, outputPaths: journal.outputPaths, blobs: journal.blobs };
+    try {
+      const commit = await commitPublication(context.repository, publication, journal.baseCommit, request.timeoutMs, assignmentDirectory);
+      if (commit !== captured.lifecycleRepository.head) throw new Error('snapshot HEAD differs from the exact journaled publication commit');
+      await writeJournal(journalPath, { ...journal, phase: 'completed', commit, completedAt: new Date().toISOString(), trustedRepositoryAdvance: true });
+      return result('completed', snapshotResult, { assignmentId, executionId: publication.executionId, commit, recoveredPublication: true, outcome: 'accepted-publication', trustedRepositoryAdvance: true });
+    } catch (error) {
+      return stopped('repository-drift', error.message, snapshotResult, assignmentId);
+    }
+  }
   if (journal?.phase !== 'published-uncommitted' && captured.lifecycleRepository.clean !== true) {
     return stopped('repository-dirty', 'lifecycle repository has tracked or untracked changes before submission', snapshotResult, assignmentId);
   }
@@ -135,12 +150,8 @@ async function executeRun(request, context, assignmentDirectory, journalPath, sn
   const prepare = await invoke(assignmentDirectory, request.commands.mdlm, ['scenario', 'prepare', assignmentId, '--json'], context.repository, request.timeoutMs);
   if (!commandSucceeded(prepare)) return stopped('prepare-command-failure', 'MDLM could not prepare the active Assignment', snapshotResult, assignmentId, { process: commandRecord(prepare) });
   let packet;
-  try { packet = parseJsonBytes(prepare.stdout, 'scenario prepare'); }
+  try { packet = validateScenarioPrepare(parseJsonBytes(prepare.stdout, 'scenario prepare'), assignmentId); }
   catch (error) { return stopped('malformed-assignment', error.message, snapshotResult, assignmentId, { process: commandRecord(prepare) }); }
-  if (packet.contract !== 'mdlm-assignment-packet@2' || packet.ok !== true || packet.assignment?.id !== assignmentId || packet.command !== 'scenario.prepare' ||
-      typeof packet.scenario?.reference !== 'string' || !packet.responseSchema || typeof packet.responseSchema !== 'object' || Array.isArray(packet.responseSchema) || !Array.isArray(packet.exactInputs)) {
-    return stopped('malformed-assignment', 'prepared packet identity or contract is invalid', snapshotResult, assignmentId, { process: commandRecord(prepare) });
-  }
   if (!sameJson(packet.package, assignment.package) || !sameJson(packet.repository, assignment.repository)) {
     return stopped('assignment-fingerprint-drift', 'prepared packet differs from the snapshotted Assignment', snapshotResult, assignmentId);
   }
@@ -207,6 +218,7 @@ async function runPiAssignment(request, context, assignmentDirectory, assignment
   await mkdir(shimDirectory, { recursive: true, mode: 0o700 });
   await writeOnceOrMatch(shimConfigPath, Buffer.from(`${JSON.stringify({
     contract: 'mdlm-demo-shim-config@1', realMdlm: request.commands.mdlm, allowedAssignment: assignmentId,
+    package: assignment.package, repository: assignment.repository,
     stopDirectory: path.join(shimDirectory, 'stops'), timeoutMs: request.timeoutMs ?? 30_000,
   }, null, 2)}\n`));
   const args = ['run', context.repository, '--mdlm', mdlmShim];
@@ -524,6 +536,7 @@ async function commitPublication(repository, publication, baseCommit, timeoutMs,
   if (!commandSucceeded(staged) || !sameJson(staged.stdout.toString('utf8').split('\0').filter(Boolean).sort(), expected)) throw new Error('Git staged paths differ from the canonical publication');
   const commit = await invoke(assignmentDirectory, 'git', ['commit', '-m', `mdlm: publish ${publication.scenario} (${publication.executionId})`, '--', ...expected], repository, timeoutMs);
   if (!commandSucceeded(commit)) throw new Error('Git publication commit failed');
+  maybeInjectedCrash('publication', 'after-git-commit');
   const newHead = await invoke(assignmentDirectory, 'git', ['rev-parse', 'HEAD^{commit}'], repository, timeoutMs);
   if (!commandSucceeded(newHead)) throw new Error('Git could not inspect publication commit');
   const commitId = newHead.stdout.toString('utf8').trim();
@@ -600,26 +613,104 @@ async function acquireRepositoryLock(context, assignmentId) {
   await mkdir(context.identityDirectory, { recursive: true, mode: 0o700 });
   const lock = path.join(context.identityDirectory, 'writer.lock');
   const token = randomUUID();
-  for (let attempt = 0; attempt < 3; attempt++) {
-    try { await mkdir(lock, { mode: 0o700 }); break; }
-    catch (error) {
-      if (error.code !== 'EEXIST') throw error;
-      const owner = await optionalJson(path.join(lock, 'owner.json')).catch(() => null);
-      if (owner !== null && await processOwnerIsAlive(owner)) throw new Error(`lifecycle repository writer lock is held: ${lock}`);
-      const stale = path.join(context.identityDirectory, `writer.lock.stale-${randomUUID()}`);
-      try { await rename(lock, stale); await rm(stale, { recursive: true }); }
-      catch (takeoverError) { if (takeoverError.code !== 'ENOENT') throw takeoverError; }
-      if (attempt === 2) throw new Error(`lifecycle repository writer lock cannot be recovered: ${lock}`);
-    }
-  }
-  await durableWriteJson(path.join(lock, 'owner.json'), {
-    token, pid: process.pid, processStart: await linuxProcessStart(process.pid), assignmentId,
+  const staging = path.join(context.identityDirectory, `.writer.lock.${token}.pending`);
+  const owner = {
+    contract: 'mdlm-demo-writer-lock@1', token, pid: process.pid,
+    processStart: await linuxProcessStart(process.pid), assignmentId,
     repository: context.repository, acquiredAt: new Date().toISOString(),
-  });
-  return async () => {
-    const owner = await optionalJson(path.join(lock, 'owner.json')).catch(() => null);
-    if (owner?.token === token) { await rm(lock, { recursive: true }); await syncDirectory(context.identityDirectory); }
   };
+  await durableWriteJson(staging, owner);
+  await waitAtLockAcquisitionBarrier(token);
+  let acquired = false;
+  try {
+    for (let attempt = 0; attempt < 5; attempt++) {
+      try {
+        await link(staging, lock);
+        await syncDirectory(context.identityDirectory);
+        acquired = true;
+        break;
+      } catch (error) {
+        if (error.code !== 'EEXIST') throw error;
+        const observed = await readRepositoryLock(lock);
+        if (!validLockOwner(observed)) throw new Error(`lifecycle repository writer lock is initializing: ${lock}`);
+        if (await processOwnerIsAlive(observed)) throw new Error(`lifecycle repository writer lock is held: ${lock}`);
+        await reclaimStaleRepositoryLock(lock, staging, context.identityDirectory);
+      }
+    }
+    if (!acquired) throw new Error(`lifecycle repository writer lock cannot be recovered: ${lock}`);
+  } finally {
+    await rm(staging, { force: true });
+  }
+  return async () => {
+    const observed = await readRepositoryLock(lock).catch(() => null);
+    if (observed?.token === token) {
+      await rm(lock, { force: true, recursive: true });
+      await syncDirectory(context.identityDirectory);
+    }
+  };
+}
+async function readRepositoryLock(lock) {
+  const information = await lstat(lock);
+  const ownerPath = information.isDirectory() ? path.join(lock, 'owner.json') : lock;
+  try { return JSON.parse(await readFile(ownerPath, 'utf8')); }
+  catch { return null; }
+}
+async function reclaimStaleRepositoryLock(lock, staging, identityDirectory) {
+  const information = await lstat(lock);
+  if (information.isDirectory()) {
+    const claim = path.join(lock, '.reclaim');
+    try { await link(staging, claim); }
+    catch (error) {
+      if (error.code === 'EEXIST') throw new Error(`lifecycle repository writer lock reclamation is initializing: ${lock}`);
+      throw error;
+    }
+    const owner = await readRepositoryLock(lock);
+    if (!validLockOwner(owner) || await processOwnerIsAlive(owner)) throw new Error(`lifecycle repository writer lock cannot be safely reclaimed: ${lock}`);
+    const stale = path.join(identityDirectory, `writer.lock.stale-${randomUUID()}`);
+    await rename(lock, stale);
+    await syncDirectory(identityDirectory);
+    await rm(stale, { recursive: true });
+    return;
+  }
+  if (!information.isFile()) throw new Error(`lifecycle repository writer lock has an unsupported type: ${lock}`);
+  const claim = path.join(identityDirectory, 'writer.lock.reclaim');
+  try { await link(lock, claim); }
+  catch (error) {
+    if (error.code !== 'EEXIST') throw error;
+    const [current, claimed] = await Promise.all([optionalLstat(lock), lstat(claim)]);
+    if (current === null || current.dev !== claimed.dev || current.ino !== claimed.ino) {
+      await rm(claim, { force: true });
+      return;
+    }
+    throw new Error(`lifecycle repository writer lock reclamation is initializing: ${lock}`);
+  }
+  const owner = await readRepositoryLock(claim);
+  if (!validLockOwner(owner) || await processOwnerIsAlive(owner)) throw new Error(`lifecycle repository writer lock cannot be safely reclaimed: ${lock}`);
+  await rm(lock);
+  await syncDirectory(identityDirectory);
+  await rm(claim);
+  await syncDirectory(identityDirectory);
+}
+function validLockOwner(owner) {
+  return owner !== null && typeof owner === 'object' && !Array.isArray(owner) &&
+    (owner.contract === undefined || owner.contract === 'mdlm-demo-writer-lock@1') && typeof owner.token === 'string' && owner.token.length > 0 &&
+    Number.isSafeInteger(owner.pid) && owner.pid > 0 && typeof owner.assignmentId === 'string' && owner.assignmentId.length > 0 &&
+    typeof owner.repository === 'string' && owner.repository.length > 0 && typeof owner.acquiredAt === 'string' &&
+    (process.platform !== 'linux' || typeof owner.processStart === 'string');
+}
+async function waitAtLockAcquisitionBarrier(token) {
+  const barrier = process.env.MDLM_DEMO_TEST_LOCK_BARRIER;
+  if (typeof barrier !== 'string' || barrier.length === 0) return;
+  await writeFile(path.join(barrier, `ready-${process.pid}-${token}`), 'ready\n', { flag: 'wx', mode: 0o600 });
+  for (;;) {
+    try { await lstat(path.join(barrier, 'release')); return; }
+    catch (error) { if (error.code !== 'ENOENT') throw error; }
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+}
+async function optionalLstat(file) {
+  try { return await lstat(file); }
+  catch (error) { if (error.code === 'ENOENT') return null; throw error; }
 }
 async function processOwnerIsAlive(owner) {
   if (!Number.isSafeInteger(owner.pid) || owner.pid < 1) return false;

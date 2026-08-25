@@ -1,9 +1,13 @@
 #!/usr/bin/env node
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { validateScenarioPrepare } from '../src/contracts.mjs';
 import { runProcess } from '../src/util.mjs';
 
 const reserved = new Set(['realize-verification-environment@1', 'register-pilot-target@1', 'execute-verification-run@1']);
+class CommandContractError extends Error {
+  constructor(command, message) { super(message); this.command = command; }
+}
 
 try {
   const configPath = process.env.MDLM_DEMO_SHIM_CONFIG;
@@ -14,9 +18,18 @@ try {
   const input = await readStdin();
   const result = await runProcess(config.realMdlm, args, { cwd: process.cwd(), timeoutMs: config.timeoutMs, input: input.length === 0 ? undefined : input, env: process.env });
   if (args[0] === 'scenario' && args[1] === 'prepare' && result.exitStatus === 0) {
-    const packet = JSON.parse(result.stdout.toString('utf8'));
-    if (packet.contract !== 'mdlm-assignment-packet@2') throw new Error('scenario prepare did not return mdlm-assignment-packet@2');
-    const assignment = packet.assignment?.id;
+    let packet;
+    try {
+      if (typeof args[2] !== 'string' || args[2].length === 0) throw new Error('scenario prepare command lacks an Assignment ID');
+      packet = validateScenarioPrepare(JSON.parse(result.stdout.toString('utf8')), {
+        assignmentId: args[2],
+        package: config.package,
+        ...(args[2] === config.allowedAssignment ? { repository: config.repository } : {}),
+      });
+    } catch (error) {
+      throw new CommandContractError('scenario.prepare', error instanceof Error ? error.message : String(error));
+    }
+    const assignment = packet.assignment.id;
     const scenario = packet.scenario?.reference;
     const external = reserved.has(scenario);
     const checkpoint = assignment !== config.allowedAssignment;
@@ -45,7 +58,12 @@ try {
     process.exitCode = result.exitStatus ?? 1;
   }
 } catch (error) {
-  process.stderr.write(`${JSON.stringify({ contract: 'mdlm-demo-shim-error@1', error: error instanceof Error ? error.message : String(error) })}\n`);
+  process.stderr.write(`${JSON.stringify({
+    contract: 'mdlm-demo-shim-error@1',
+    type: error instanceof CommandContractError ? 'command-contract-failure' : 'shim-failure',
+    ...(error instanceof CommandContractError ? { command: error.command } : {}),
+    error: error instanceof Error ? error.message : String(error),
+  })}\n`);
   process.exitCode = 98;
 }
 
