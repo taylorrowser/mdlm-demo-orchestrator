@@ -449,12 +449,7 @@ async function requireCanonicalSnapshotDirectory(directory) {
 }
 
 async function readCanonicalSnapshotFile(file) {
-  const expected = path.resolve(file);
-  const information = await lstat(expected);
-  if (!information.isFile() || information.isSymbolicLink() || await realpath(expected) !== expected) {
-    throw new Error(`pinned snapshot evidence is not a canonical regular file: ${expected}`);
-  }
-  return { path: expected, bytes: await readFile(expected) };
+  return readCanonicalFile(file, 'pinned snapshot evidence');
 }
 
 async function writeExclusive(file, bytes) { await writeFile(file, bytes, { flag: 'wx', mode: 0o600 }); }

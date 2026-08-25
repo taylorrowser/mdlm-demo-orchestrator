@@ -621,6 +621,94 @@ async function orphanedCheckpointFixture({ mutate } = {}) {
   return context;
 }
 
+async function materializedNextFixture() {
+  const workerLog = path.join(os.tmpdir(), `mdlm-demo-materialized-next-worker-${process.pid}-${Date.now()}-${Math.random()}`);
+  const piScript = `#!/usr/bin/env node\nconst fs=require('node:fs'); const config=JSON.parse(fs.readFileSync(process.env.MDLM_DEMO_SHIM_CONFIG,'utf8')); fs.appendFileSync(${JSON.stringify(workerLog)},config.allowedAssignment+'\\n'); console.log('{"status":"lock-conflict"}'); process.exit(5);\n`;
+  const value = await fixture({ piScript });
+  const acceptedExecution = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
+  assert.equal(acceptedExecution.status, 0, acceptedExecution.stderr);
+  const acceptedResult = JSON.parse(acceptedExecution.stdout);
+  assert.equal(acceptedResult.status, 'completed', acceptedExecution.stdout);
+  const oldSnapshotDirectory = acceptedResult.postRunSnapshot.snapshotDirectory;
+  const oldSnapshot = JSON.parse(await readFile(path.join(oldSnapshotDirectory, 'snapshot.json')));
+  const oldLifecycle = oldSnapshot.lifecycleRepository;
+  const acceptedResultPath = path.join(value.scratch, 'accepted-result.json');
+  await writeFile(acceptedResultPath, acceptedExecution.stdout);
+
+  const executions = [
+    ['11111111-1111-4111-8111-111111111111', 'f7'],
+    ['22222222-2222-4222-8222-222222222222', '05'],
+    ['33333333-3333-4333-8333-333333333333', '73'],
+  ].map(([id, content]) => ({ id, scenario: 'create-review-context@1', status: 'completed', content }));
+  for (const execution of executions) {
+    const transactionRoot = `.lifecycle/data/.transactions/${execution.id}`;
+    const outputPath = `${transactionRoot}/REV/REV-${execution.content}/r00001.md`;
+    await mkdir(path.join(value.repository, transactionRoot, 'REV', `REV-${execution.content}`), { recursive: true });
+    await writeFile(path.join(value.repository, outputPath), `${execution.content}\n`);
+    await writeFile(path.join(value.repository, transactionRoot, 'execution.json'), `${JSON.stringify({
+      contract: 'mdlm-scenario-execution@4', id: execution.id, status: 'completed',
+      response: { contract: 'mdlm-assignment-response@1', assignment: `internal-${execution.content}` },
+      definition: { scenario: execution.scenario }, outputs: [{ lifecycleDatum: { path: outputPath } }],
+    }, null, 2)}\n`);
+    git(['add', transactionRoot], value.repository);
+    git(['commit', '-m', `mdlm: publish ${execution.scenario} (${execution.id})`], value.repository);
+  }
+  const finalLifecycle = cleanLifecycle(value.repository);
+  const finalAssignment = '75868589-7e32-4618-ad4d-8cb954b7954d';
+  await writeFile(value.assignmentStatePath, finalAssignment);
+  await writeFile(value.scenarioStatePath, 'ordinary@1');
+
+  const nextStdoutPath = path.join(value.scratch, 'post-run-next.stdout');
+  const nextStderrPath = path.join(value.scratch, 'post-run-next.stderr');
+  const nextExitPath = path.join(value.scratch, 'post-run-next.exit');
+  const next = {
+    ok: true, command: 'next', package: { reference: 'pkg@1', digest: `sha256:${'1'.repeat(64)}`, language: 'lang@1' },
+    contract: 'mdlm-next@1', phase: 'phase@1', assignment: { id: 'a934f171-ff3d-41ad-b3cd-8b72067199d1' },
+    materializedExecutions: executions.map(({ id, scenario, status }) => ({ id, scenario, status })),
+    outcome: 'assignment', diagnostics: [],
+  };
+  await writeFile(nextStdoutPath, `${JSON.stringify(next, null, 2)}\n`);
+  await writeFile(nextStderrPath, '');
+  await writeFile(nextExitPath, '0\n');
+
+  const finalSnapshotDirectory = path.join(value.scratch, 'preserved-final-snapshot');
+  const finalSnapshotExecution = exec(process.execPath, [cli, 'snapshot'], root, JSON.stringify({
+    contract: 'mdlm-demo-snapshot-request@1', repository: value.repository,
+    snapshotDirectory: finalSnapshotDirectory, assignmentId: finalAssignment,
+    timeoutMs: value.request.timeoutMs, postRun: false,
+    journalPath: path.join(assignmentDirectory({ ...value.request, assignmentId: finalAssignment }), 'transaction.json'),
+    piJournalPath: path.join(value.repository, '.git', 'mdlm-pi', 'run.json'),
+    provenance: value.request.provenance,
+  }));
+  assert.equal(finalSnapshotExecution.status, 0, finalSnapshotExecution.stderr);
+  const finalSnapshot = JSON.parse(finalSnapshotExecution.stdout);
+  assert.equal(finalSnapshot.status, 'complete', finalSnapshotExecution.stdout);
+
+  const pin = async file => ({ path: file, digest: `sha256:${createHash('sha256').update(await readFile(file)).digest('hex')}` });
+  value.request.assignmentId = finalAssignment;
+  value.request.signal = 'clean-interrupted-command';
+  value.request.evidenceDirectory = path.join(value.scratch, 'materialized-next-recovery-evidence');
+  value.request.materializedNextRecovery = {
+    acceptedResult: await pin(acceptedResultPath),
+    oldSnapshot: { directory: oldSnapshotDirectory, digest: acceptedResult.postRunSnapshot.digest },
+    nextStdout: await pin(nextStdoutPath),
+    nextStderr: await pin(nextStderrPath),
+    nextExit: await pin(nextExitPath),
+    finalSnapshot: { directory: finalSnapshotDirectory, digest: finalSnapshot.digest },
+  };
+  return {
+    ...value, workerLog, acceptedResult, acceptedResultPath, oldLifecycle, finalLifecycle, finalAssignment,
+    executions, next, nextStdoutPath, nextStderrPath, nextExitPath, finalSnapshotDirectory,
+  };
+}
+
+async function rewriteMaterializedNext(value, update) {
+  update(value.next);
+  await writeFile(value.nextStdoutPath, `${JSON.stringify(value.next, null, 2)}\n`);
+  value.request.materializedNextRecovery.nextStdout.digest =
+    `sha256:${createHash('sha256').update(await readFile(value.nextStdoutPath)).digest('hex')}`;
+}
+
 async function rewritePinnedSnapshot(value, update) {
   const snapshotPath = path.join(value.preservedSnapshotDirectory, 'snapshot.json');
   const manifestPath = path.join(value.preservedSnapshotDirectory, 'manifest.json');
@@ -1706,6 +1794,73 @@ fs.appendFileSync(workerLog,config.allowedAssignment+'\\n'); console.log(JSON.st
   assert.equal(drifted.status, 0, drifted.stderr);
   assert.equal(JSON.parse(drifted.stdout).reason, 'repository-drift');
   assert.equal((await readFile(path.join(value.scratch, 'worker.log'), 'utf8')).trim(), next);
+});
+
+test('operator-pinned materialized next recovery advances three exact publications once in evaluation order', async () => {
+  const value = await materializedNextFixture();
+  const commitCount = Number(git(['rev-list', '--count', 'HEAD'], value.repository));
+
+  const first = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
+
+  assert.equal(first.status, 0, first.stderr);
+  const recovered = JSON.parse(first.stdout);
+  assert.equal(recovered.reason, 'lock-conflict', first.stdout);
+  assert.deepEqual(recovered.materializedNextReconciliation, {
+    status: 'reconciled',
+    fromCommit: value.oldLifecycle.head,
+    toCommit: value.finalLifecycle.head,
+    executions: value.executions.map(execution => execution.id),
+  });
+  assert.deepEqual((await readFile(value.workerLog, 'utf8')).trim().split('\n'), [value.finalAssignment]);
+  assert.equal(Number(git(['rev-list', '--count', 'HEAD'], value.repository)), commitCount);
+  const trusted = JSON.parse(await readFile(path.join(value.repository, '.git', 'mdlm-demo-orchestrator', 'repository-identity.json')));
+  assert.deepEqual(trusted.lifecycleRepository, value.finalLifecycle);
+
+  const replay = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
+  assert.equal(replay.status, 0, replay.stderr);
+  const repeated = JSON.parse(replay.stdout);
+  assert.equal(repeated.materializedNextReconciliation?.status, 'already-reconciled', replay.stdout);
+  assert.equal(Number(git(['rev-list', '--count', 'HEAD'], value.repository)), commitCount);
+});
+
+test('materialized next recovery rejects changed pins, execution lists, package, and live boundary', async () => {
+  const cases = [
+    ['changed pinned bytes', async value => { await writeFile(value.nextStdoutPath, `${JSON.stringify(value.next)}\n`); }],
+    ['reordered execution', value => rewriteMaterializedNext(value, next => { next.materializedExecutions.reverse(); })],
+    ['missing execution', value => rewriteMaterializedNext(value, next => { next.materializedExecutions.pop(); })],
+    ['wrong package', value => rewriteMaterializedNext(value, next => { next.package.digest = `sha256:${'9'.repeat(64)}`; })],
+    ['wrong final Assignment', value => writeFile(value.assignmentStatePath, 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')],
+    ['unrelated live commit', async value => { await writeFile(path.join(value.repository, 'unrelated.txt'), 'unrelated\n'); git(['add', 'unrelated.txt'], value.repository); git(['commit', '-m', 'unrelated'], value.repository); }],
+  ];
+  for (const [name, mutate] of cases) {
+    const value = await materializedNextFixture();
+    await mutate(value);
+    const execution = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
+    assert.equal(execution.status, 0, `${name}: ${execution.stderr}`);
+    const output = JSON.parse(execution.stdout);
+    assert.ok(['materialized-next-reconciliation-failure', 'package-drift'].includes(output.reason), `${name}: ${execution.stdout}`);
+    assert.equal(await stat(value.workerLog).then(() => true, () => false), false, name);
+    const trusted = JSON.parse(await readFile(path.join(value.repository, '.git', 'mdlm-demo-orchestrator', 'repository-identity.json')));
+    assert.deepEqual(trusted.lifecycleRepository, value.oldLifecycle, name);
+  }
+});
+
+test('materialized next reconciliation resumes after durable boundary crash seams without replay', async () => {
+  for (const seam of ['materialized-next-reconciliation-global:after-rename', 'boundary-advanced:after-rename']) {
+    const value = await materializedNextFixture();
+    const commitCount = Number(git(['rev-list', '--count', 'HEAD'], value.repository));
+    const crashed = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request), {
+      ...process.env, MDLM_DEMO_TEST_CRASH: seam,
+    });
+    assert.equal(crashed.status, 86, `${seam}: ${crashed.stderr}`);
+    assert.equal(await stat(value.workerLog).then(() => true, () => false), false, seam);
+
+    const resumed = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
+    assert.equal(resumed.status, 0, `${seam}: ${resumed.stderr}`);
+    assert.equal(JSON.parse(resumed.stdout).materializedNextReconciliation.status, 'reconciled', resumed.stdout);
+    assert.equal(Number(git(['rev-list', '--count', 'HEAD'], value.repository)), commitCount, seam);
+    assert.deepEqual((await readFile(value.workerLog, 'utf8')).trim().split('\n'), [value.finalAssignment], seam);
+  }
 });
 
 test('operator-pinned orphaned child checkpoint completes A once and runs B without replaying A', async () => {

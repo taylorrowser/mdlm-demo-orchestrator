@@ -120,6 +120,12 @@ async function executeRun(request, context, assignmentDirectory, journalPath, sn
   if (!identityMatch) return stopped('run-identity-drift', 'operator, mdlm-pi timeout policy, artifact, installed Process Package, executable target, source, or harness identity changed', snapshotResult, assignmentId);
 
   const journal = await optionalCanonicalJson(journalPath);
+  const materializedNextRecovery = captured.lifecycleRepository.clean === true
+    ? await reconcileMaterializedNext({ request, context, assignmentDirectory, captured, processPackage, runIdentity })
+    : { ok: true, result: null };
+  if (!materializedNextRecovery.ok) {
+    return stopped('materialized-next-reconciliation-failure', materializedNextRecovery.detail, snapshotResult, assignmentId);
+  }
   const checkpointRecovery = captured.lifecycleRepository.clean === true
     ? await reconcilePriorAssignmentCheckpoint({ request, context, assignmentDirectory, captured, processPackage, runIdentity })
     : { ok: true, result: null };
@@ -127,6 +133,7 @@ async function executeRun(request, context, assignmentDirectory, journalPath, sn
     return stopped('checkpoint-reconciliation-failure', checkpointRecovery.detail, snapshotResult, assignmentId);
   }
   const withCheckpointRecovery = output => {
+    if (materializedNextRecovery.result !== null) output.materializedNextReconciliation = materializedNextRecovery.result;
     if (checkpointRecovery.result !== null) output.checkpointReconciliation = checkpointRecovery.result;
     return output;
   };
@@ -1279,6 +1286,306 @@ function reconcileProcessPackage(statusPackage, assignmentPackage, doctorPackage
   }
 }
 
+async function reconcileMaterializedNext({ request, context, assignmentDirectory, captured, processPackage, runIdentity }) {
+  const recovery = request.materializedNextRecovery;
+  const reconciliationDirectory = path.join(context.identityDirectory, 'materialized-next-reconciliations');
+  const journalPath = path.join(reconciliationDirectory, `${assignmentKey(request.assignmentId)}.json`);
+  const existing = await optionalCanonicalJson(journalPath);
+  if (recovery === undefined && existing === null) return { ok: true, result: null };
+  try {
+    if (recovery === undefined) throw new Error('materializedNextRecovery operator pins are required to resume reconciliation');
+    const globalPath = path.join(context.identityDirectory, 'repository-identity.json');
+    const global = await optionalCanonicalJson(globalPath);
+    if (global?.contract !== 'mdlm-demo-repository-identity@1' || !global.lifecycleRepository) {
+      throw new Error('prior durable repository identity is missing or malformed');
+    }
+    const authenticated = await authenticateMaterializedNext({
+      request, context, assignmentDirectory, captured, processPackage, runIdentity, global,
+    });
+    if (existing !== null) {
+      if (!['authenticated', 'boundary-advanced', 'completed'].includes(existing.phase)) {
+        throw new Error(`unsupported materialized next reconciliation phase '${existing.phase}'`);
+      }
+      if (!sameJson(materializedNextEvidence(existing), materializedNextEvidence(authenticated))) {
+        throw new Error('materialized next reconciliation journal differs from the pinned evidence');
+      }
+    } else {
+      await mkdir(reconciliationDirectory, { recursive: true, mode: 0o700 });
+      await syncDirectory(context.identityDirectory);
+      await writeJournal(journalPath, authenticated);
+    }
+    const priorPhase = existing?.phase ?? null;
+    const final = await completeMaterializedNextReconciliation({
+      journalPath, journal: { ...authenticated, phase: priorPhase ?? 'authenticated' }, globalPath, global,
+    });
+    return {
+      ok: true,
+      result: {
+        status: priorPhase === 'completed' ? 'already-reconciled' : 'reconciled',
+        fromCommit: final.priorRepository.head,
+        toCommit: final.completedRepository.head,
+        executions: final.executions.map(execution => execution.id),
+      },
+    };
+  } catch (error) {
+    return { ok: false, detail: `pinned materialized next evidence is not authentic: ${error instanceof Error ? error.message : String(error)}` };
+  }
+}
+
+async function authenticateMaterializedNext({ request, context, assignmentDirectory, captured, processPackage, runIdentity, global }) {
+  const recovery = request.materializedNextRecovery;
+  const acceptedEvidence = await requirePinnedEvidence(recovery.acceptedResult, 'accepted run result');
+  let accepted;
+  try { accepted = JSON.parse(acceptedEvidence.bytes.toString('utf8')); }
+  catch { throw new Error('accepted run result is not valid JSON'); }
+  const acceptedKeys = [
+    'assignmentId', 'commit', 'contract', 'executionId', 'outcome', 'postRunSnapshot', 'snapshot', 'status',
+    'trustedRepositoryAdvance',
+  ].sort();
+  if (!accepted || !sameJson(Object.keys(accepted).sort(), acceptedKeys) ||
+      accepted.contract !== 'mdlm-demo-run-result@2' || accepted.status !== 'completed' ||
+      accepted.outcome !== 'accepted-publication' || accepted.trustedRepositoryAdvance !== true ||
+      typeof accepted.assignmentId !== 'string' || !executionIdPattern.test(accepted.executionId ?? '') ||
+      !/^[0-9a-f]{40,64}$/.test(accepted.commit ?? '')) {
+    throw new Error('accepted run result is not one exact trusted accepted publication');
+  }
+  requireSnapshotResult(accepted.snapshot, 'accepted run initial snapshot');
+  requireSnapshotResult(accepted.postRunSnapshot, 'accepted run post snapshot');
+  if (accepted.postRunSnapshot.snapshotDirectory !== path.resolve(recovery.oldSnapshot.directory) ||
+      accepted.postRunSnapshot.digest !== recovery.oldSnapshot.digest) {
+    throw new Error('accepted run result does not name the operator-pinned old snapshot');
+  }
+
+  const oldSnapshot = await verifySnapshot(recovery.oldSnapshot.directory, recovery.oldSnapshot.digest, true);
+  const finalSnapshot = await verifySnapshot(recovery.finalSnapshot.directory, recovery.finalSnapshot.digest, false);
+  const old = oldSnapshot.snapshot;
+  const final = finalSnapshot.snapshot;
+  if (old.repository !== context.repository || final.repository !== context.repository) {
+    throw new Error('pinned snapshots name a different lifecycle repository');
+  }
+  if (old.lifecycleRepository?.clean !== true || accepted.commit !== old.lifecycleRepository.head ||
+      (!sameJson(global.lifecycleRepository, old.lifecycleRepository) &&
+       !sameJson(global.lifecycleRepository, final.lifecycleRepository))) {
+    throw new Error('accepted result, old snapshot, and trusted repository identity do not agree on an authorized boundary');
+  }
+  if (global.lastAssignment?.id !== accepted.assignmentId || global.lastAssignment.completed !== true ||
+      global.lastAssignment.outcome !== 'accepted-publication') {
+    throw new Error('trusted repository identity does not name the accepted Assignment');
+  }
+  requireSnapshotPackage(old, processPackage, 'old');
+  if (old.diagnosis?.ok !== true || old.diagnosis.baselineRepositoryVerification?.processDrift !== 0) {
+    throw new Error('old snapshot doctor did not prove zero process drift');
+  }
+  if (!old.journal?.present || typeof old.journal.path !== 'string' || typeof old.journal.bytesBase64 !== 'string' ||
+      old.journal.digest !== sha256(Buffer.from(old.journal.bytesBase64, 'base64'))) {
+    throw new Error('old snapshot lacks exact accepted transaction journal bytes');
+  }
+  const sourceDirectory = path.join(path.dirname(assignmentDirectory), assignmentKey(accepted.assignmentId));
+  await requireCanonicalDirectory(sourceDirectory);
+  const transactionPath = path.join(sourceDirectory, 'transaction.json');
+  if (path.resolve(old.journal.path) !== transactionPath) throw new Error('old snapshot journal path differs from the accepted Assignment state');
+  const transactionEvidence = await readCanonicalEvidenceFile(transactionPath);
+  const snapshotTransactionBytes = Buffer.from(old.journal.bytesBase64, 'base64');
+  let transaction;
+  let snapshotTransaction;
+  try {
+    transaction = JSON.parse(transactionEvidence.bytes.toString('utf8'));
+    snapshotTransaction = JSON.parse(snapshotTransactionBytes.toString('utf8'));
+  } catch { throw new Error('accepted Assignment transaction is not valid JSON'); }
+  if (!sameJson(transaction, { ...snapshotTransaction, completedRepository: old.lifecycleRepository })) {
+    throw new Error('accepted Assignment transaction is not the exact finalized old snapshot transaction');
+  }
+  if (transaction.contract !== 'mdlm-demo-transaction-journal@2' || transaction.phase !== 'completed' ||
+      transaction.assignmentId !== accepted.assignmentId || transaction.executionId !== accepted.executionId ||
+      transaction.commit !== accepted.commit || transaction.outcome !== undefined ||
+      transaction.trustedRepositoryAdvance !== true ||
+      !sameProcessPackageIdentity(transaction.package, processPackage)) {
+    throw new Error('accepted Assignment transaction does not prove the accepted result');
+  }
+
+  const nextStdout = await requirePinnedEvidence(recovery.nextStdout, 'mdlm next stdout');
+  const nextStderr = await requirePinnedEvidence(recovery.nextStderr, 'mdlm next stderr');
+  const nextExit = await requirePinnedEvidence(recovery.nextExit, 'mdlm next exit');
+  if (nextStderr.bytes.length !== 0) throw new Error('mdlm next stderr is not empty');
+  if (!nextExit.bytes.equals(Buffer.from('0\n'))) throw new Error('mdlm next exit is not exactly zero');
+  let next;
+  try { next = JSON.parse(nextStdout.bytes.toString('utf8')); }
+  catch { throw new Error('mdlm next stdout is not valid JSON'); }
+  const nextKeys = ['assignment', 'command', 'contract', 'diagnostics', 'materializedExecutions', 'ok', 'outcome', 'package', 'phase'];
+  if (!next || !sameJson(Object.keys(next).sort(), nextKeys) || next.contract !== 'mdlm-next@1' ||
+      next.command !== 'next' || next.ok !== true || next.outcome !== 'assignment' ||
+      typeof next.phase !== 'string' || next.phase.length === 0 ||
+      !next.assignment || !sameJson(Object.keys(next.assignment).sort(), ['id']) ||
+      typeof next.assignment.id !== 'string' || next.assignment.id.length === 0 ||
+      !Array.isArray(next.diagnostics) || next.diagnostics.length !== 0 ||
+      !sameProcessPackageIdentity(next.package, processPackage) ||
+      !Array.isArray(next.materializedExecutions) || next.materializedExecutions.length === 0) {
+    throw new Error('mdlm next stdout is not one exact successful materialization result');
+  }
+  const executionIds = new Set();
+  const executions = next.materializedExecutions.map((execution, index) => {
+    if (!execution || !sameJson(Object.keys(execution).sort(), ['id', 'scenario', 'status']) ||
+        !executionIdPattern.test(execution.id ?? '') || !/^.+@[1-9][0-9]*$/.test(execution.scenario ?? '') ||
+        execution.status !== 'completed' || executionIds.has(execution.id)) {
+      throw new Error(`mdlm next materialized execution ${index} is malformed, duplicate, or incomplete`);
+    }
+    executionIds.add(execution.id);
+    return execution;
+  });
+
+  requireMaterializedFinalBoundary(final, context, request.assignmentId, captured, processPackage, 'pinned final');
+  requireMaterializedFinalBoundary(captured, context, request.assignmentId, captured, processPackage, 'live');
+  if (!sameJson(final.lifecycleRepository, captured.lifecycleRepository) ||
+      !sameJson(final.assignmentRepository, captured.assignmentRepository)) {
+    throw new Error('pinned final snapshot differs from the exact live clean boundary');
+  }
+  for (const [snapshotRecord, label] of [[final, 'pinned final'], [captured, 'live']]) {
+    requireCertainJournalAbsence(snapshotRecord.journal, `${label} runner transaction journal`);
+    requireCertainJournalAbsence(snapshotRecord.piJournal, `${label} mdlm-pi journal`);
+  }
+  const oldRunIdentity = observedRunIdentity(old.provenance, processPackage, request.operator, request);
+  const finalRunIdentity = observedRunIdentity(final.provenance, processPackage, request.operator, request);
+  if (!sameJson(oldRunIdentity, runIdentity) || !sameJson(finalRunIdentity, runIdentity)) {
+    throw new Error('operator, package, tool, source, or harness identity differs across materialized next boundaries');
+  }
+  const commits = await authenticateMaterializedExecutionCommits(
+    context.repository, old.lifecycleRepository.head, captured.lifecycleRepository.head, executions,
+  );
+
+  return {
+    contract: 'mdlm-demo-materialized-next-reconciliation@1',
+    phase: 'authenticated',
+    assignmentId: request.assignmentId,
+    acceptedAssignment: accepted.assignmentId,
+    priorRepository: old.lifecycleRepository,
+    completedRepository: captured.lifecycleRepository,
+    package: processPackage,
+    executions: executions.map((execution, index) => ({ ...execution, commit: commits[index] })),
+    materializedNextRecovery: {
+      acceptedResult: evidenceManifest(acceptedEvidence),
+      oldSnapshot: { directory: oldSnapshot.snapshotDirectory, digest: oldSnapshot.digest, manifest: oldSnapshot.manifest },
+      nextStdout: evidenceManifest(nextStdout), nextStderr: evidenceManifest(nextStderr), nextExit: evidenceManifest(nextExit),
+      finalSnapshot: { directory: finalSnapshot.snapshotDirectory, digest: finalSnapshot.digest, manifest: finalSnapshot.manifest },
+      transaction: evidenceManifest(transactionEvidence),
+    },
+  };
+}
+
+function requireSnapshotResult(value, label) {
+  if (!value || !sameJson(Object.keys(value).sort(), ['contract', 'digest', 'snapshotDirectory', 'status']) ||
+      value.contract !== 'mdlm-demo-snapshot-created@1' || value.status !== 'complete' ||
+      typeof value.snapshotDirectory !== 'string' || !/^sha256:[0-9a-f]{64}$/.test(value.digest ?? '')) {
+    throw new Error(`${label} is malformed`);
+  }
+}
+
+function requireSnapshotPackage(snapshotRecord, processPackage, label) {
+  if (!sameProcessPackageIdentity(snapshotRecord.status?.package, processPackage) ||
+      !sameProcessPackageIdentity(snapshotRecord.diagnosis?.package, processPackage)) {
+    throw new Error(`${label} snapshot Process Package differs`);
+  }
+}
+
+function requireMaterializedFinalBoundary(snapshotRecord, context, assignmentId, captured, processPackage, label) {
+  requireSnapshotPackage(snapshotRecord, processPackage, label);
+  if (snapshotRecord.repository !== context.repository || snapshotRecord.lifecycleRepository?.clean !== true ||
+      snapshotRecord.diagnosis?.ok !== true ||
+      snapshotRecord.diagnosis.baselineRepositoryVerification?.processDrift !== 0 ||
+      snapshotRecord.assignment?.id !== assignmentId || snapshotRecord.assignment.selected !== true ||
+      snapshotRecord.assignment.disposition !== 'active' || !statusHasActiveAssignment(snapshotRecord.status, assignmentId) ||
+      !sameProcessPackageIdentity(snapshotRecord.assignment.package, processPackage) ||
+      !sameJson(snapshotRecord.assignment.repository, snapshotRecord.assignmentRepository) ||
+      !sameRepositoryFingerprint(snapshotRecord.assignmentRepository, snapshotRecord.lifecycleRepository) ||
+      snapshotRecord.lifecycleRepository.head !== captured.lifecycleRepository.head ||
+      snapshotRecord.lifecycleRepository.tree !== captured.lifecycleRepository.tree ||
+      snapshotRecord.lifecycleRepository.trackedState !== captured.lifecycleRepository.trackedState) {
+    throw new Error(`${label} snapshot does not prove the final clean active Assignment boundary`);
+  }
+}
+
+async function authenticateMaterializedExecutionCommits(repository, oldHead, newHead, executions) {
+  const runGit = async args => {
+    const command = await runProcess('git', args, { cwd: repository, timeoutMs: 900_000, env: gitEnvironment() });
+    if (!commandSucceeded(command)) throw new Error(`Git materialization evidence failed for ${args.join(' ')}`);
+    return command.stdout;
+  };
+  await runGit(['merge-base', '--is-ancestor', oldHead, newHead]);
+  const commits = (await runGit(['rev-list', '--reverse', `${oldHead}..${newHead}`])).toString('utf8').trim().split('\n').filter(Boolean);
+  if (commits.length !== executions.length) {
+    throw new Error('materialized commit count differs from the exact mdlm next execution list');
+  }
+  let parent = oldHead;
+  for (const [index, execution] of executions.entries()) {
+    const commit = commits[index];
+    const parents = (await runGit(['rev-list', '--parents', '-n', '1', commit])).toString('utf8').trim().split(' ');
+    if (!sameJson(parents, [commit, parent])) throw new Error('materialized ancestry contains a merge, reorder, or unexplained parent');
+    const subject = (await runGit(['show', '-s', '--format=%s', commit])).toString('utf8').trim();
+    if (subject !== `mdlm: publish ${execution.scenario} (${execution.id})`) {
+      throw new Error('materialized commit subject differs from its execution and evaluation order');
+    }
+    const transactionRoot = `.lifecycle/data/.transactions/${execution.id}`;
+    const paths = (await runGit(['diff-tree', '--no-commit-id', '--name-only', '-r', commit])).toString('utf8').trim().split('\n').filter(Boolean).sort();
+    const executionPath = `${transactionRoot}/execution.json`;
+    if (!paths.includes(executionPath) || paths.some(file => !file.startsWith(`${transactionRoot}/`))) {
+      throw new Error('materialized commit contains a missing execution record or unrelated path');
+    }
+    const treeEntries = (await runGit(['ls-tree', '-r', commit, '--', transactionRoot])).toString('utf8').trim().split('\n').filter(Boolean);
+    if (treeEntries.length !== paths.length || treeEntries.some(entry => !entry.startsWith('100644 blob '))) {
+      throw new Error('materialized transaction contains a symlink, substitution, or unexpected tree entry');
+    }
+    let record;
+    try { record = JSON.parse((await runGit(['show', `${commit}:${executionPath}`])).toString('utf8')); }
+    catch { throw new Error('materialized execution record is not valid JSON'); }
+    const outputPaths = record?.outputs?.map(output => output?.lifecycleDatum?.path);
+    if (record?.contract !== 'mdlm-scenario-execution@4' || record.id !== execution.id ||
+        record.status !== 'completed' || record.definition?.scenario !== execution.scenario ||
+        record.response?.contract !== 'mdlm-assignment-response@1' || typeof record.response.assignment !== 'string' ||
+        !Array.isArray(outputPaths) || outputPaths.length === 0 || new Set(outputPaths).size !== outputPaths.length ||
+        outputPaths.some(output => typeof output !== 'string' || !output.startsWith(`${transactionRoot}/`)) ||
+        !sameJson(paths, [executionPath, ...outputPaths].sort())) {
+      throw new Error('materialized commit does not contain the matching completed execution record and outputs');
+    }
+    parent = commit;
+  }
+  if (parent !== newHead) throw new Error('materialized commit sequence does not end at the final boundary');
+  return commits;
+}
+
+function materializedNextEvidence(value) {
+  return {
+    contract: value.contract, assignmentId: value.assignmentId, acceptedAssignment: value.acceptedAssignment,
+    priorRepository: value.priorRepository, completedRepository: value.completedRepository, package: value.package,
+    executions: value.executions, materializedNextRecovery: value.materializedNextRecovery,
+  };
+}
+
+async function completeMaterializedNextReconciliation({ journalPath, journal, globalPath, global }) {
+  const advancedIdentity = {
+    contract: 'mdlm-demo-repository-identity@1', lifecycleRepository: journal.completedRepository,
+    lastAssignment: { id: journal.acceptedAssignment, outcome: 'accepted-publication', completed: true },
+  };
+  if (journal.phase === 'completed') {
+    if (!sameJson(global, advancedIdentity)) throw new Error('completed materialized next repository identity differs');
+    return journal;
+  }
+  if (journal.phase === 'authenticated') {
+    if (sameJson(global.lifecycleRepository, journal.priorRepository)) {
+      await durableWriteJson(globalPath, advancedIdentity, 'materialized-next-reconciliation-global');
+    } else if (!sameJson(global, advancedIdentity)) {
+      throw new Error('repository identity advanced to an unrelated materialized next boundary');
+    }
+    journal = { ...journal, phase: 'boundary-advanced' };
+    await writeJournal(journalPath, journal);
+  } else if (!sameJson(global, advancedIdentity)) {
+    throw new Error('repository identity differs from the journaled materialized next boundary');
+  }
+  if (journal.phase !== 'completed') {
+    journal = { ...journal, phase: 'completed' };
+    await writeJournal(journalPath, journal);
+  }
+  return journal;
+}
+
 async function reconcilePriorAssignmentCheckpoint({ request, context, assignmentDirectory, captured, processPackage, runIdentity }) {
   const assignmentId = request.assignmentId;
   const globalPath = path.join(context.identityDirectory, 'repository-identity.json');
@@ -2298,8 +2605,9 @@ function required(value, label) { if (typeof value !== 'string' || value.length 
 function validateRunRequest(value) {
   const allowed = new Set([
     'adapterInputsPath', 'assignmentId', 'checkpointRecovery', 'commands', 'contract', 'decisionCatalogPath',
-    'evidenceDirectory', 'harness', 'mdlmPiAssignmentTimeoutMs', 'mdlmPiCommandTimeoutMs', 'operationalFailureRecovery', 'operator',
-    'orphanedCheckpointRecovery', 'provenance', 'repository', 'signal', 'stateDirectory', 'timeoutMs',
+    'evidenceDirectory', 'harness', 'materializedNextRecovery', 'mdlmPiAssignmentTimeoutMs', 'mdlmPiCommandTimeoutMs',
+    'operationalFailureRecovery', 'operator', 'orphanedCheckpointRecovery', 'provenance', 'repository', 'signal',
+    'stateDirectory', 'timeoutMs',
   ]);
   for (const key of Object.keys(value)) {
     if (!allowed.has(key)) throw new Error(`run request.${key} is unsupported`);
@@ -2323,6 +2631,9 @@ function validateRunRequest(value) {
     if (!/^sha256:[0-9a-f]{64}$/.test(recovery.digest ?? '')) {
       throw new Error('checkpointRecovery.digest must be sha256:<64 lowercase hex>');
     }
+  }
+  if (value.materializedNextRecovery !== undefined) {
+    validateMaterializedNextRecovery(value.materializedNextRecovery);
   }
   if (value.orphanedCheckpointRecovery !== undefined) {
     validateOrphanedCheckpointRecovery(value.orphanedCheckpointRecovery);
@@ -2348,6 +2659,27 @@ function validateRunRequest(value) {
     }
   }
 }
+function validateMaterializedNextRecovery(recovery) {
+  const keys = ['acceptedResult', 'finalSnapshot', 'nextExit', 'nextStderr', 'nextStdout', 'oldSnapshot'];
+  if (!recovery || typeof recovery !== 'object' || Array.isArray(recovery) ||
+      !sameJson(Object.keys(recovery).sort(), keys)) {
+    throw new Error(`materializedNextRecovery must contain exactly ${keys.join(', ')}`);
+  }
+  for (const name of ['acceptedResult', 'nextStdout', 'nextStderr', 'nextExit']) {
+    validatePinnedFile(recovery[name], `materializedNextRecovery.${name}`);
+  }
+  for (const name of ['oldSnapshot', 'finalSnapshot']) {
+    const pin = recovery[name];
+    if (!pin || typeof pin !== 'object' || Array.isArray(pin) ||
+        !sameJson(Object.keys(pin).sort(), ['digest', 'directory'])) {
+      throw new Error(`materializedNextRecovery.${name} must contain exactly directory and digest`);
+    }
+    required(pin.directory, `materializedNextRecovery.${name}.directory`);
+    if (!path.isAbsolute(pin.directory)) throw new Error(`materializedNextRecovery.${name}.directory must be an absolute path`);
+    requireSha256(pin.digest, `materializedNextRecovery.${name}.digest`);
+  }
+}
+
 function validateOrphanedCheckpointRecovery(recovery) {
   const keys = [
     'assignmentCheckpoint', 'initialSnapshotDigest', 'initialSnapshotDirectory', 'postSnapshotDigest',

@@ -45,6 +45,7 @@ Every `run` and `resume` first resolves the lifecycle repository and worktree-pr
 | Authenticated A-to-B checkpoint with active B at the exact clean packet boundary | Complete A, advance repository identity once, and return B pre-submission |
 | Later B run with an old-runner A-to-B checkpoint still retained under A's private state | Require the operator-pinned post-run snapshot, reconcile the checkpoint once, complete A, then continue B without invoking A |
 | Parent killed after an orphaned child completed A and checkpointed B, but before the parent wrote child command evidence or a post-run result | Require `orphanedCheckpointRecovery` with every external trust pin, authenticate the complete old and new boundaries, complete A once, then run B without invoking A |
+| Accepted external publication followed by preserved `mdlm next` materializations that were committed outside the runner | Require `materializedNextRecovery`, authenticate the accepted old boundary, exact `mdlm-next@1` bytes, ordered transaction commits, and final active Assignment, then advance repository identity once without replaying `next` or its executions |
 | Captured response, submission not started | Submit the captured exact bytes |
 | Accepted execution with journaled output paths and Git blob identities | Before generic drift checks, finish or recognize the one exact publication commit by HEAD, parent, subject, paths, and blobs |
 | Completed transaction journal | Return `already-completed`; do not submit or commit again |
@@ -208,6 +209,32 @@ The runner records the origin, authority basis, and digest. It does not label th
     "postSnapshotDirectory": "/home/ubuntu/git/mdlm-successor-demos/evidence/issue-212-final/calculator-post214/run-012-snapshot/snapshot-000002",
     "postSnapshotDigest": "sha256:62e54259deb615c39530282ef66df299fa03ecfd569e4032814f08831350f348"
   },
+  "materializedNextRecovery": {
+    "acceptedResult": {
+      "path": "/home/ubuntu/git/mdlm-successor-demos/evidence/issue-212-final/calculator-post214/run-035.runner.stdout",
+      "digest": "sha256:3adf13603980f3b441ba5956ce9a2d36edebb862f25d2f577aaaf3480c75294b"
+    },
+    "oldSnapshot": {
+      "directory": "/home/ubuntu/git/mdlm-successor-demos/evidence/issue-212-final/calculator-post214/run-035-snapshot/snapshot-000002",
+      "digest": "sha256:c7133f84e054b892c7bbe692c21d000b8d9c8d83900f4fb2ad3a7ad3f520a21f"
+    },
+    "nextStdout": {
+      "path": "/home/ubuntu/git/mdlm-successor-demos/evidence/issue-212-final/calculator-post214/post-run-035-next.stdout",
+      "digest": "sha256:d66988a937e8828479b7a09fea90d019246ca343fb8863ee8ba4813d9d06b689"
+    },
+    "nextStderr": {
+      "path": "/home/ubuntu/git/mdlm-successor-demos/evidence/issue-212-final/calculator-post214/post-run-035-next.stderr",
+      "digest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "nextExit": {
+      "path": "/home/ubuntu/git/mdlm-successor-demos/evidence/issue-212-final/calculator-post214/post-run-035-next.exit",
+      "digest": "sha256:9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    "finalSnapshot": {
+      "directory": "/home/ubuntu/git/mdlm-successor-demos/evidence/issue-212-final/calculator-post214/run-036-snapshot/snapshot-000001",
+      "digest": "sha256:2026779c7dc29e5dac5b19a8e7af171735588f28d1434a7d0accd88854ab508f"
+    }
+  },
   "operationalFailureRecovery": {
     "resultPath": "/home/ubuntu/git/mdlm-successor-demos/evidence/issue-212-final/calculator-post214/run-008.runner.stdout",
     "resultDigest": "sha256:940cd1d5ee4d332907ff4d92af5b0d1789e66cb8687c60bb909324d71ad76523",
@@ -280,6 +307,12 @@ The runner records the origin, authority basis, and digest. It does not label th
 ```
 
 The `checkpointRecovery` object is optional except for after-the-fact reconciliation of a checkpoint retained by an older runner. It accepts exactly `snapshotDirectory` and `digest`. Preserve the prior run result before upgrading, then copy its `postRunSnapshot.snapshotDirectory` and `postRunSnapshot.digest` values into the recovery request. Do not derive the requested digest from the checkpoint packet, current repository, or mutable private state.
+
+The `materializedNextRecovery` object is optional except for the preserved run-035 to run-036 materialization gap. It accepts exactly `acceptedResult`, `oldSnapshot`, `nextStdout`, `nextStderr`, `nextExit`, and `finalSnapshot`. File pins accept exactly `path` and `digest`; snapshot pins accept exactly `directory` and `digest`. The runner reads pinned files through no-follow descriptors and verifies complete snapshot manifests before parsing them.
+
+Recovery requires the accepted result and old snapshot to agree on the old clean publication boundary. It then checks the exact successful `mdlm-next@1` result and Process Package, including every completed materialized execution in evaluation order. The commits between the old and final boundaries must form a single-parent chain with one canonical publication subject and one matching transaction directory per listed execution. Each transaction must contain regular files, a completed matching `mdlm-scenario-execution@4`, and exactly its declared outputs. Missing, reordered, extra, merged, unrelated, symlinked, or substituted evidence fails closed.
+
+The pinned final pre-run snapshot and the live initial snapshot must agree on the clean HEAD, tree, tracked-state digest, selected active Assignment, Assignment repository fingerprint, Process Package, successful doctor result, and zero process drift. After authentication, a durable `authenticated`, `boundary-advanced`, and `completed` journal advances repository identity with atomic write, file sync, directory sync, and rename. Recovery never runs `mdlm next` or republishes a transaction. Repeating the same pinned request returns `materializedNextReconciliation.status: "already-reconciled"`.
 
 The `operationalFailureRecovery` object is optional except for migration of the markerless run-008 failure. It accepts exactly `resultPath`, `resultDigest`, `initialSnapshotDirectory`, `initialSnapshotDigest`, `postSnapshotDirectory`, and `postSnapshotDigest`. Copy all six values out-of-band from the preserved prior result. A digest calculated from mutable private state or replacement evidence is not an authorized external pin.
 
