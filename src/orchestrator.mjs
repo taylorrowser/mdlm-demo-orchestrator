@@ -118,7 +118,7 @@ async function executeRun(request, context, assignmentDirectory, journalPath, sn
   const identityMatch = await pinRunIdentity(context.identityDirectory, runIdentity, mode === 'run');
   if (!identityMatch) return stopped('run-identity-drift', 'operator, mdlm-pi timeout policy, artifact, installed Process Package, executable target, source, or harness identity changed', snapshotResult, assignmentId);
 
-  const journal = await optionalJson(journalPath);
+  const journal = await optionalCanonicalJson(journalPath);
   const checkpointRecovery = captured.lifecycleRepository.clean === true
     ? await reconcilePriorAssignmentCheckpoint({ request, context, assignmentDirectory, captured, processPackage, runIdentity })
     : { ok: true, result: null };
@@ -1885,7 +1885,7 @@ function reconciliationEvidence(value) {
 }
 
 async function validateExistingCheckpointTransaction(sourceDirectory, journal, journalPath) {
-  const existing = await optionalJson(path.join(sourceDirectory, 'transaction.json'));
+  const existing = await optionalCanonicalJson(path.join(sourceDirectory, 'transaction.json'));
   if (existing !== null && !sameJson(existing, completedCheckpointTransaction(journal, journalPath))) {
     throw new Error('source Assignment transaction differs from the checkpoint reconciliation');
   }
@@ -1934,7 +1934,7 @@ async function completeCheckpointReconciliation({ journalPath, journal, globalPa
 
   const transactionPath = path.join(sourceDirectory, 'transaction.json');
   const completedSource = completedCheckpointTransaction(journal, journalPath);
-  const existingTransaction = await optionalJson(transactionPath);
+  const existingTransaction = await optionalCanonicalJson(transactionPath);
   if (existingTransaction === null) await durableWriteJson(transactionPath, completedSource, 'checkpoint-reconciliation-assignment');
   else if (!sameJson(existingTransaction, completedSource)) throw new Error('source Assignment transaction differs from the checkpoint reconciliation');
   if (journal.phase !== 'completed') {
@@ -1979,7 +1979,7 @@ async function finishTrustedRun(context, assignmentDirectory, journalPath, assig
     contract: 'mdlm-demo-repository-identity@1', lifecycleRepository: captured.lifecycleRepository,
     lastAssignment: { id: assignmentId, outcome: output.outcome ?? null, completed: true },
   });
-  const journal = await optionalJson(journalPath);
+  const journal = await optionalCanonicalJson(journalPath);
   if (journal?.phase === 'completed') await writeJournal(journalPath, { ...journal, completedRepository: captured.lifecycleRepository });
   else {
     await writeJournal(journalPath, {
@@ -2112,110 +2112,16 @@ function porcelainPaths(bytes) {
 
 async function invoke(assignmentDirectory, program, args, cwd, timeoutMs, input, env) {
   const directory = path.join(assignmentDirectory, 'command-evidence');
-  const commandJournal = path.join(assignmentDirectory, 'command-journal');
   await mkdir(directory, { recursive: true, mode: 0o700 });
-  await mkdir(commandJournal, { recursive: true, mode: 0o700 });
-  await validateSettledCommandJournal(directory, commandJournal);
-  const evidenceIndexes = (await readdir(directory)).flatMap(name => {
-    const match = /^command-([0-9]{6})\.json$/.exec(name);
-    return match ? [Number(match[1])] : [];
-  });
-  const journalIndexes = (await readdir(commandJournal)).flatMap(name => {
-    const match = /^command-([0-9]{6})\.(?:intent|completion)\.json$/.exec(name);
-    return match ? [Number(match[1])] : [];
-  });
-  const count = Math.max(0, ...evidenceIndexes, ...journalIndexes) + 1;
-  const index = String(count).padStart(6, '0');
-  const prefix = path.join(directory, `command-${index}`);
+  const count = (await readdir(directory)).filter(name => /^command-[0-9]{6}\.json$/.test(name)).length + 1;
+  const prefix = path.join(directory, `command-${String(count).padStart(6, '0')}`);
   const environment = env ?? (program === 'git' ? gitEnvironment() : controlledEnvironment());
-  const intentPath = path.join(commandJournal, `command-${index}.intent.json`);
-  const intent = {
-    contract: 'mdlm-demo-command-intent@1', index: count, argv: [program, ...args], cwd,
-    timeoutMs: timeoutMs ?? 30_000,
-    input: input === undefined
-      ? { present: false, bytes: 0, digest: sha256(Buffer.alloc(0)) }
-      : { present: true, bytes: input.length, digest: sha256(input) },
-    environmentNames: Object.keys(environment).sort(), createdAt: new Date().toISOString(),
-  };
-  await durableCreateJson(intentPath, intent, `command-intent-${index}`);
-  const intentEvidence = await immutableFileEvidence(intentPath);
   const output = await runProcess(program, args, { cwd, timeoutMs: timeoutMs ?? 30_000, input, env: environment });
-  const completionPath = path.join(commandJournal, `command-${index}.completion.json`);
-  await durableCreateJson(completionPath, {
-    contract: 'mdlm-demo-command-completion@1', index: count,
-    intent: { path: intentEvidence.path, bytes: intentEvidence.bytes.length, digest: intentEvidence.digest },
-    process: commandRecord(output),
-  }, `command-completion-${index}`);
-  await writeExclusiveDurable(`${prefix}.stdout`, output.stdout);
-  await writeExclusiveDurable(`${prefix}.stderr`, output.stderr);
-  await writeExclusiveDurable(`${prefix}.json`, Buffer.from(`${JSON.stringify(commandRecord(output), null, 2)}\n`));
-  await syncDirectory(directory);
-  output.commandEvidence = { index: count, prefix, intentPath, completionPath };
+  await writeFile(`${prefix}.stdout`, output.stdout, { flag: 'wx', mode: 0o400 });
+  await writeFile(`${prefix}.stderr`, output.stderr, { flag: 'wx', mode: 0o400 });
+  await writeFile(`${prefix}.json`, `${JSON.stringify(commandRecord(output), null, 2)}\n`, { flag: 'wx', mode: 0o400 });
+  output.commandEvidence = { index: count, prefix };
   return output;
-}
-
-async function writeExclusiveDurable(file, bytes) {
-  const handle = await open(file, 'wx', 0o400);
-  try { await handle.writeFile(bytes); await handle.sync(); }
-  finally { await handle.close(); }
-}
-
-async function validateSettledCommandJournal(evidenceDirectory, journalDirectory) {
-  const entries = await readdir(journalDirectory, { withFileTypes: true });
-  const intents = new Map();
-  const completions = new Map();
-  for (const entry of entries) {
-    if (!entry.isFile() || entry.isSymbolicLink() || entry.name.endsWith('.pending')) {
-      throw new Error('command journal contains an uncertain or non-regular entry');
-    }
-    const match = /^command-([0-9]{6})\.(intent|completion)\.json$/.exec(entry.name);
-    if (!match || Number(match[1]) < 1) throw new Error(`command journal contains unsupported entry '${entry.name}'`);
-    const target = match[2] === 'intent' ? intents : completions;
-    const index = Number(match[1]);
-    if (target.has(index)) throw new Error('command journal contains duplicate command state');
-    target.set(index, path.join(journalDirectory, entry.name));
-  }
-  if (!sameJson([...intents.keys()].sort((left, right) => left - right), [...completions.keys()].sort((left, right) => left - right))) {
-    throw new Error('command journal contains an intent with an uncertain child outcome');
-  }
-  for (const [index, intentPath] of intents) {
-    const intentEvidence = await immutableFileEvidence(intentPath);
-    const intent = JSON.parse(intentEvidence.bytes.toString('utf8'));
-    const expectedIntentKeys = ['argv', 'contract', 'createdAt', 'cwd', 'environmentNames', 'index', 'input', 'timeoutMs'].sort();
-    if (!intent || !sameJson(Object.keys(intent).sort(), expectedIntentKeys) || intent.contract !== 'mdlm-demo-command-intent@1' ||
-        intent.index !== index || !Array.isArray(intent.argv) || intent.argv.length === 0 ||
-        intent.argv.some(value => typeof value !== 'string') || typeof intent.cwd !== 'string' || !path.isAbsolute(intent.cwd) ||
-        !Number.isSafeInteger(intent.timeoutMs) || intent.timeoutMs < 1 || typeof intent.createdAt !== 'string' ||
-        !Number.isFinite(Date.parse(intent.createdAt)) ||
-        !Array.isArray(intent.environmentNames) || intent.environmentNames.some(value => typeof value !== 'string' || value.length === 0) ||
-        !sameJson(intent.environmentNames, [...new Set(intent.environmentNames)].sort()) ||
-        !intent.input || !sameJson(Object.keys(intent.input).sort(), ['bytes', 'digest', 'present']) ||
-        typeof intent.input.present !== 'boolean' || !Number.isSafeInteger(intent.input.bytes) || intent.input.bytes < 0 ||
-        !/^sha256:[0-9a-f]{64}$/.test(intent.input.digest ?? '') ||
-        (intent.input.present === false && (intent.input.bytes !== 0 || intent.input.digest !== sha256(Buffer.alloc(0))))) {
-      throw new Error(`command intent ${index} is malformed or tampered`);
-    }
-    const completionEvidence = await immutableFileEvidence(completions.get(index));
-    const completion = JSON.parse(completionEvidence.bytes.toString('utf8'));
-    if (!completion || !sameJson(Object.keys(completion).sort(), ['contract', 'index', 'intent', 'process']) ||
-        completion.contract !== 'mdlm-demo-command-completion@1' || completion.index !== index ||
-        !sameJson(completion.intent, {
-          path: intentEvidence.path, bytes: intentEvidence.bytes.length, digest: intentEvidence.digest,
-        })) {
-      throw new Error(`command completion ${index} does not bind its exact intent`);
-    }
-    let stored;
-    try { stored = await authenticateStoredCommand(evidenceDirectory, String(index).padStart(6, '0')); }
-    catch (error) {
-      if (error.code === 'ENOENT') throw new Error('command journal contains a completion without settled compatibility evidence');
-      throw error;
-    }
-    if (!sameJson(completion.process, stored.record) || !sameJson(intent.argv, stored.record.argv) ||
-        intent.cwd !== stored.record.cwd || intent.timeoutMs !== stored.record.timeoutMs ||
-        Date.parse(stored.record.startedAt) < Date.parse(intent.createdAt)) {
-      throw new Error(`command completion ${index} differs from its intent or compatibility evidence`);
-    }
-  }
 }
 
 async function repositoryContext(repository, timeoutMs) {
@@ -2385,6 +2291,10 @@ async function writeOnceOrMatch(file, bytes) {
   catch (error) { if (error.code !== 'EEXIST' || !Buffer.from(await readFile(file)).equals(bytes)) throw new Error('assignment-specific immutable file drift'); }
 }
 async function optionalJson(file) { try { return JSON.parse(await readFile(file, 'utf8')); } catch (error) { if (error.code === 'ENOENT') return null; throw error; } }
+async function optionalCanonicalJson(file) {
+  try { return JSON.parse((await readCanonicalEvidenceFile(file)).bytes.toString('utf8')); }
+  catch (error) { if (error.code === 'ENOENT') return null; throw error; }
+}
 function result(status, snapshotResult, extra) { return { contract: 'mdlm-demo-run-result@2', status, snapshot: snapshotResult, ...extra }; }
 function stopped(reason, detail, snapshotResult, assignmentId, extra = {}) { return result('stopped', snapshotResult, { assignmentId, recoverable: false, reason, detail, ...extra }); }
 function required(value, label) { if (typeof value !== 'string' || value.length === 0) throw new Error(`${label} must be a nonempty string`); return value; }

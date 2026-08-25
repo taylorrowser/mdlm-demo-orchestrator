@@ -2087,6 +2087,42 @@ test('successive ordinary Assignments use immutable Assignment-keyed state', asy
   assert.equal(JSON.parse(await readFile(path.join(assignmentDirectory(secondRequest), 'identity.json'), 'utf8')).assignmentId, secondAssignment);
 });
 
+test('runner rejects transaction journals that are symlinks or have a symlinked path component', async () => {
+  for (const pathType of ['transaction symlink', 'path-component symlink']) {
+    const workerLog = path.join(os.tmpdir(), `mdlm-demo-transaction-symlink-${process.pid}-${Date.now()}-${Math.random()}`);
+    const piScript = `#!/usr/bin/env node\nrequire('node:fs').writeFileSync(${JSON.stringify(workerLog)},'invoked\\n'); console.log('{"status":"lifecycle-complete"}');\n`;
+    const value = await fixture({ scenarioReference: 'ordinary@1', piScript });
+    value.request.signal = 'clean-interrupted-command';
+    const stateDirectory = value.request.stateDirectory;
+    const assignmentKey = assignmentKeyForTest(value.request.assignmentId);
+    await mkdir(stateDirectory, { recursive: true });
+
+    if (pathType === 'transaction symlink') {
+      const directory = path.join(stateDirectory, 'assignments', assignmentKey);
+      const outside = path.join(value.scratch, 'outside-transaction.json');
+      await mkdir(directory, { recursive: true });
+      await writeFile(outside, '{}\n');
+      await symlink(outside, path.join(directory, 'transaction.json'));
+    } else {
+      const actualAssignments = path.join(value.scratch, 'actual-assignments');
+      const directory = path.join(actualAssignments, assignmentKey);
+      await mkdir(directory, { recursive: true });
+      await writeFile(path.join(directory, 'transaction.json'), '{}\n');
+      await symlink(actualAssignments, path.join(stateDirectory, 'assignments'));
+    }
+
+    const execution = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
+
+    assert.equal(execution.status, 0, `${pathType}: ${execution.stderr}`);
+    const stopped = JSON.parse(execution.stdout);
+    assert.equal(stopped.reason, 'orchestration-failure', `${pathType}: ${execution.stdout}`);
+    assert.match(stopped.detail, pathType === 'transaction symlink'
+      ? /checkpoint evidence is not a regular file/
+      : /checkpoint evidence has a symbolic-link path component/);
+    assert.equal(await stat(workerLog).then(() => true, () => false), false, pathType);
+  }
+});
+
 test('publication rejects traversal, malformed execution identities, and symlink parents before Git staging', async () => {
   const traversal = await fixture({ publicationPath: '.lifecycle/data/.transactions/55555555-5555-4555-8555-555555555555/../outside.json' });
   const traversed = exec(process.execPath, [cli, 'run'], root, JSON.stringify(traversal.request));
@@ -2110,74 +2146,6 @@ test('publication rejects traversal, malformed execution identities, and symlink
   const linkedResult = exec(process.execPath, [cli, 'run'], root, JSON.stringify(linked.request));
   assert.equal(JSON.parse(linkedResult.stdout).reason, 'repository-dirty');
   assert.equal(Number(git(['rev-list', '--count', 'HEAD'], linked.repository)), 1);
-});
-
-test('runner journals command intent before spawn and command completion before legacy triplets', async () => {
-  for (const seam of ['command-intent-000002:after-rename', 'command-completion-000002:after-rename']) {
-    const workerLog = path.join(os.tmpdir(), `mdlm-demo-command-journal-${process.pid}-${Date.now()}-${Math.random()}`);
-    const piScript = `#!/usr/bin/env node\nrequire('node:fs').writeFileSync(${JSON.stringify(workerLog)},'invoked\\n'); console.log('{"status":"lock-conflict"}'); process.exit(5);\n`;
-    const value = await fixture({ scenarioReference: 'ordinary@1', piScript });
-    value.request.signal = 'clean-interrupted-command';
-
-    const crashed = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request), {
-      ...process.env, MDLM_DEMO_TEST_CRASH: seam,
-    });
-
-    assert.equal(crashed.status, 86, `${seam}: ${crashed.stderr}`);
-    const directory = path.join(assignmentDirectory(value.request), 'command-journal');
-    const intentPath = path.join(directory, 'command-000002.intent.json');
-    const intent = JSON.parse(await readFile(intentPath));
-    assert.equal(intent.contract, 'mdlm-demo-command-intent@1');
-    assert.deepEqual(intent.argv.slice(0, 2), [value.mdlmPi, 'run']);
-    const completionPath = path.join(directory, 'command-000002.completion.json');
-    let workerBytes = null;
-    if (seam.startsWith('command-intent')) {
-      assert.equal(await stat(workerLog).then(() => true, () => false), false);
-      assert.equal(await stat(completionPath).then(() => true, () => false), false);
-    } else {
-      workerBytes = await readFile(workerLog, 'utf8');
-      assert.equal(workerBytes, 'invoked\n');
-      const completion = JSON.parse(await readFile(completionPath));
-      assert.equal(completion.contract, 'mdlm-demo-command-completion@1');
-      assert.equal(completion.intent.digest, `sha256:${createHash('sha256').update(await readFile(intentPath)).digest('hex')}`);
-      assert.equal(completion.process.exitStatus, 5);
-      assert.equal(await stat(path.join(assignmentDirectory(value.request), 'command-evidence', 'command-000002.json')).then(() => true, () => false), false);
-    }
-
-    const retried = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
-    assert.equal(retried.status, 0, retried.stderr);
-    const stopped = JSON.parse(retried.stdout);
-    assert.equal(stopped.reason, 'orchestration-failure', retried.stdout);
-    assert.match(stopped.detail, /command journal contains (an intent with an uncertain child outcome|a completion without settled compatibility evidence)/);
-    assert.equal(await stat(path.join(directory, 'command-000003.intent.json')).then(() => true, () => false), false);
-    assert.equal(await stat(workerLog).then(() => readFile(workerLog, 'utf8'), () => null), workerBytes);
-  }
-});
-
-test('runner rejects an altered settled command journal without repeating the child', async () => {
-  const workerLog = path.join(os.tmpdir(), `mdlm-demo-command-journal-tamper-${process.pid}-${Date.now()}`);
-  const piScript = `#!/usr/bin/env node\nrequire('node:fs').appendFileSync(${JSON.stringify(workerLog)},'invoked\\n'); console.log('{"status":"lock-conflict"}'); process.exit(5);\n`;
-  const value = await fixture({ scenarioReference: 'ordinary@1', piScript });
-  value.request.signal = 'clean-interrupted-command';
-  const first = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
-  assert.equal(first.status, 0, first.stderr);
-  assert.equal(JSON.parse(first.stdout).reason, 'lock-conflict', first.stdout);
-
-  const directory = path.join(assignmentDirectory(value.request), 'command-journal');
-  const intentPath = path.join(directory, 'command-000002.intent.json');
-  const intent = JSON.parse(await readFile(intentPath));
-  intent.environmentNames.push(intent.environmentNames[0]);
-  await chmod(intentPath, 0o600);
-  await writeFile(intentPath, `${JSON.stringify(intent, null, 2)}\n`);
-  await chmod(intentPath, 0o400);
-
-  const retried = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
-  assert.equal(retried.status, 0, retried.stderr);
-  const stopped = JSON.parse(retried.stdout);
-  assert.equal(stopped.reason, 'orchestration-failure', retried.stdout);
-  assert.match(stopped.detail, /command intent 2 is malformed or tampered/);
-  assert.equal(await readFile(workerLog, 'utf8'), 'invoked\n');
-  assert.equal(await stat(path.join(directory, 'command-000003.intent.json')).then(() => true, () => false), false);
 });
 
 test('durable submitting transition prevents duplicate submit across injected crash seams', async () => {
