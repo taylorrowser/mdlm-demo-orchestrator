@@ -35,7 +35,6 @@ async function fixture({
   git(['init', '-b', 'main'], repository); git(['config', 'user.name', 'Test'], repository); git(['config', 'user.email', 'test@example.invalid'], repository);
   await writeFile(path.join(repository, 'README.md'), 'fixture\n'); git(['add', '.'], repository); git(['commit', '-m', 'initial'], repository);
   const base = git(['rev-parse', 'HEAD'], repository);
-  const trackedState = `sha256:${createHash('sha256').update(`${base}\0staged\0\0worktree\0`).digest('hex')}`;
   const sourceRepository = path.join(scratch, 'source');
   await mkdir(sourceRepository);
   git(['init', '-b', 'main'], sourceRepository); git(['config', 'user.name', 'Test'], sourceRepository); git(['config', 'user.email', 'test@example.invalid'], sourceRepository);
@@ -64,13 +63,14 @@ async function fixture({
   await writeFile(observationsPath, JSON.stringify({ contract: 'mdlm-external-observations@1', assignment, scenario, product: { repository: 'https://example.invalid/product.git', commit: 'b'.repeat(40), tree: 'c'.repeat(40) } }));
   await writeFile(adapterInputsPath, JSON.stringify({ contract: 'mdlm-external-adapter-inputs@1', scenarios: { [scenario]: { kind: 'exact-response', responsePath, observationsPath } } }));
   const script = `#!/usr/bin/env node
-const fs=require('node:fs'),crypto=require('node:crypto'),path=require('node:path');
+const fs=require('node:fs'),crypto=require('node:crypto'),path=require('node:path'),{execFileSync}=require('node:child_process');
 const a=process.argv.slice(2), root=process.cwd(), log=${JSON.stringify(path.join(scratch, 'calls.log'))};
 fs.appendFileSync(log,JSON.stringify(a)+'\\n');
-const assignment=fs.readFileSync(${JSON.stringify(assignmentStatePath)},'utf8'), scenario=fs.readFileSync(${JSON.stringify(scenarioStatePath)},'utf8'), head=${JSON.stringify(base)};
+const assignment=fs.readFileSync(${JSON.stringify(assignmentStatePath)},'utf8'), scenario=fs.readFileSync(${JSON.stringify(scenarioStatePath)},'utf8');
 const malformedPath=${JSON.stringify(malformedDigestPath)}, malformedResponses=fs.existsSync(malformedPath)?[{digest:fs.readFileSync(malformedPath,'utf8'),diagnostics:[{code:'FIX',message:'correct it'}]}]:[];
 const statusPackage=${JSON.stringify(statusPackage)}, assignmentPackage=${JSON.stringify(assignmentPackage)}, doctorPackage=${JSON.stringify(doctorPackage)}, packetPackage=${JSON.stringify(packetPackage)};
-const repo={head,trackedState:${JSON.stringify(trackedState)}};
+function repository(){const head=execFileSync('git',['rev-parse','HEAD^{commit}'],{encoding:'utf8'}).trim(); const staged=execFileSync('git',['diff','--binary','--no-ext-diff','--cached','HEAD','--'],{encoding:'utf8'}); const worktree=execFileSync('git',['diff','--binary','--no-ext-diff','--'],{encoding:'utf8'}); return {head,trackedState:'sha256:'+crypto.createHash('sha256').update(head+'\\0staged\\0'+staged+'\\0worktree\\0'+worktree).digest('hex')}}
+const repo=repository();
 function out(x){process.stdout.write(JSON.stringify(x)+'\\n')}
 if(a[0]==='doctor') out({ok:true,command:'doctor',package:doctorPackage,baselineRepositoryVerification:{verifiedBaselines:0,processDrift:0},index:{rebuilt:false,data:0,path:'.lifecycle/generated/indexes/data.json'},report:{rebuilt:false,data:0,path:'.lifecycle/generated/reports/lifecycle.json'},diagnostics:[]});
 else if(a[0]==='status') out({contract:'mdlm-status@1',ok:true,command:'status',package:statusPackage,currentOutcome:{outcome:'assignment',assignment:{allocation:'active',id:assignment}},recentTransaction:{available:false}});
@@ -420,23 +420,29 @@ test('mdlm-pi exit codes and typed results distinguish lifecycle outcomes from o
   }
 });
 
-test('typed reserved stops distinguish pre-submission interception from an accepted Assignment checkpoint', async () => {
+test('typed reserved stops trust only a different active Assignment checkpoint', async () => {
+  const accepted = '44444444-4444-4444-8444-444444444444';
+  const next = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
   for (const [type, expectedStatus, outcome] of [
     ['external-adapter', 'stopped', 'pre-submission-stop'],
     ['assignment-checkpoint', 'stopped', 'pre-submission-stop'],
     ['accepted-assignment-then-external', 'completed', 'accepted-publication'],
   ]) {
+    const different = type === 'accepted-assignment-then-external';
     const stop = {
       contract: 'mdlm-demo-reserved-stop@1', type, phase: 'before-worker', reason: 'fixture',
-      assignment: type === 'accepted-assignment-then-external'
-        ? 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
-        : '44444444-4444-4444-8444-444444444444',
-      scenario: type === 'accepted-assignment-then-external' ? 'execute-verification-run@1' : 'ordinary@1',
-      ...(type === 'accepted-assignment-then-external'
-        ? { completedAssignment: '44444444-4444-4444-8444-444444444444' }
-        : {}),
+      assignment: different ? next : accepted,
+      scenario: type === 'external-adapter' || different ? 'execute-verification-run@1' : 'ordinary@1',
+      ...(type === 'external-adapter' ? {} : { completedAssignment: accepted }),
     };
-    const piScript = `#!/usr/bin/env node\nconst fs=require('node:fs'); const path=require('node:path'); const config=JSON.parse(fs.readFileSync(process.env.MDLM_DEMO_SHIM_CONFIG,'utf8')); fs.mkdirSync(config.stopDirectory,{recursive:true}); const packetPath=path.join(config.stopDirectory,'${type}.json'); fs.writeFileSync(packetPath,JSON.stringify({contract:'mdlm-assignment-packet@2',command:'scenario.prepare',ok:true,assignment:{id:'${stop.assignment}'},scenario:{reference:'${stop.scenario}'}}),{flag:'wx'}); const stop=${JSON.stringify(stop)}; stop.packetPath=packetPath; console.error(JSON.stringify({status:'operational-failure',cause:stop})); process.exit(1);\n`;
+    const piScript = `#!/usr/bin/env node
+const fs=require('node:fs'),path=require('node:path'); const config=JSON.parse(fs.readFileSync(process.env.MDLM_DEMO_SHIM_CONFIG,'utf8'));
+const scratch=path.dirname(path.dirname(config.realMdlm));
+if(${different}){fs.writeFileSync(path.join(scratch,'assignment-id'),'${next}'); fs.writeFileSync(path.join(scratch,'scenario-reference'),'execute-verification-run@1');}
+fs.mkdirSync(config.stopDirectory,{recursive:true}); const packetPath=path.join(config.stopDirectory,'${type}.json');
+fs.writeFileSync(packetPath,JSON.stringify({contract:'mdlm-assignment-packet@2',command:'scenario.prepare',ok:true,assignment:{id:'${stop.assignment}'},package:config.package,repository:config.repository,scenario:{reference:'${stop.scenario}'},responseSchema:{},exactInputs:[]}),{flag:'wx'});
+const stop=${JSON.stringify(stop)}; stop.packetPath=packetPath; console.error(JSON.stringify({status:'operational-failure',cause:stop})); process.exit(1);
+`;
     const value = await fixture({ scenarioReference: 'ordinary@1', piScript });
     value.request.signal = 'clean-interrupted-command';
     const execution = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
@@ -445,14 +451,152 @@ test('typed reserved stops distinguish pre-submission interception from an accep
     assert.equal(output.status, expectedStatus, type);
     assert.equal(output.outcome, outcome, type);
     assert.equal(output.reason, 'reserved-shim-stop', type);
-    if (type === 'accepted-assignment-then-external') {
+    assert.equal(output.trustedRepositoryAdvance, different, type);
+    if (different) {
       assert.deepEqual(output.nextAssignment, {
-        id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        id: next,
         scenario: 'execute-verification-run@1',
         phase: 'pre-submission',
       });
+    } else {
+      assert.equal(output.nextAssignment, undefined);
     }
   }
+});
+
+test('a retained checkpoint cannot bless a different post-run repository boundary', async () => {
+  const accepted = '44444444-4444-4444-8444-444444444444';
+  const next = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+  const piScript = `#!/usr/bin/env node
+const fs=require('node:fs'),path=require('node:path'),{execFileSync}=require('node:child_process'); const config=JSON.parse(fs.readFileSync(process.env.MDLM_DEMO_SHIM_CONFIG,'utf8'));
+const scratch=path.dirname(path.dirname(config.realMdlm)); fs.writeFileSync(path.join(process.cwd(),'untrusted.txt'),'untrusted advance\\n'); execFileSync('git',['add','untrusted.txt']); execFileSync('git',['commit','-m','untrusted advance']);
+fs.writeFileSync(path.join(scratch,'assignment-id'),'${next}'); fs.writeFileSync(path.join(scratch,'scenario-reference'),'ordinary-b@1');
+fs.mkdirSync(config.stopDirectory,{recursive:true}); const packetPath=path.join(config.stopDirectory,'${next}.json'); fs.writeFileSync(packetPath,JSON.stringify({contract:'mdlm-assignment-packet@2',command:'scenario.prepare',ok:true,assignment:{id:'${next}'},package:config.package,repository:config.repository,scenario:{reference:'ordinary-b@1'},responseSchema:{},exactInputs:[]}));
+const stop={contract:'mdlm-demo-reserved-stop@1',type:'assignment-checkpoint',phase:'before-worker',completedAssignment:'${accepted}',assignment:'${next}',scenario:'ordinary-b@1',packetPath}; console.error(JSON.stringify({status:'operational-failure',details:stop})); process.exit(1);
+`;
+  const value = await fixture({ scenarioReference: 'ordinary-a@1', piScript });
+  value.request.signal = 'clean-interrupted-command';
+
+  const execution = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
+
+  assert.equal(execution.status, 0, execution.stderr);
+  const output = JSON.parse(execution.stdout);
+  assert.equal(output.status, 'stopped');
+  assert.equal(output.reason, 'assignment-checkpoint-authentication-failure');
+  assert.match(output.detail, /repository identity differs/);
+  assert.equal(output.trustedRepositoryAdvance, false);
+  assert.equal(output.nextAssignment, undefined);
+  const identity = JSON.parse(await readFile(path.join(value.repository, '.git', 'mdlm-demo-orchestrator', 'repository-identity.json'), 'utf8'));
+  assert.equal(identity.lastAssignment, null);
+  assert.notEqual(identity.lifecycleRepository.head, git(['rev-parse', 'HEAD'], value.repository));
+});
+
+test('typed stop text without an exact retained packet is never a trusted checkpoint', async () => {
+  const stop = {
+    contract: 'mdlm-demo-reserved-stop@1', type: 'assignment-checkpoint', phase: 'before-worker',
+    completedAssignment: '44444444-4444-4444-8444-444444444444',
+    assignment: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', scenario: 'ordinary-b@1',
+    packetPath: '/tmp/arbitrary-packet.json',
+  };
+  const piScript = `#!/usr/bin/env node\nconsole.log(${JSON.stringify(JSON.stringify(stop))}); console.error(JSON.stringify({status:'operational-failure',details:${JSON.stringify(stop)}})); process.exit(1);\n`;
+  const value = await fixture({ scenarioReference: 'ordinary@1', piScript });
+  value.request.signal = 'clean-interrupted-command';
+
+  const execution = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
+
+  assert.equal(execution.status, 0, execution.stderr);
+  const output = JSON.parse(execution.stdout);
+  assert.equal(output.status, 'stopped');
+  assert.equal(output.reason, 'mdlm-pi-contract-failure');
+  assert.equal(output.trustedRepositoryAdvance, undefined);
+  assert.equal(output.nextAssignment, undefined);
+});
+
+test('calculator run-003 ordinary A to B checkpoint advances the trusted repository boundary once', async () => {
+  const resultFixturePath = path.join(root, 'test', 'fixtures', 'calculator-run-003-result.json');
+  const packetFixturePath = path.join(root, 'test', 'fixtures', 'calculator-run-003-stop-packet.json');
+  const resultBytes = await readFile(resultFixturePath);
+  const packetBytes = await readFile(packetFixturePath);
+  assert.equal(createHash('sha256').update(resultBytes).digest('hex'), 'e160ce681ad4e3703bcd448e26bd26420dcfb13f643651c6fdf93ed167535cc3');
+  assert.equal(createHash('sha256').update(packetBytes).digest('hex'), '9489f196547f0e70a4d0432f419c35157be67d03aa4f13ffd93a627bd65e86f8');
+  const run003 = JSON.parse(resultBytes);
+  const exactPacket = JSON.parse(packetBytes);
+  const accepted = run003.assignmentId;
+  const checkpoint = run003.stop;
+  const next = checkpoint.assignment;
+  assert.equal(checkpoint.type, 'assignment-checkpoint');
+  assert.equal(checkpoint.completedAssignment, undefined);
+  assert.equal(next, exactPacket.assignment.id);
+  assert.equal(exactPacket.repository.head, '856aab804ebb097598cf75cc437f933bd0e5569d');
+  assert.equal(exactPacket.scenario.reference, 'freeze-source-boundary@1');
+
+  const piScript = `#!/usr/bin/env node
+const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto'),{execFileSync}=require('node:child_process');
+const config=JSON.parse(fs.readFileSync(process.env.MDLM_DEMO_SHIM_CONFIG,'utf8'));
+const scratch=path.dirname(path.dirname(config.realMdlm)), assignmentState=path.join(scratch,'assignment-id'), scenarioState=path.join(scratch,'scenario-reference'), workerLog=path.join(scratch,'worker.log');
+if(config.allowedAssignment==='${accepted}'){
+  fs.writeFileSync(path.join(process.cwd(),'accepted-a.txt'),'accepted A publication 1\\n'); execFileSync('git',['add','accepted-a.txt']); execFileSync('git',['commit','-m','accepted A publication 1']);
+  fs.writeFileSync(path.join(process.cwd(),'accepted-a-2.txt'),'accepted A publication 2\\n'); execFileSync('git',['add','accepted-a-2.txt']); execFileSync('git',['commit','-m','accepted A publication 2']);
+  fs.writeFileSync(assignmentState,'${next}'); fs.writeFileSync(scenarioState,'freeze-source-boundary@1');
+  const head=execFileSync('git',['rev-parse','HEAD^{commit}'],{encoding:'utf8'}).trim(), trackedState='sha256:'+crypto.createHash('sha256').update(head+'\\0staged\\0\\0worktree\\0').digest('hex');
+  const packet=JSON.parse(fs.readFileSync(${JSON.stringify(packetFixturePath)},'utf8')); packet.repository={head,trackedState};
+  fs.mkdirSync(config.stopDirectory,{recursive:true}); const packetPath=path.join(config.stopDirectory,'${next}.json'); fs.writeFileSync(packetPath,JSON.stringify(packet));
+  const stop=${JSON.stringify(checkpoint)}; stop.packetPath=packetPath; stop.completedAssignment='${accepted}';
+  console.error(JSON.stringify({status:'operational-failure',error:'MDLM could not prepare the Assignment',details:stop},null,2)); process.exit(1);
+}
+fs.appendFileSync(workerLog,config.allowedAssignment+'\\n'); console.log(JSON.stringify({status:'lifecycle-complete'}));
+`;
+  const value = await fixture({
+    scenarioReference: 'ordinary-a@1',
+    piScript,
+    statusPackage: exactPacket.package,
+    assignmentPackage: exactPacket.package,
+    doctorPackage: { id: 'mdlm-bootstrap', version: '0.74.0', ...exactPacket.package },
+    packetPackage: exactPacket.package,
+  });
+  value.request.signal = 'clean-interrupted-command';
+  value.request.assignmentId = accepted;
+  await writeFile(value.assignmentStatePath, accepted);
+
+  const first = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
+
+  assert.equal(first.status, 0, first.stderr);
+  const completedA = JSON.parse(first.stdout);
+  assert.equal(completedA.status, 'completed');
+  assert.equal(completedA.assignmentId, accepted);
+  assert.equal(completedA.outcome, 'accepted-publication');
+  assert.equal(completedA.trustedRepositoryAdvance, true);
+  assert.deepEqual(completedA.nextAssignment, { id: next, scenario: 'freeze-source-boundary@1', phase: 'pre-submission' });
+  const postSnapshot = JSON.parse(await readFile(path.join(completedA.postRunSnapshot.snapshotDirectory, 'snapshot.json'), 'utf8'));
+  assert.equal(postSnapshot.lifecycleRepository.clean, true);
+  assert.equal(postSnapshot.assignment.id, next);
+  assert.equal(postSnapshot.assignment.selected, true);
+  assert.equal(postSnapshot.assignment.disposition, 'active');
+  assert.deepEqual(postSnapshot.assignment.repository, postSnapshot.lifecycleRepository && {
+    head: postSnapshot.lifecycleRepository.head,
+    trackedState: postSnapshot.lifecycleRepository.trackedState,
+  });
+  const repositoryIdentityPath = path.join(value.repository, '.git', 'mdlm-demo-orchestrator', 'repository-identity.json');
+  const trustedBoundary = JSON.parse(await readFile(repositoryIdentityPath, 'utf8'));
+  assert.deepEqual(trustedBoundary.lifecycleRepository, postSnapshot.lifecycleRepository);
+  assert.deepEqual(trustedBoundary.lastAssignment, { id: accepted, outcome: 'accepted-publication', completed: true });
+
+  const nextRequest = { ...value.request, assignmentId: next };
+  const second = exec(process.execPath, [cli, 'run'], root, JSON.stringify(nextRequest));
+  assert.equal(second.status, 0, second.stderr);
+  assert.equal(JSON.parse(second.stdout).status, 'completed', second.stdout);
+  assert.equal((await readFile(path.join(value.scratch, 'worker.log'), 'utf8')).trim(), next);
+  const prepares = (await readFile(path.join(value.scratch, 'calls.log'), 'utf8')).trim().split('\n').map(JSON.parse)
+    .filter(args => args[0] === 'scenario' && args[1] === 'prepare');
+  assert.equal(prepares.filter(args => args[2] === accepted).length, 1);
+
+  await writeFile(path.join(value.repository, 'unrelated.txt'), 'unrelated advancement\n');
+  git(['add', 'unrelated.txt'], value.repository);
+  git(['commit', '-m', 'unrelated advancement'], value.repository);
+  const drifted = exec(process.execPath, [cli, 'resume'], root, JSON.stringify({ ...nextRequest, contract: 'mdlm-demo-resume-request@1' }));
+  assert.equal(drifted.status, 0, drifted.stderr);
+  assert.equal(JSON.parse(drifted.stdout).reason, 'repository-drift');
+  assert.equal((await readFile(path.join(value.scratch, 'worker.log'), 'utf8')).trim(), next);
 });
 
 test('controlled worker environment strips Git, Node, and shell startup injection variables', async () => {

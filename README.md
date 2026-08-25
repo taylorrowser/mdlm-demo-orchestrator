@@ -28,7 +28,7 @@ Tests use the approved public seams.
 - `register-pilot-target@1`
 - `execute-verification-run@1`
 
-The shim also stops before the next Assignment. When Assignment A has completed and the next prepared Assignment B is external, it emits `accepted-assignment-then-external`: A is a trusted completion and B remains pre-submission. Before interception, the shim runs the same successful `scenario prepare` contract validator as the orchestrator. An exit-0 result with a wrong command, Assignment, package, repository, Scenario, response schema, or exact-input shape is a typed command-contract failure. The orchestrator authenticates a stop against the exact packet retained in its private stop directory; arbitrary process text is not enough. The shim does not inspect worker text, terminal output, or transcript phrases.
+The shim also stops before the first different Assignment B prepared after Assignment A. It emits `assignment-checkpoint` for an ordinary B or `accepted-assignment-then-external` for an external B, and both stops explicitly name `completedAssignment` A. The runner trusts either stop as completion of A only after authenticating the exact retained B packet and proving from a complete post-run snapshot that B is the selected active Assignment at the packet's clean repository and Process Package boundary. A valid result returns B as `pre-submission` and advances repository-wide identity to that exact boundary; B's later run uses its own Assignment-keyed state. Same-Assignment stops, arbitrary process text, packets outside the private shim stop directory, and packet, package, repository, or status mismatches never advance trust. Before interception, the shim runs the same successful `scenario prepare` contract validator as the orchestrator. An exit-0 result with a wrong command, Assignment, package, repository, Scenario, response schema, or exact-input shape is a typed command-contract failure. The shim does not inspect worker text, terminal output, or transcript phrases.
 
 ## Recovery rules
 
@@ -41,6 +41,7 @@ Every `run` and `resume` first resolves the lifecycle repository and worktree-pr
 | Lost correction worker session with an authentic durable `mdlm-pi` journal | Resume only if the installed controller exposes an authentic journal-resume operation; otherwise stop without stdin replay or Assignment restart |
 | Clean command interruption before submission starts | Continue the same Assignment |
 | External adapter stop before submission | Re-run the adapter against the same packet bytes |
+| Authenticated A-to-B checkpoint with active B at the exact clean packet boundary | Complete A, advance repository identity once, and return B pre-submission |
 | Captured response, submission not started | Submit the captured exact bytes |
 | Accepted execution with journaled output paths and Git blob identities | Before generic drift checks, finish or recognize the one exact publication commit by HEAD, parent, subject, paths, and blobs |
 | Completed transaction journal | Return `already-completed`; do not submit or commit again |

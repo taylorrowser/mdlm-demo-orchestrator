@@ -1,0 +1,1215 @@
+{
+  "ok": true,
+  "command": "scenario.prepare",
+  "contract": "mdlm-assignment-packet@2",
+  "assignment": {
+    "id": "6db7bda7-7043-446b-a38a-2daab6c6df3e"
+  },
+  "package": {
+    "reference": "mdlm-bootstrap@0.74.0",
+    "digest": "sha256:ee99e698d36e406a836a796a36fc1db2d2451072ad662c0e06805ab5c20fe5ac",
+    "language": "mdlm-expression@1"
+  },
+  "repository": {
+    "head": "856aab804ebb097598cf75cc437f933bd0e5569d",
+    "trackedState": "sha256:e73879f6b29faffef20950bdd9c25fef11ed5fac9ab5f0e13eb5554e5b841e65"
+  },
+  "phase": "phase-0-wayfinding@5",
+  "obligation": {
+    "instance": "source-boundary-required@1:QST-21219K6RVZ-r00001:mdlm-bootstrap@0.74.0#sha256:ee99e698d36e406a836a796a36fc1db2d2451072ad662c0e06805ab5c20fe5ac",
+    "definition": "source-boundary-required@1",
+    "subject": "QST-21219K6RVZ-r00001"
+  },
+  "scenario": {
+    "reference": "freeze-source-boundary@1",
+    "definition": {
+      "id": "freeze-source-boundary",
+      "version": 1
+    }
+  },
+  "prompt": {
+    "reference": "prompts/freeze-source-boundary.md@1",
+    "path": "prompts/freeze-source-boundary.md",
+    "digest": "sha256:9aea639f172a83899a2036b86db616fd709b18e32694ed52b9f1ad4c7ec76697",
+    "content": "---\nid: freeze-source-boundary\nversion: 1\nscenario: freeze-source-boundary\n---\n\n# Freeze an exact same-lineage source boundary\n\nRead, in order:\n\n1. `skills/lifecycle-data.md@1`\n2. `skills/traceability.md@1`\n3. `skills/baseline-model.md@1`\n\nCreate one `source-boundary` BSL for the exact input QST Revision. Set its scope\nto that exact Revision ID, its group to `SAME-LINEAGE`, and include exactly that\nRevision as its sole definition member with no evidence members. Freeze and\nverify it atomically through this Scenario. Do not use piecemeal baseline\ncommands, Review Context provenance, a mutable alias, or any unrelated Revision.\n\nThe boundary preserves the source as immutable history and permits the package's\nsubsequent same-lineage Scenario to publish the next QST Revision.\n\nBefore proposing authored Lifecycle Data, apply the bounded ephemeral\n`skills/author-preflight.md@2` contract.\n",
+    "skills": [
+      {
+        "reference": "skills/lifecycle-data.md@1",
+        "path": "skills/lifecycle-data.md",
+        "digest": "sha256:f742ca75cd39e4d1d4947082c1e9f65813b4847906b0b7e2f2b876e70a8a765e",
+        "content": "---\nid: lifecycle-data\nversion: 1\n---\n\n# Lifecycle data\n\n- Treat lifecycle files, not generated indexes or chat history, as durable truth.\n- Let the kernel create and validate envelope fields: identity, revision, type,\n  links, provenance, and Markdown body projection.\n- Author only fields permitted by the resolved type payload schema. Do not place\n  type-specific data beside the kernel envelope.\n- Create opaque stable IDs with the type prefix and Crockford Base32 payload.\n- Edit only an unfrozen draft. A change to frozen content creates the next revision.\n- Validate outgoing links against the source type's resolved link contracts; never\n  author a backlink.\n- Use stable targets for evolving semantic relationships and exact revision targets\n  for reviews, decisions, evidence, composition, and promotion.\n- Populate `created_by` with the exact scenario, prompt, process, skills, and\n  machine-readable policies.\n- Validate the envelope, flattened payload schema, links, and one-open-draft rule.\n- Never rewrite, renumber, silently merge, or repair frozen history.\n"
+      },
+      {
+        "reference": "skills/traceability.md@1",
+        "path": "skills/traceability.md",
+        "digest": "sha256:420a7dc5f86a1a4565b3cfeb3a51013ed7efd117de82b5220b5a0bfabbdb2b9b",
+        "content": "---\nid: traceability\nversion: 1\n---\n\n# Traceability\n\n- Start from exact input revisions and follow validated outbound links.\n- Confirm target type and required identity form for every relationship.\n- Compute backlinks; never author them.\n- For each parent, account for covered, missing, overlapping, and intentionally\n  terminated behavior.\n- For each child, identify an authorized parent or applicable decision.\n- At baseline freeze, resolve stable targets to exact revisions and retain that map.\n- Treat link, target-resolution, allocation, and evidence-target changes as impact,\n  not merely textual differences.\n- Report uncertainty and graph gaps. Never infer a durable link from proximity or\n  naming alone.\n"
+      },
+      {
+        "reference": "skills/baseline-model.md@1",
+        "path": "skills/baseline-model.md",
+        "digest": "sha256:a5afaf3101c9f8294cc9c82f1693b5b760b1958228f1de561a42df66ccc8dcb3",
+        "content": "---\nid: baseline-model\nversion: 1\n---\n\n# Baseline model\n\n- A baseline is an immutable exact snapshot, never a mutable label for “current.”\n- Separate definition members from supporting evidence.\n- Use exact revision IDs for members, evidence, and composed baselines.\n- Hash exact file bytes with SHA-256 and capture resolved outbound-link targets.\n- Record the exact process manifest and asset references used by the snapshot.\n- Freeze atomically only after schema, reference, review, composition, and collision\n  checks pass.\n- Candidate and accepted baselines are distinct artifacts; promotion references the\n  exact candidate.\n- Currentness is explicit by role and scope through `supersedes`; an accepted\n  baseline remains authoritative while a newer candidate is evaluated.\n"
+      },
+      {
+        "reference": "skills/author-preflight.md@2",
+        "path": "skills/author-preflight.md",
+        "digest": "sha256:189d31acb7da3ff8f3bdb13efd6ade0d4c832b1bb5c9e1b97b7e679776046824",
+        "content": "---\nid: author-preflight\nversion: 2\n---\n\n# Ephemeral author preflight\n\nBefore proposing authored Lifecycle Data, inspect the proposal in isolation using\nthe applicable independent-Review rubric and the exact Assignment packet.\n\n1. Check contract validity, exact traceability, information allocation, scope,\n   internal consistency, verifiability, and proportionality.\n2. Treat a concern as blocking only when you can name the exact violated\n   criterion, concrete evidence or counterexample, and the material consequence\n   that prevents safe use. Correct every such concern before publication.\n3. Correct clear `needs-triage` concerns when they are local and authorized.\n   Do not expand scope to satisfy advisory preferences.\n4. For a correction, compare the proposal with the exact prior Revision. Name\n   each behavior or commitment added, removed, strengthened, or deferred, and\n   trace every change to a blocking finding or exact authority. Prefer the\n   smallest local delta that resolves the finding. Explicitly compare a bounded\n   correction, deferral or removal, and retention of broader behavior; do not\n   infer stakeholder need from determinism, prior elaboration, or an agent\n   proposal. If safe correction requires a new stakeholder-visible choice that\n   is not supplied, stop rather than elaborate.\n5. For a definition set, perform a deletion/merge pass and confirm every split is\n   justified by distinct behavior, responsibility, boundary, risk, trust context,\n   or verification need.\n\nThis preflight is bounded working memory, not Lifecycle Data. Publish no REV,\nFinding, score, transcript, or telemetry from it. Do not place preflight content\nin the response or Review Context, and do not supply it to the independent\nreviewer. The later independent Review remains fresh-eyed and authoritative.\n"
+      }
+    ]
+  },
+  "assets": [
+    {
+      "reference": "prompts/freeze-source-boundary.md@1",
+      "path": "prompts/freeze-source-boundary.md",
+      "digest": "sha256:9aea639f172a83899a2036b86db616fd709b18e32694ed52b9f1ad4c7ec76697",
+      "content": "---\nid: freeze-source-boundary\nversion: 1\nscenario: freeze-source-boundary\n---\n\n# Freeze an exact same-lineage source boundary\n\nRead, in order:\n\n1. `skills/lifecycle-data.md@1`\n2. `skills/traceability.md@1`\n3. `skills/baseline-model.md@1`\n\nCreate one `source-boundary` BSL for the exact input QST Revision. Set its scope\nto that exact Revision ID, its group to `SAME-LINEAGE`, and include exactly that\nRevision as its sole definition member with no evidence members. Freeze and\nverify it atomically through this Scenario. Do not use piecemeal baseline\ncommands, Review Context provenance, a mutable alias, or any unrelated Revision.\n\nThe boundary preserves the source as immutable history and permits the package's\nsubsequent same-lineage Scenario to publish the next QST Revision.\n\nBefore proposing authored Lifecycle Data, apply the bounded ephemeral\n`skills/author-preflight.md@2` contract.\n"
+    },
+    {
+      "reference": "skills/lifecycle-data.md@1",
+      "path": "skills/lifecycle-data.md",
+      "digest": "sha256:f742ca75cd39e4d1d4947082c1e9f65813b4847906b0b7e2f2b876e70a8a765e",
+      "content": "---\nid: lifecycle-data\nversion: 1\n---\n\n# Lifecycle data\n\n- Treat lifecycle files, not generated indexes or chat history, as durable truth.\n- Let the kernel create and validate envelope fields: identity, revision, type,\n  links, provenance, and Markdown body projection.\n- Author only fields permitted by the resolved type payload schema. Do not place\n  type-specific data beside the kernel envelope.\n- Create opaque stable IDs with the type prefix and Crockford Base32 payload.\n- Edit only an unfrozen draft. A change to frozen content creates the next revision.\n- Validate outgoing links against the source type's resolved link contracts; never\n  author a backlink.\n- Use stable targets for evolving semantic relationships and exact revision targets\n  for reviews, decisions, evidence, composition, and promotion.\n- Populate `created_by` with the exact scenario, prompt, process, skills, and\n  machine-readable policies.\n- Validate the envelope, flattened payload schema, links, and one-open-draft rule.\n- Never rewrite, renumber, silently merge, or repair frozen history.\n"
+    },
+    {
+      "reference": "skills/traceability.md@1",
+      "path": "skills/traceability.md",
+      "digest": "sha256:420a7dc5f86a1a4565b3cfeb3a51013ed7efd117de82b5220b5a0bfabbdb2b9b",
+      "content": "---\nid: traceability\nversion: 1\n---\n\n# Traceability\n\n- Start from exact input revisions and follow validated outbound links.\n- Confirm target type and required identity form for every relationship.\n- Compute backlinks; never author them.\n- For each parent, account for covered, missing, overlapping, and intentionally\n  terminated behavior.\n- For each child, identify an authorized parent or applicable decision.\n- At baseline freeze, resolve stable targets to exact revisions and retain that map.\n- Treat link, target-resolution, allocation, and evidence-target changes as impact,\n  not merely textual differences.\n- Report uncertainty and graph gaps. Never infer a durable link from proximity or\n  naming alone.\n"
+    },
+    {
+      "reference": "skills/baseline-model.md@1",
+      "path": "skills/baseline-model.md",
+      "digest": "sha256:a5afaf3101c9f8294cc9c82f1693b5b760b1958228f1de561a42df66ccc8dcb3",
+      "content": "---\nid: baseline-model\nversion: 1\n---\n\n# Baseline model\n\n- A baseline is an immutable exact snapshot, never a mutable label for “current.”\n- Separate definition members from supporting evidence.\n- Use exact revision IDs for members, evidence, and composed baselines.\n- Hash exact file bytes with SHA-256 and capture resolved outbound-link targets.\n- Record the exact process manifest and asset references used by the snapshot.\n- Freeze atomically only after schema, reference, review, composition, and collision\n  checks pass.\n- Candidate and accepted baselines are distinct artifacts; promotion references the\n  exact candidate.\n- Currentness is explicit by role and scope through `supersedes`; an accepted\n  baseline remains authoritative while a newer candidate is evaluated.\n"
+    },
+    {
+      "reference": "skills/author-preflight.md@2",
+      "path": "skills/author-preflight.md",
+      "digest": "sha256:189d31acb7da3ff8f3bdb13efd6ade0d4c832b1bb5c9e1b97b7e679776046824",
+      "content": "---\nid: author-preflight\nversion: 2\n---\n\n# Ephemeral author preflight\n\nBefore proposing authored Lifecycle Data, inspect the proposal in isolation using\nthe applicable independent-Review rubric and the exact Assignment packet.\n\n1. Check contract validity, exact traceability, information allocation, scope,\n   internal consistency, verifiability, and proportionality.\n2. Treat a concern as blocking only when you can name the exact violated\n   criterion, concrete evidence or counterexample, and the material consequence\n   that prevents safe use. Correct every such concern before publication.\n3. Correct clear `needs-triage` concerns when they are local and authorized.\n   Do not expand scope to satisfy advisory preferences.\n4. For a correction, compare the proposal with the exact prior Revision. Name\n   each behavior or commitment added, removed, strengthened, or deferred, and\n   trace every change to a blocking finding or exact authority. Prefer the\n   smallest local delta that resolves the finding. Explicitly compare a bounded\n   correction, deferral or removal, and retention of broader behavior; do not\n   infer stakeholder need from determinism, prior elaboration, or an agent\n   proposal. If safe correction requires a new stakeholder-visible choice that\n   is not supplied, stop rather than elaborate.\n5. For a definition set, perform a deletion/merge pass and confirm every split is\n   justified by distinct behavior, responsibility, boundary, risk, trust context,\n   or verification need.\n\nThis preflight is bounded working memory, not Lifecycle Data. Publish no REV,\nFinding, score, transcript, or telemetry from it. Do not place preflight content\nin the response or Review Context, and do not supply it to the independent\nreviewer. The later independent Review remains fresh-eyed and authoritative.\n"
+    }
+  ],
+  "exactInputs": [
+    {
+      "inputs": [
+        {
+          "name": "source",
+          "contract": {
+            "types": [
+              "QST"
+            ],
+            "cardinality": "one",
+            "identity": "revision"
+          },
+          "values": [
+            {
+              "identity": {
+                "id": "QST-21219K6RVZ",
+                "revision_id": "QST-21219K6RVZ-r00001",
+                "type": "QST",
+                "revision": 1
+              },
+              "data": {
+                "id": "QST-21219K6RVZ",
+                "revision": 1,
+                "revision_id": "QST-21219K6RVZ-r00001",
+                "type": "QST",
+                "payload": {
+                  "title": "Product intent",
+                  "kind": "preferential",
+                  "intent_scope": "product",
+                  "question": "What product do you currently intend to build?",
+                  "state": "open",
+                  "blocking_impact": "PSP compilation is blocked until the stakeholder answers this question."
+                },
+                "links": [],
+                "created_by": {
+                  "scenario": "establish-initial-wayfinding-map@2",
+                  "prompt_ref": "prompts/establish-initial-wayfinding-map.md@2",
+                  "process_ref": "mdlm-bootstrap@0.74.0#sha256:ee99e698d36e406a836a796a36fc1db2d2451072ad662c0e06805ab5c20fe5ac",
+                  "loaded_skill_refs": [
+                    "skills/lifecycle-data.md@1",
+                    "skills/wayfinding-map.md@1",
+                    "skills/clarification-protocol.md@1",
+                    "skills/scope-challenge.md@2",
+                    "skills/author-preflight.md@2"
+                  ],
+                  "policy_refs": [
+                    "review-applicability@1",
+                    "waiver-applicability@1"
+                  ]
+                },
+                "body": "# Product intent\n\n**Question:** What product do you currently intend to build?\n\n**Kind:** Preferential  \n**State:** Open\n\n**Blocking impact:** PSP compilation is blocked until the stakeholder answers this question.\n"
+              }
+            }
+          ],
+          "checks": [
+            {
+              "check": "resolution",
+              "passed": true,
+              "expected": "named lifecycle identities from the evaluated snapshot",
+              "actual": "1/1 resolved"
+            },
+            {
+              "check": "cardinality",
+              "passed": true,
+              "expected": "one",
+              "actual": 1
+            },
+            {
+              "check": "identity",
+              "passed": true,
+              "expected": "revision",
+              "actual": [
+                "revision"
+              ]
+            },
+            {
+              "check": "type",
+              "passed": true,
+              "expected": [
+                "QST"
+              ],
+              "actual": [
+                "QST"
+              ]
+            },
+            {
+              "check": "condition",
+              "passed": true,
+              "expected": "source.payload.state == \"open\" && none(\"source-boundaries-for@1\", {source: source})",
+              "actual": true
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "allowedProjections": {
+    "exactLifecycleData": [
+      "QST-21219K6RVZ-r00001"
+    ],
+    "inputSchemas": [
+      {
+        "type": "QST",
+        "envelope": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "$id": "https://mdlm.dev/kernel/process-interface/v1/datum-envelope.schema.json",
+          "title": "Kernel-owned MDLM datum envelope",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "revision",
+            "revision_id",
+            "type",
+            "payload",
+            "links",
+            "created_by",
+            "body"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^[A-Z]{3,8}-[0-9A-HJKMNP-TV-Z]{10,12}$"
+            },
+            "revision": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "revision_id": {
+              "type": "string",
+              "pattern": "^[A-Z]{3,8}-[0-9A-HJKMNP-TV-Z]{10,12}-r[0-9]{5}$"
+            },
+            "type": {
+              "type": "string",
+              "pattern": "^[A-Z]{3,8}$"
+            },
+            "payload": {
+              "type": "object"
+            },
+            "links": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "type",
+                  "target"
+                ],
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]*$"
+                  },
+                  "target": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              },
+              "uniqueItems": true
+            },
+            "created_by": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "scenario",
+                "prompt_ref",
+                "process_ref",
+                "loaded_skill_refs",
+                "policy_refs"
+              ],
+              "properties": {
+                "scenario": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9-]*@[1-9][0-9]*$"
+                },
+                "prompt_ref": {
+                  "type": "string",
+                  "pattern": "^prompts/.+\\.md@[1-9][0-9]*$"
+                },
+                "process_ref": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "loaded_skill_refs": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^skills/.+\\.md@[1-9][0-9]*$"
+                  },
+                  "uniqueItems": true
+                },
+                "policy_refs": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]*@[1-9][0-9]*$"
+                  },
+                  "uniqueItems": true
+                }
+              }
+            },
+            "body": {
+              "type": "string"
+            }
+          },
+          "x-mdlm-kernel-invariants": [
+            "id prefix equals type",
+            "revision_id equals id plus zero-padded revision",
+            "frozen revisions are immutable",
+            "at most one local editable revision exists per stable id"
+          ]
+        },
+        "payload": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "blocking_impact",
+            "kind",
+            "question",
+            "state",
+            "title"
+          ],
+          "properties": {
+            "title": {
+              "type": "string",
+              "minLength": 1
+            },
+            "kind": {
+              "enum": [
+                "preferential",
+                "empirical"
+              ]
+            },
+            "intent_scope": {
+              "enum": [
+                "product"
+              ]
+            },
+            "question": {
+              "type": "string",
+              "minLength": 1
+            },
+            "attended_answer": {
+              "type": "string",
+              "minLength": 1
+            },
+            "state": {
+              "enum": [
+                "open",
+                "answered",
+                "deferred",
+                "cancelled"
+              ]
+            },
+            "blocking_impact": {
+              "type": "string",
+              "minLength": 1
+            },
+            "reactivation_condition": {
+              "type": "string",
+              "minLength": 1
+            },
+            "owner": {
+              "type": "string",
+              "minLength": 1
+            },
+            "evidence_available": {
+              "type": "boolean"
+            },
+            "resolution_disposition": {
+              "enum": [
+                "answer",
+                "defer",
+                "cancel"
+              ]
+            },
+            "attention_checkpoint": {
+              "enum": [
+                "phase-0-gate",
+                "phase-2-system-gate"
+              ]
+            },
+            "consolidation_group": {
+              "enum": [
+                "phase-0-stakeholder-questions",
+                "phase-2-system-stakeholder-questions"
+              ]
+            },
+            "resolution_evidence": {
+              "enum": [
+                "prototype"
+              ]
+            },
+            "prototype_evidence": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "repository_ref",
+                "supported_behavior",
+                "unsupported_behavior",
+                "finding_if_supported",
+                "finding_if_not_supported"
+              ],
+              "properties": {
+                "repository_ref": {
+                  "type": "string",
+                  "pattern": "^git:[0-9a-f]{40}$"
+                },
+                "supported_behavior": {
+                  "type": "array",
+                  "minItems": 1,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "unsupported_behavior": {
+                  "type": "array",
+                  "minItems": 1,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "finding_if_supported": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "finding_if_not_supported": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          },
+          "allOf": [
+            {
+              "dependentRequired": {
+                "attention_checkpoint": [
+                  "consolidation_group"
+                ],
+                "consolidation_group": [
+                  "attention_checkpoint"
+                ],
+                "resolution_evidence": [
+                  "prototype_evidence"
+                ],
+                "prototype_evidence": [
+                  "resolution_evidence"
+                ]
+              },
+              "allOf": [
+                {
+                  "if": {
+                    "properties": {
+                      "intent_scope": {
+                        "const": "product"
+                      },
+                      "state": {
+                        "const": "answered"
+                      }
+                    },
+                    "required": [
+                      "intent_scope",
+                      "state"
+                    ]
+                  },
+                  "then": {
+                    "required": [
+                      "attended_answer"
+                    ]
+                  }
+                },
+                {
+                  "if": {
+                    "required": [
+                      "attended_answer"
+                    ]
+                  },
+                  "then": {
+                    "properties": {
+                      "kind": {
+                        "const": "preferential"
+                      },
+                      "state": {
+                        "const": "answered"
+                      }
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "properties": {
+                      "state": {
+                        "const": "deferred"
+                      }
+                    },
+                    "required": [
+                      "state"
+                    ]
+                  },
+                  "then": {
+                    "required": [
+                      "reactivation_condition"
+                    ]
+                  }
+                },
+                {
+                  "if": {
+                    "required": [
+                      "evidence_available"
+                    ]
+                  },
+                  "then": {
+                    "properties": {
+                      "kind": {
+                        "const": "empirical"
+                      }
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "anyOf": [
+                      {
+                        "required": [
+                          "attention_checkpoint"
+                        ]
+                      },
+                      {
+                        "required": [
+                          "consolidation_group"
+                        ]
+                      }
+                    ]
+                  },
+                  "then": {
+                    "properties": {
+                      "kind": {
+                        "const": "preferential"
+                      }
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "required": [
+                      "resolution_evidence"
+                    ]
+                  },
+                  "then": {
+                    "properties": {
+                      "kind": {
+                        "const": "empirical"
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "outgoingLinks": [
+          {
+            "id": "blocks",
+            "description": "Lifecycle concepts whose progress depends on this open question.",
+            "targets": [
+              {
+                "kind": "datum",
+                "types": [
+                  "PSP",
+                  "STK",
+                  "SYS",
+                  "ASP",
+                  "ICSP",
+                  "DWP",
+                  "VSP",
+                  "ENV",
+                  "VER",
+                  "VAI",
+                  "BSL",
+                  "QST",
+                  "DEC"
+                ],
+                "identity": "stable"
+              }
+            ],
+            "cardinality": {
+              "minimum": 0,
+              "maximum": "many"
+            },
+            "freeze_resolution": "exact-revision",
+            "inverse_label": "blocked-by"
+          }
+        ]
+      }
+    ],
+    "outputSchemas": [
+      {
+        "type": "BSL",
+        "envelope": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "$id": "https://mdlm.dev/kernel/process-interface/v1/datum-envelope.schema.json",
+          "title": "Kernel-owned MDLM datum envelope",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "revision",
+            "revision_id",
+            "type",
+            "payload",
+            "links",
+            "created_by",
+            "body"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^[A-Z]{3,8}-[0-9A-HJKMNP-TV-Z]{10,12}$"
+            },
+            "revision": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "revision_id": {
+              "type": "string",
+              "pattern": "^[A-Z]{3,8}-[0-9A-HJKMNP-TV-Z]{10,12}-r[0-9]{5}$"
+            },
+            "type": {
+              "type": "string",
+              "pattern": "^[A-Z]{3,8}$"
+            },
+            "payload": {
+              "type": "object"
+            },
+            "links": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "type",
+                  "target"
+                ],
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]*$"
+                  },
+                  "target": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              },
+              "uniqueItems": true
+            },
+            "created_by": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "scenario",
+                "prompt_ref",
+                "process_ref",
+                "loaded_skill_refs",
+                "policy_refs"
+              ],
+              "properties": {
+                "scenario": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9-]*@[1-9][0-9]*$"
+                },
+                "prompt_ref": {
+                  "type": "string",
+                  "pattern": "^prompts/.+\\.md@[1-9][0-9]*$"
+                },
+                "process_ref": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "loaded_skill_refs": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^skills/.+\\.md@[1-9][0-9]*$"
+                  },
+                  "uniqueItems": true
+                },
+                "policy_refs": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9-]*@[1-9][0-9]*$"
+                  },
+                  "uniqueItems": true
+                }
+              }
+            },
+            "body": {
+              "type": "string"
+            }
+          },
+          "x-mdlm-kernel-invariants": [
+            "id prefix equals type",
+            "revision_id equals id plus zero-padded revision",
+            "frozen revisions are immutable",
+            "at most one local editable revision exists per stable id"
+          ]
+        },
+        "payload": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "definition_members",
+            "evidence",
+            "group",
+            "kind",
+            "role",
+            "scope",
+            "title"
+          ],
+          "properties": {
+            "title": {
+              "type": "string",
+              "minLength": 1
+            },
+            "kind": {
+              "enum": [
+                "source-boundary",
+                "review-context",
+                "pilot-assessment-context",
+                "intent-group-candidate",
+                "intent-level-candidate",
+                "intent-approved",
+                "group-candidate",
+                "level-candidate",
+                "group-accepted",
+                "level-accepted"
+              ]
+            },
+            "role": {
+              "enum": [
+                "source-boundary",
+                "review-context",
+                "candidate",
+                "accepted"
+              ]
+            },
+            "scope": {
+              "type": "string",
+              "minLength": 1
+            },
+            "group": {
+              "type": "string",
+              "minLength": 1
+            },
+            "definition_members": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "pattern": "^[A-Z]{3,8}-[0-9A-HJKMNP-TV-Z]{10,12}-r[0-9]{5}$"
+              }
+            },
+            "evidence": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "pattern": "^[A-Z]{3,8}-[0-9A-HJKMNP-TV-Z]{10,12}-r[0-9]{5}$"
+              }
+            },
+            "snapshot": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "frozen_at",
+                "member_hashes",
+                "resolved_links",
+                "process_provenance"
+              ],
+              "properties": {
+                "frozen_at": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "member_hashes": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string",
+                    "pattern": "^sha256:[a-f0-9]{64}$"
+                  }
+                },
+                "resolved_links": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "process_provenance": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "process_ref",
+                    "manifest_hash",
+                    "asset_refs"
+                  ],
+                  "properties": {
+                    "process_ref": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "manifest_hash": {
+                      "type": "string",
+                      "pattern": "^sha256:[a-f0-9]{64}$"
+                    },
+                    "asset_refs": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      },
+                      "uniqueItems": true
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "outgoingLinks": [
+          {
+            "id": "composes",
+            "description": "Exact group baseline revisions composed by this level baseline.",
+            "targets": [
+              {
+                "kind": "datum",
+                "types": [
+                  "BSL"
+                ],
+                "identity": "revision"
+              }
+            ],
+            "cardinality": {
+              "minimum": 0,
+              "maximum": "many"
+            },
+            "freeze_resolution": "already-exact",
+            "inverse_label": "composed-by"
+          },
+          {
+            "id": "promotes",
+            "description": "Exact candidate baseline promoted by this approved or accepted baseline.",
+            "targets": [
+              {
+                "kind": "datum",
+                "types": [
+                  "BSL"
+                ],
+                "identity": "revision"
+              }
+            ],
+            "cardinality": {
+              "minimum": 0,
+              "maximum": 1
+            },
+            "freeze_resolution": "already-exact",
+            "inverse_label": "promoted-by"
+          },
+          {
+            "id": "supersedes",
+            "description": "Older baseline for the same role and scope explicitly replaced by this baseline.",
+            "targets": [
+              {
+                "kind": "datum",
+                "types": [
+                  "BSL"
+                ],
+                "identity": "revision"
+              }
+            ],
+            "cardinality": {
+              "minimum": 0,
+              "maximum": 1
+            },
+            "freeze_resolution": "already-exact",
+            "inverse_label": "superseded-by"
+          },
+          {
+            "id": "corrects-review",
+            "description": "Exact failed Reviews whose blocking findings this replacement baseline Revision addresses.",
+            "targets": [
+              {
+                "kind": "datum",
+                "types": [
+                  "REV"
+                ],
+                "identity": "revision"
+              }
+            ],
+            "cardinality": {
+              "minimum": 0,
+              "maximum": "many"
+            },
+            "freeze_resolution": "already-exact",
+            "inverse_label": "corrected-by-baseline"
+          },
+          {
+            "id": "corrects-gate-rejection",
+            "description": "Exact reviewed gate rejection Decisions addressed by this replacement candidate.",
+            "targets": [
+              {
+                "kind": "datum",
+                "types": [
+                  "DEC"
+                ],
+                "identity": "revision"
+              }
+            ],
+            "cardinality": {
+              "minimum": 0,
+              "maximum": "many"
+            },
+            "freeze_resolution": "already-exact",
+            "inverse_label": "corrected-by-candidate"
+          },
+          {
+            "id": "changed-under",
+            "description": "Exact approved Change Request requiring this replacement context or baseline.",
+            "targets": [
+              {
+                "kind": "datum",
+                "types": [
+                  "CHG"
+                ],
+                "identity": "revision"
+              }
+            ],
+            "cardinality": {
+              "minimum": 0,
+              "maximum": 1
+            },
+            "freeze_resolution": "already-exact",
+            "inverse_label": "changed-baseline"
+          }
+        ]
+      }
+    ]
+  },
+  "policies": [
+    {
+      "role": "review",
+      "reference": "review-applicability@1",
+      "definition": {
+        "id": "review-applicability",
+        "version": 1
+      }
+    },
+    {
+      "role": "waiver",
+      "reference": "waiver-applicability@1",
+      "definition": {
+        "id": "waiver-applicability",
+        "version": 1
+      },
+      "result": {
+        "permitted": false,
+        "approval_required": true,
+        "applicable": false,
+        "scope": null
+      }
+    }
+  ],
+  "participation": [],
+  "authority": {
+    "evidence": null,
+    "requirements": [],
+    "standingDelegation": null
+  },
+  "prohibitions": [
+    "borrowed Review Context provenance",
+    "mutable latest aliases",
+    "unrelated revisions"
+  ],
+  "outputs": [
+    {
+      "name": "boundary",
+      "types": [
+        "BSL"
+      ],
+      "cardinality": "one",
+      "requiredLinks": []
+    }
+  ],
+  "outputLinks": [
+    {
+      "output": "boundary",
+      "requiredLinks": []
+    }
+  ],
+  "completion": {
+    "expression": "execution.integrity.contract_valid == true && boundary.storage.frozen == true && boundary.payload.kind == \"source-boundary\" && boundary.payload.role == \"source-boundary\" && boundary.payload.scope == source.identity.revision_id && boundary.payload.group == \"SAME-LINEAGE\" && boundary.payload.definition_members == [source.identity.revision_id] && none(\"source-boundary-evidence@1\", {boundary: boundary})",
+    "status": "pending-output",
+    "genericChecks": [
+      "declared-output-cardinality",
+      "no-undeclared-outputs",
+      "output-schema-validity",
+      "source-owned-required-links"
+    ]
+  },
+  "responseSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://mdlm.dev/contracts/mdlm-assignment-response@1",
+    "title": "MDLM Assignment Response",
+    "oneOf": [
+      {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contract",
+          "assignment",
+          "kind",
+          "proposal"
+        ],
+        "properties": {
+          "contract": {
+            "const": "mdlm-assignment-response@1"
+          },
+          "assignment": {
+            "type": "string",
+            "minLength": 1
+          },
+          "kind": {
+            "const": "proposal"
+          },
+          "proposal": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "outputs",
+              "completionEvidence",
+              "loadedSkillRefs",
+              "authoritySupplies",
+              "standingDelegations"
+            ],
+            "properties": {
+              "outputs": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "localId",
+                    "name",
+                    "invocation",
+                    "lifecycleDatum"
+                  ],
+                  "properties": {
+                    "localId": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z][A-Za-z0-9_-]*$",
+                      "description": "Proposal-local identity used by $proposal.<localId>.id and $proposal.<localId>.revision_id references"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "invocation": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "lifecycleDatum": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "type",
+                        "payload",
+                        "links",
+                        "body"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "description": "Existing Stable Datum identity for a same-lineage replacement; omit for a new Stable Datum"
+                        },
+                        "type": {
+                          "type": "string",
+                          "pattern": "^[A-Z]{3,8}$"
+                        },
+                        "payload": {
+                          "type": "object"
+                        },
+                        "links": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "type",
+                              "target"
+                            ],
+                            "properties": {
+                              "type": {
+                                "type": "string"
+                              },
+                              "target": {
+                                "type": "string"
+                              }
+                            }
+                          }
+                        },
+                        "body": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "completionEvidence": {},
+              "loadedSkillRefs": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "uniqueItems": true
+              },
+              "authoritySupplies": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "uniqueItems": true
+              },
+              "standingDelegations": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "uniqueItems": true
+              }
+            }
+          }
+        }
+      },
+      {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contract",
+          "assignment",
+          "kind",
+          "unable"
+        ],
+        "properties": {
+          "contract": {
+            "const": "mdlm-assignment-response@1"
+          },
+          "assignment": {
+            "type": "string",
+            "minLength": 1
+          },
+          "kind": {
+            "const": "unable"
+          },
+          "unable": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "reason",
+              "diagnostics"
+            ],
+            "properties": {
+              "reason": {
+                "enum": [
+                  "stale-scope",
+                  "insufficient-declared-inputs",
+                  "prohibited-input-conflict",
+                  "ambiguity",
+                  "execution-failure"
+                ]
+              },
+              "diagnostics": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "code",
+                    "message"
+                  ],
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "message": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "path": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    ]
+  },
+  "diagnostics": []
+}

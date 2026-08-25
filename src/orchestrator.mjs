@@ -16,6 +16,7 @@ const mdlmShim = fileURLToPath(new URL('../bin/mdlm-demo-mdlm-shim.mjs', import.
 const executionIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const operatorScalarPattern = /^[A-Za-z0-9][A-Za-z0-9._/@:+-]{0,255}$/;
 const thinkingLevels = new Set(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
+const assignmentCheckpointEvidence = Symbol('assignmentCheckpointEvidence');
 
 export async function run(request, mode) {
   requireContract(request, mode === 'resume' ? 'mdlm-demo-resume-request@1' : 'mdlm-demo-run-request@1');
@@ -43,7 +44,9 @@ export async function run(request, mode) {
       output = stopped('orchestration-failure', error instanceof Error ? error.message : String(error), initial, assignmentId);
     }
     const postDirectory = await nextSnapshotDirectory(evidenceDirectory);
-    const postRunSnapshot = await snapshotRequest(request, context.repository, postDirectory, assignmentId, journalPath, piJournalPath, true);
+    const postAssignmentId = output[assignmentCheckpointEvidence]?.packet.assignment.id ?? assignmentId;
+    const postRunSnapshot = await snapshotRequest(request, context.repository, postDirectory, postAssignmentId, journalPath, piJournalPath, true);
+    output = await finalizeAssignmentCheckpoint(output, postRunSnapshot, assignmentId);
     output.postRunSnapshot = postRunSnapshot;
     await finishTrustedRun(context, assignmentDirectory, journalPath, assignmentId, output, postRunSnapshot);
     return output;
@@ -144,8 +147,8 @@ async function executeRun(request, context, assignmentDirectory, journalPath, sn
       { correction: durableCorrection, infrastructureStop: true },
     );
   }
-  if (assignment.disposition !== 'active' || assignment.id !== assignmentId || assignment.selected !== true) {
-    return stopped('assignment-not-active', 'requested Assignment is not the selected active durable lease', snapshotResult, assignmentId);
+  if (assignment.disposition !== 'active' || assignment.id !== assignmentId || assignment.selected !== true || !statusHasActiveAssignment(status, assignmentId)) {
+    return stopped('assignment-not-active', 'requested Assignment is not the selected active durable lease in status and Assignment state', snapshotResult, assignmentId);
   }
   if (!sameRepositoryFingerprint(assignment.repository, captured.lifecycleRepository)) {
     return stopped('repository-drift', 'Assignment repository fingerprint differs from the lifecycle repository snapshot', snapshotResult, assignmentId);
@@ -245,19 +248,24 @@ async function runPiAssignment(request, context, assignmentDirectory, assignment
     ...(decision === null ? {} : { decision: decision.evidence }),
   };
   if (decoded.kind === 'reserved-stop') {
-    const trustedStop = await authenticateReservedStop(decoded.stop, shimDirectory);
+    const trustedStop = await authenticateReservedStop(decoded.stop, shimDirectory, assignment.package);
     if (!trustedStop.ok) {
       return stopped('mdlm-pi-contract-failure', trustedStop.detail, snapshotResult, assignmentId, common);
     }
-    const accepted = decoded.stop.type === 'accepted-assignment-then-external' &&
-      decoded.stop.completedAssignment === assignmentId &&
-      typeof decoded.stop.assignment === 'string' && decoded.stop.assignment !== assignmentId &&
-      externalScenarios.has(decoded.stop.scenario);
-    return result(accepted ? 'completed' : 'stopped', snapshotResult, {
+    const differentAssignment = decoded.stop.completedAssignment === assignmentId &&
+      trustedStop.packet.assignment.id !== assignmentId;
+    const externalCheckpoint = decoded.stop.type === 'accepted-assignment-then-external' &&
+      externalScenarios.has(trustedStop.packet.scenario.reference);
+    const ordinaryCheckpoint = decoded.stop.type === 'assignment-checkpoint' &&
+      !externalScenarios.has(trustedStop.packet.scenario.reference);
+    const output = result('stopped', snapshotResult, {
       ...common, recoverable: true, reason: 'reserved-shim-stop', stop: decoded.stop,
-      ...(accepted ? { nextAssignment: { id: decoded.stop.assignment, scenario: decoded.stop.scenario, phase: 'pre-submission' } } : {}),
-      outcome: accepted ? 'accepted-publication' : 'pre-submission-stop', trustedRepositoryAdvance: accepted,
+      outcome: 'pre-submission-stop', trustedRepositoryAdvance: false,
     });
+    if (differentAssignment && (externalCheckpoint || ordinaryCheckpoint)) {
+      output[assignmentCheckpointEvidence] = { packet: trustedStop.packet };
+    }
+    return output;
   }
   if (decoded.kind === 'terminal') {
     return result(decoded.successful ? 'completed' : 'stopped', snapshotResult, {
@@ -326,7 +334,7 @@ function findReservedStop(value) {
   return null;
 }
 
-async function authenticateReservedStop(stop, shimDirectory) {
+async function authenticateReservedStop(stop, shimDirectory, processPackage) {
   try {
     if (typeof stop.packetPath !== 'string') throw new Error('reserved stop has no packet path');
     const stopsDirectory = await realpath(path.join(shimDirectory, 'stops'));
@@ -334,14 +342,60 @@ async function authenticateReservedStop(stop, shimDirectory) {
     if (path.dirname(packetPath) !== stopsDirectory) throw new Error('reserved stop packet is outside the private stop directory');
     const information = await lstat(packetPath);
     if (!information.isFile() || information.isSymbolicLink()) throw new Error('reserved stop packet is not a regular file');
-    const packet = JSON.parse(await readFile(packetPath, 'utf8'));
-    if (packet.contract !== 'mdlm-assignment-packet@2' || packet.command !== 'scenario.prepare' || packet.ok !== true ||
-        packet.assignment?.id !== stop.assignment || packet.scenario?.reference !== stop.scenario) {
+    const packet = validateScenarioPrepare(JSON.parse(await readFile(packetPath, 'utf8')), {
+      assignmentId: stop.assignment,
+      package: processPackage,
+    });
+    if (packet.scenario.reference !== stop.scenario) {
       throw new Error('reserved stop does not match its exact prepared Assignment packet');
     }
-    return { ok: true };
+    return { ok: true, packet };
   } catch (error) {
     return { ok: false, detail: `reserved stop evidence is not authentic: ${error.message}` };
+  }
+}
+
+async function finalizeAssignmentCheckpoint(output, postSnapshot, completedAssignment) {
+  const evidence = output[assignmentCheckpointEvidence];
+  if (evidence === undefined) return output;
+  delete output[assignmentCheckpointEvidence];
+  const packet = evidence.packet;
+  const nextAssignment = packet.assignment.id;
+  try {
+    if (postSnapshot.status !== 'complete') throw new Error('post-run snapshot is not complete');
+    const captured = JSON.parse(await readFile(path.join(postSnapshot.snapshotDirectory, 'snapshot.json'), 'utf8'));
+    if (nextAssignment === completedAssignment) throw new Error('checkpoint did not advance to a different Assignment');
+    if (captured.lifecycleRepository?.clean !== true) throw new Error('post-run lifecycle repository is not clean');
+    if (!statusHasActiveAssignment(captured.status, nextAssignment)) throw new Error('post-run status does not select active Assignment B');
+    if (captured.assignment?.id !== nextAssignment || captured.assignment.selected !== true || captured.assignment.disposition !== 'active') {
+      throw new Error('post-run Assignment B is not the selected active durable lease');
+    }
+    if (captured.assignment.scenarioReference !== packet.scenario.reference) {
+      throw new Error('post-run Assignment B Scenario differs from the retained packet');
+    }
+    if (!sameProcessPackageIdentity(packet.package, captured.status?.package) ||
+        !sameProcessPackageIdentity(packet.package, captured.assignment.package) ||
+        !sameProcessPackageIdentity(packet.package, captured.diagnosis?.package)) {
+      throw new Error('post-run Process Package identity differs from the retained packet');
+    }
+    if (!sameJson(captured.assignment.repository, packet.repository) ||
+        !sameRepositoryFingerprint(packet.repository, captured.lifecycleRepository)) {
+      throw new Error('post-run repository identity differs from the retained packet');
+    }
+    output.status = 'completed';
+    output.outcome = 'accepted-publication';
+    output.trustedRepositoryAdvance = true;
+    output.nextAssignment = { id: nextAssignment, scenario: packet.scenario.reference, phase: 'pre-submission' };
+    return output;
+  } catch (error) {
+    output.status = 'stopped';
+    output.recoverable = false;
+    output.reason = 'assignment-checkpoint-authentication-failure';
+    output.detail = error instanceof Error ? error.message : String(error);
+    output.outcome = 'pre-submission-stop';
+    output.trustedRepositoryAdvance = false;
+    delete output.nextAssignment;
+    return output;
   }
 }
 
@@ -453,6 +507,11 @@ async function reconcileRepositoryIdentity(identityDirectory, assignmentDirector
 }
 function sameRepositoryFingerprint(assignmentRepository, lifecycle) {
   return assignmentRepository && assignmentRepository.head === lifecycle.head && assignmentRepository.trackedState === lifecycle.trackedState;
+}
+function statusHasActiveAssignment(status, assignmentId) {
+  const outcome = status?.currentOutcome;
+  return (outcome?.outcome === 'assignment' || outcome?.outcome === 'attention-required') &&
+    outcome.assignment?.allocation === 'active' && outcome.assignment.id === assignmentId;
 }
 
 async function finishTrustedRun(context, assignmentDirectory, journalPath, assignmentId, output, postSnapshot) {

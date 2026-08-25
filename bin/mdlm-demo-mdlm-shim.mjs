@@ -33,17 +33,35 @@ try {
     const scenario = packet.scenario?.reference;
     const external = reserved.has(scenario);
     const checkpoint = assignment !== config.allowedAssignment;
+    const shimDirectory = path.dirname(path.resolve(configPath));
+    const processedPath = path.join(shimDirectory, 'processed-assignment.json');
+    const processedBytes = jsonBytes({
+      contract: 'mdlm-demo-shim-processed-assignment@1',
+      assignment: config.allowedAssignment,
+      package: config.package,
+      repository: config.repository,
+    });
+    if (!checkpoint) await writeOnceOrMatch(processedPath, processedBytes);
     if (external || checkpoint) {
-      await mkdir(config.stopDirectory, { recursive: true, mode: 0o700 });
-      const packetPath = path.join(config.stopDirectory, `${safeId(assignment)}.json`);
-      await writeOnceOrMatch(packetPath, result.stdout);
+      if (checkpoint) await requireExactFile(processedPath, processedBytes, 'checkpoint occurred before the allowed Assignment was processed');
       const type = external && checkpoint
         ? 'accepted-assignment-then-external'
         : external ? 'external-adapter' : 'assignment-checkpoint';
+      if (checkpoint) {
+        await writeOnceOrMatch(path.join(shimDirectory, 'assignment-checkpoint.json'), jsonBytes({
+          contract: 'mdlm-demo-shim-assignment-checkpoint@1',
+          completedAssignment: config.allowedAssignment,
+          assignment,
+          scenario,
+        }));
+      }
+      await mkdir(config.stopDirectory, { recursive: true, mode: 0o700 });
+      const packetPath = path.join(config.stopDirectory, `${safeId(assignment)}.json`);
+      await writeOnceOrMatch(packetPath, result.stdout);
       process.stdout.write(`${JSON.stringify({
         contract: 'mdlm-demo-reserved-stop@1', type,
         phase: 'before-worker', assignment, scenario, packetPath,
-        ...(type === 'accepted-assignment-then-external' ? { completedAssignment: config.allowedAssignment } : {}),
+        ...(checkpoint ? { completedAssignment: config.allowedAssignment } : {}),
       })}\n`);
       process.stderr.write(result.stderr);
       process.exitCode = 97;
@@ -78,4 +96,13 @@ async function writeOnceOrMatch(file, bytes) {
     if (error.code !== 'EEXIST' || !Buffer.from(await readFile(file)).equals(bytes)) throw new Error('intercepted packet bytes drifted');
   }
 }
+async function requireExactFile(file, bytes, message) {
+  try {
+    if (!Buffer.from(await readFile(file)).equals(bytes)) throw new Error(message);
+  } catch (error) {
+    if (error.message === message) throw error;
+    throw new Error(message);
+  }
+}
+function jsonBytes(value) { return Buffer.from(`${JSON.stringify(value)}\n`); }
 function safeId(value) { return String(value).replace(/[^A-Za-z0-9._-]/g, '_'); }
