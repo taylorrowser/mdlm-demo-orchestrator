@@ -1743,6 +1743,12 @@ test('operator-pinned orphaned child checkpoint completes A once and runs B with
 
 test('orphaned checkpoint recovery rejects wrong markers and unrelated advancement before B invocation', async () => {
   const cases = [
+    ['untrusted original prepare command', async value => {
+      const recordPath = path.join(value.commandDirectory, 'command-000001.json');
+      const record = JSON.parse(await readFile(recordPath));
+      record.argv = [value.mdlm, 'status', '--json'];
+      await writeFile(recordPath, `${JSON.stringify(record, null, 2)}\n`);
+    }],
     ['wrong processed marker', async value => {
       const marker = JSON.parse(await readFile(value.processedAssignmentPath));
       marker.assignment = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -2124,18 +2130,54 @@ test('runner journals command intent before spawn and command completion before 
     assert.equal(intent.contract, 'mdlm-demo-command-intent@1');
     assert.deepEqual(intent.argv.slice(0, 2), [value.mdlmPi, 'run']);
     const completionPath = path.join(directory, 'command-000002.completion.json');
+    let workerBytes = null;
     if (seam.startsWith('command-intent')) {
       assert.equal(await stat(workerLog).then(() => true, () => false), false);
       assert.equal(await stat(completionPath).then(() => true, () => false), false);
     } else {
-      assert.equal(await readFile(workerLog, 'utf8'), 'invoked\n');
+      workerBytes = await readFile(workerLog, 'utf8');
+      assert.equal(workerBytes, 'invoked\n');
       const completion = JSON.parse(await readFile(completionPath));
       assert.equal(completion.contract, 'mdlm-demo-command-completion@1');
       assert.equal(completion.intent.digest, `sha256:${createHash('sha256').update(await readFile(intentPath)).digest('hex')}`);
       assert.equal(completion.process.exitStatus, 5);
       assert.equal(await stat(path.join(assignmentDirectory(value.request), 'command-evidence', 'command-000002.json')).then(() => true, () => false), false);
     }
+
+    const retried = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
+    assert.equal(retried.status, 0, retried.stderr);
+    const stopped = JSON.parse(retried.stdout);
+    assert.equal(stopped.reason, 'orchestration-failure', retried.stdout);
+    assert.match(stopped.detail, /command journal contains (an intent with an uncertain child outcome|a completion without settled compatibility evidence)/);
+    assert.equal(await stat(path.join(directory, 'command-000003.intent.json')).then(() => true, () => false), false);
+    assert.equal(await stat(workerLog).then(() => readFile(workerLog, 'utf8'), () => null), workerBytes);
   }
+});
+
+test('runner rejects an altered settled command journal without repeating the child', async () => {
+  const workerLog = path.join(os.tmpdir(), `mdlm-demo-command-journal-tamper-${process.pid}-${Date.now()}`);
+  const piScript = `#!/usr/bin/env node\nrequire('node:fs').appendFileSync(${JSON.stringify(workerLog)},'invoked\\n'); console.log('{"status":"lock-conflict"}'); process.exit(5);\n`;
+  const value = await fixture({ scenarioReference: 'ordinary@1', piScript });
+  value.request.signal = 'clean-interrupted-command';
+  const first = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
+  assert.equal(first.status, 0, first.stderr);
+  assert.equal(JSON.parse(first.stdout).reason, 'lock-conflict', first.stdout);
+
+  const directory = path.join(assignmentDirectory(value.request), 'command-journal');
+  const intentPath = path.join(directory, 'command-000002.intent.json');
+  const intent = JSON.parse(await readFile(intentPath));
+  intent.environmentNames.push(intent.environmentNames[0]);
+  await chmod(intentPath, 0o600);
+  await writeFile(intentPath, `${JSON.stringify(intent, null, 2)}\n`);
+  await chmod(intentPath, 0o400);
+
+  const retried = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
+  assert.equal(retried.status, 0, retried.stderr);
+  const stopped = JSON.parse(retried.stdout);
+  assert.equal(stopped.reason, 'orchestration-failure', retried.stdout);
+  assert.match(stopped.detail, /command intent 2 is malformed or tampered/);
+  assert.equal(await readFile(workerLog, 'utf8'), 'invoked\n');
+  assert.equal(await stat(path.join(directory, 'command-000003.intent.json')).then(() => true, () => false), false);
 });
 
 test('durable submitting transition prevents duplicate submit across injected crash seams', async () => {

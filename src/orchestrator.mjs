@@ -1455,8 +1455,8 @@ async function authenticateOrphanedAssignmentCheckpoint({ request, context, sour
     throw new Error('operational recovery history is missing, extra, or ambiguous');
   }
   const [failureIndex, transitionEntry] = [...history.transitions.entries()][0];
-  if (path.join(transitionDirectory, transitionEntry.name) !== transitionEvidence.path) {
-    throw new Error('operator-pinned retry transition is not the exact durable transition');
+  if (failureIndex !== 2 || path.join(transitionDirectory, transitionEntry.name) !== transitionEvidence.path) {
+    throw new Error('operator-pinned retry transition is not the exact second-command durable transition');
   }
   const transition = JSON.parse(transitionEvidence.bytes.toString('utf8'));
   if (transition.contract !== 'mdlm-demo-operational-failure-retry@1' || transition.mode !== 'run' ||
@@ -1484,13 +1484,19 @@ async function authenticateOrphanedAssignmentCheckpoint({ request, context, sour
   if (!sameJson((await readdir(commandDirectory)).sort(), expectedCommandNames)) {
     throw new Error('command evidence is missing, extra, or later than the exact operational history and prepare command');
   }
+  const originalPrepare = await authenticateStoredCommand(commandDirectory, '000001');
   const prepared = await authenticateStoredCommand(commandDirectory, index);
   const expectedPrepare = [request.commands.mdlm, 'scenario', 'prepare', fromAssignment, '--json'];
-  requireStoredProcess(prepared.record, expectedPrepare, context.repository, 900_000, 0);
-  if (prepared.stderr.length !== 0) throw new Error('orphaned Scenario prepare command has stderr bytes');
-  const preparedPacket = validateScenarioPrepare(JSON.parse(prepared.stdout.toString('utf8')), {
-    assignmentId: fromAssignment, package: processPackage, repository: identity.assignmentRepository,
-  });
+  let preparedPacket;
+  for (const [stored, label] of [[originalPrepare, 'original'], [prepared, 'retry']]) {
+    requireStoredProcess(stored.record, expectedPrepare, context.repository, 900_000, 0);
+    if (stored.stderr.length !== 0) throw new Error(`orphaned ${label} Scenario prepare command has stderr bytes`);
+    const packet = validateScenarioPrepare(JSON.parse(stored.stdout.toString('utf8')), {
+      assignmentId: fromAssignment, package: processPackage, repository: identity.assignmentRepository,
+    });
+    if (preparedPacket === undefined) preparedPacket = packet;
+    else if (!sameJson(packet, preparedPacket)) throw new Error('orphaned original and retry Scenario prepare packets differ');
+  }
   const preparePins = [recovery.prepare.record, recovery.prepare.stdout, recovery.prepare.stderr];
   for (let evidenceIndex = 0; evidenceIndex < prepared.evidence.length; evidenceIndex++) {
     const pinned = await requirePinnedEvidence(preparePins[evidenceIndex], `prepare ${['record', 'stdout', 'stderr'][evidenceIndex]}`);
@@ -2109,6 +2115,7 @@ async function invoke(assignmentDirectory, program, args, cwd, timeoutMs, input,
   const commandJournal = path.join(assignmentDirectory, 'command-journal');
   await mkdir(directory, { recursive: true, mode: 0o700 });
   await mkdir(commandJournal, { recursive: true, mode: 0o700 });
+  await validateSettledCommandJournal(directory, commandJournal);
   const evidenceIndexes = (await readdir(directory)).flatMap(name => {
     const match = /^command-([0-9]{6})\.json$/.exec(name);
     return match ? [Number(match[1])] : [];
@@ -2151,6 +2158,64 @@ async function writeExclusiveDurable(file, bytes) {
   const handle = await open(file, 'wx', 0o400);
   try { await handle.writeFile(bytes); await handle.sync(); }
   finally { await handle.close(); }
+}
+
+async function validateSettledCommandJournal(evidenceDirectory, journalDirectory) {
+  const entries = await readdir(journalDirectory, { withFileTypes: true });
+  const intents = new Map();
+  const completions = new Map();
+  for (const entry of entries) {
+    if (!entry.isFile() || entry.isSymbolicLink() || entry.name.endsWith('.pending')) {
+      throw new Error('command journal contains an uncertain or non-regular entry');
+    }
+    const match = /^command-([0-9]{6})\.(intent|completion)\.json$/.exec(entry.name);
+    if (!match || Number(match[1]) < 1) throw new Error(`command journal contains unsupported entry '${entry.name}'`);
+    const target = match[2] === 'intent' ? intents : completions;
+    const index = Number(match[1]);
+    if (target.has(index)) throw new Error('command journal contains duplicate command state');
+    target.set(index, path.join(journalDirectory, entry.name));
+  }
+  if (!sameJson([...intents.keys()].sort((left, right) => left - right), [...completions.keys()].sort((left, right) => left - right))) {
+    throw new Error('command journal contains an intent with an uncertain child outcome');
+  }
+  for (const [index, intentPath] of intents) {
+    const intentEvidence = await immutableFileEvidence(intentPath);
+    const intent = JSON.parse(intentEvidence.bytes.toString('utf8'));
+    const expectedIntentKeys = ['argv', 'contract', 'createdAt', 'cwd', 'environmentNames', 'index', 'input', 'timeoutMs'].sort();
+    if (!intent || !sameJson(Object.keys(intent).sort(), expectedIntentKeys) || intent.contract !== 'mdlm-demo-command-intent@1' ||
+        intent.index !== index || !Array.isArray(intent.argv) || intent.argv.length === 0 ||
+        intent.argv.some(value => typeof value !== 'string') || typeof intent.cwd !== 'string' || !path.isAbsolute(intent.cwd) ||
+        !Number.isSafeInteger(intent.timeoutMs) || intent.timeoutMs < 1 || typeof intent.createdAt !== 'string' ||
+        !Number.isFinite(Date.parse(intent.createdAt)) ||
+        !Array.isArray(intent.environmentNames) || intent.environmentNames.some(value => typeof value !== 'string' || value.length === 0) ||
+        !sameJson(intent.environmentNames, [...new Set(intent.environmentNames)].sort()) ||
+        !intent.input || !sameJson(Object.keys(intent.input).sort(), ['bytes', 'digest', 'present']) ||
+        typeof intent.input.present !== 'boolean' || !Number.isSafeInteger(intent.input.bytes) || intent.input.bytes < 0 ||
+        !/^sha256:[0-9a-f]{64}$/.test(intent.input.digest ?? '') ||
+        (intent.input.present === false && (intent.input.bytes !== 0 || intent.input.digest !== sha256(Buffer.alloc(0))))) {
+      throw new Error(`command intent ${index} is malformed or tampered`);
+    }
+    const completionEvidence = await immutableFileEvidence(completions.get(index));
+    const completion = JSON.parse(completionEvidence.bytes.toString('utf8'));
+    if (!completion || !sameJson(Object.keys(completion).sort(), ['contract', 'index', 'intent', 'process']) ||
+        completion.contract !== 'mdlm-demo-command-completion@1' || completion.index !== index ||
+        !sameJson(completion.intent, {
+          path: intentEvidence.path, bytes: intentEvidence.bytes.length, digest: intentEvidence.digest,
+        })) {
+      throw new Error(`command completion ${index} does not bind its exact intent`);
+    }
+    let stored;
+    try { stored = await authenticateStoredCommand(evidenceDirectory, String(index).padStart(6, '0')); }
+    catch (error) {
+      if (error.code === 'ENOENT') throw new Error('command journal contains a completion without settled compatibility evidence');
+      throw error;
+    }
+    if (!sameJson(completion.process, stored.record) || !sameJson(intent.argv, stored.record.argv) ||
+        intent.cwd !== stored.record.cwd || intent.timeoutMs !== stored.record.timeoutMs ||
+        Date.parse(stored.record.startedAt) < Date.parse(intent.createdAt)) {
+      throw new Error(`command completion ${index} differs from its intent or compatibility evidence`);
+    }
+  }
 }
 
 async function repositoryContext(repository, timeoutMs) {
