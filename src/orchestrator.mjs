@@ -169,6 +169,16 @@ async function executeRun(request, context, assignmentDirectory, journalPath, sn
     if (!exactCommitRecovery && !sameJson(expected, captured.lifecycleRepository)) {
       return withCheckpointRecovery(stopped('repository-drift', 'repository differs from the completed transaction boundary', snapshotResult, assignmentId));
     }
+    if (exactCommitRecovery && journal.package !== undefined) {
+      try {
+        return withCheckpointRecovery(await beginPublicationClosure({
+          request, context, assignmentDirectory, journalPath, snapshotResult, processPackage, runIdentity,
+          completedJournal: journal, recoveredPublication: true,
+        }));
+      } catch (error) {
+        return withCheckpointRecovery(stopped('publication-closure-failure', error instanceof Error ? error.message : String(error), snapshotResult, assignmentId));
+      }
+    }
     return withCheckpointRecovery(result('already-completed', snapshotResult, { assignmentId, executionId: journal.executionId, commit: journal.commit, outcome: journal.outcome }));
   }
   if (journal?.phase === 'submitting' || journal?.phase === 'uncertain-transaction') {
@@ -312,6 +322,7 @@ async function runExternalAssignment(request, context, assignmentDirectory, jour
     const commit = await commitPublication(context.repository, publication, journal.baseCommit, request.timeoutMs, assignmentDirectory);
     completedJournal = { ...published, phase: 'completed', commit, completedAt: new Date().toISOString(), trustedRepositoryAdvance: true };
     await writeJournal(journalPath, completedJournal);
+    maybeInjectedCrash('publication-closure', 'after-transaction-completed');
   } catch (error) {
     await writeJournal(journalPath, { ...published, phase: 'uncertain-publication', error: error.message });
     return stopped('uncertain-partial-publication', error.message, snapshotResult, assignmentId);

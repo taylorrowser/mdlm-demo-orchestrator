@@ -827,6 +827,44 @@ test('accepted external publication automatically closes one package-authored ex
   assert.deepEqual(trusted.lifecycleRepository, post.lifecycleRepository);
 });
 
+test('publication closure resumes after transaction completion without replaying the accepted external Assignment', async () => {
+  const value = await fixture({ materializedNext: true });
+  const initialCommitCount = Number(git(['rev-list', '--count', 'HEAD'], value.repository));
+  const crashed = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request), {
+    ...process.env,
+    MDLM_DEMO_TEST_CRASH: 'publication-closure:after-transaction-completed',
+  });
+  assert.equal(crashed.status, 86, crashed.stderr);
+  assert.equal(await stat(path.join(assignmentDirectory(value.request), 'publication-closure.json')).then(() => true, () => false), false);
+  assert.equal(JSON.parse(await readFile(path.join(assignmentDirectory(value.request), 'transaction.json'))).phase, 'completed');
+
+  const resumed = exec(process.execPath, [cli, 'resume'], root, JSON.stringify({
+    ...value.request,
+    contract: 'mdlm-demo-resume-request@1',
+    evidenceDirectory: path.join(value.scratch, 'resume-evidence'),
+  }));
+
+  assert.equal(resumed.status, 0, resumed.stderr);
+  const output = JSON.parse(resumed.stdout);
+  assert.equal(output.recoveredPublication, true, resumed.stdout);
+  assert.equal(output.publicationClosure.status, 'completed', resumed.stdout);
+  assert.deepEqual(output.publicationClosure.executions.map(item => item.id), [value.materializedExecution]);
+  assert.deepEqual(output.nextAssignment, {
+    id: value.finalAssignment,
+    scenario: 'realize-verification-environment@1',
+    phase: 'pre-submission',
+  });
+  assert.equal((await readFile(path.join(value.scratch, 'submit-count'), 'utf8')).trim().split('\n').length, 1);
+  assert.equal(await readFile(value.nextCountPath, 'utf8'), '2');
+  assert.equal(Number(git(['rev-list', '--count', 'HEAD'], value.repository)), initialCommitCount + 2);
+  assert.equal(git(['log', '--format=%s'], value.repository).split('\n')
+    .filter(subject => subject === `mdlm: publish create-review-context@1 (${value.materializedExecution})`).length, 1);
+  const post = JSON.parse(await readFile(path.join(output.postRunSnapshot.snapshotDirectory, 'snapshot.json')));
+  assert.equal(post.assignment.id, value.finalAssignment);
+  const trusted = JSON.parse(await readFile(path.join(value.repository, '.git', 'mdlm-demo-orchestrator', 'repository-identity.json')));
+  assert.deepEqual(trusted.lifecycleRepository, post.lifecycleRepository);
+});
+
 test('automatic publication closure resumes its owned commit without replaying next or the external response', async () => {
   const value = await fixture({ materializedNext: true });
   const crashed = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request), {
