@@ -3,6 +3,7 @@ import { link, lstat, mkdir, open, readFile, realpath, readdir, rename, rm, writ
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { adaptAssignment } from './adapter.mjs';
+import { readCanonicalFile } from './canonical-file.mjs';
 import { validateScenarioPrepare } from './contracts.mjs';
 import { snapshot, verifySnapshot } from './evidence.mjs';
 import { normalizeProcessPackage, sameProcessPackageIdentity } from './process-package.mjs';
@@ -1849,11 +1850,7 @@ function requireStoredProcess(record, argv, cwd, timeoutMs, exitStatus) {
 }
 
 async function readCanonicalEvidenceFile(file) {
-  const information = await lstat(file);
-  if (!information.isFile() || information.isSymbolicLink()) throw new Error(`checkpoint evidence is not a regular file: ${file}`);
-  const resolved = await realpath(file);
-  if (resolved !== path.resolve(file)) throw new Error(`checkpoint evidence has a symbolic-link path component: ${file}`);
-  return { path: resolved, bytes: await readFile(resolved) };
+  return readCanonicalFile(file, 'checkpoint evidence');
 }
 
 async function requireCanonicalDirectory(directory) {

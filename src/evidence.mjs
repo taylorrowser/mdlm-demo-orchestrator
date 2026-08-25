@@ -1,5 +1,6 @@
 import { chmod, lstat, mkdir, readFile, readdir, realpath, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { readCanonicalFile } from './canonical-file.mjs';
 import { validateDoctor } from './contracts.mjs';
 import { normalizeProcessPackage } from './process-package.mjs';
 import {
@@ -417,12 +418,8 @@ async function captureOptional(file) {
   if (typeof file !== 'string') return { present: false };
   const requested = path.resolve(file);
   try {
-    const information = await lstat(requested);
-    if (!information.isFile() || information.isSymbolicLink()) throw new Error(`optional evidence is not a regular file: ${requested}`);
-    const resolved = await realpath(requested);
-    if (resolved !== requested) throw new Error(`optional evidence has a symbolic-link path component: ${requested}`);
-    const bytes = await readFile(resolved);
-    return { present: true, path: resolved, bytesBase64: bytes.toString('base64'), digest: sha256(bytes) };
+    const evidence = await readCanonicalFile(requested, 'optional evidence');
+    return { present: true, path: evidence.path, bytesBase64: evidence.bytes.toString('base64'), digest: sha256(evidence.bytes) };
   } catch (error) {
     if (error.code === 'ENOENT') return { present: false, path: requested };
     return { present: false, path: requested, error: error.message };
