@@ -31,12 +31,14 @@ async function fixture({
   assignmentPackage = statusPackage,
   doctorPackage = { id: 'pkg', version: '1', ...statusPackage },
   packetPackage = assignmentPackage,
+  materializedNext = false,
 } = {}) {
   const scratch = await mkdtemp(path.join(os.tmpdir(), 'issue-213-run-'));
   const repository = path.join(scratch, 'repository');
   await mkdir(repository);
   git(['init', '-b', 'main'], repository); git(['config', 'user.name', 'Test'], repository); git(['config', 'user.email', 'test@example.invalid'], repository);
   await writeFile(path.join(repository, 'README.md'), 'fixture\n'); git(['add', '.'], repository); git(['commit', '-m', 'initial'], repository);
+  if (materializedNext) await writeFile(path.join(repository, '.git', 'info', 'exclude'), '.lifecycle/work/\n');
   const base = git(['rev-parse', 'HEAD'], repository);
   const sourceRepository = path.join(scratch, 'source');
   await mkdir(sourceRepository);
@@ -58,6 +60,10 @@ async function fixture({
   const assignmentStatePath = path.join(scratch, 'assignment-id');
   const scenarioStatePath = path.join(scratch, 'scenario-reference');
   const malformedDigestPath = path.join(scratch, 'malformed-digest');
+  const nextCountPath = path.join(scratch, 'next-count');
+  const staleAssignment = '77777777-7777-4777-8777-777777777777';
+  const finalAssignment = '88888888-8888-4888-8888-888888888888';
+  const materializedExecution = '66666666-6666-4666-8666-666666666666';
   await writeFile(assignmentStatePath, assignment);
   await writeFile(scenarioStatePath, scenarioReference);
   const scenario = scenarioReference;
@@ -80,6 +86,21 @@ else if(a[0]==='status') out({contract:'mdlm-status@1',ok:true,command:'status',
 else if(a[0]==='assignment') { const requested=a[2]; if(requested!==assignment) out({contract:'mdlm-assignment-state@1',ok:true,command:'assignment.show',assignment:{id:requested},selected:false,diagnostics:[]}); else out({contract:'mdlm-assignment-state@1',ok:true,command:'assignment.show',assignment:{id:assignment},selected:true,package:assignmentPackage,repository:repo,scenarioReference:scenario,disposition:'active',retryAvailability:{},malformedResponses}); }
 else if(a[0]==='scenario'&&a[1]==='prepare') out({contract:'mdlm-assignment-packet@2',ok:true,command:'scenario.prepare',assignment:{id:assignment},package:packetPackage,repository:repo,scenario:{reference:scenario},responseSchema:{},exactInputs:[]});
 else if(a[0]==='scenario'&&a[1]==='submit') { let chunks=[]; process.stdin.on('data',x=>chunks.push(x)); process.stdin.on('end',()=>{const bytes=Buffer.concat(chunks); fs.appendFileSync(${JSON.stringify(path.join(scratch, 'submit-count'))},'1\\n'); const id=${JSON.stringify(executionId)}; const dir=path.join(root,'.lifecycle/data/.transactions',id); fs.mkdirSync(dir,{recursive:true}); fs.writeFileSync(path.join(dir,'execution.json'),'execution\\n'); fs.writeFileSync(path.join(dir,'target.json'),'target\\n'); if(${uncertainSubmit}) process.exit(9); else out({contract:'mdlm-scenario-execution@4',ok:true,command:'scenario.submit',execution:{contract:'mdlm-scenario-execution@4',id,status:'completed',response:{assignment,digest:'sha256:'+crypto.createHash('sha256').update(bytes).digest('hex')},definition:{scenario},outputs:[{lifecycleDatum:{path:${publicationPath ? JSON.stringify(publicationPath) : "'.lifecycle/data/.transactions/'+id+'/target.json'"}}}]}}); }); }
+else if(a[0]==='next') {
+  const countPath=${JSON.stringify(nextCountPath)}, count=fs.existsSync(countPath)?Number(fs.readFileSync(countPath,'utf8')):0; fs.writeFileSync(countPath,String(count+1));
+  if(${materializedNext}&&count===0){
+    const id=${JSON.stringify(materializedExecution)}, stale=${JSON.stringify(staleAssignment)}, tx='.lifecycle/data/.transactions/'+id, output=tx+'/REV/REV-AUTO/r00001.md';
+    fs.mkdirSync(path.join(root,tx,'REV/REV-AUTO'),{recursive:true}); fs.writeFileSync(path.join(root,output),'automatic review context\\n');
+    fs.writeFileSync(path.join(root,tx,'execution.json'),JSON.stringify({contract:'mdlm-scenario-execution@4',id,status:'completed',response:{contract:'mdlm-assignment-response@1',assignment:'package-authored'},definition:{scenario:'create-review-context@1'},outputs:[{lifecycleDatum:{path:output}}]},null,2)+'\\n');
+    fs.writeFileSync(${JSON.stringify(assignmentStatePath)},stale); fs.writeFileSync(${JSON.stringify(scenarioStatePath)},'environment-review@1');
+    fs.mkdirSync(path.join(root,'.lifecycle/work'),{recursive:true}); fs.writeFileSync(path.join(root,'.lifecycle/work/active-assignment.json'),JSON.stringify({contract:'mdlm-assignment-lease@1',id:stale,disposition:'active',package:statusPackage,repository:repo,phase:'phase@1',scenario:'environment-review@1'},null,2)+'\\n');
+    out({ok:true,command:'next',package:statusPackage,contract:'mdlm-next@1',phase:'phase@1',assignment:{id:stale},materializedExecutions:[{id,scenario:'create-review-context@1',status:'completed'}],outcome:'assignment',diagnostics:[]});
+  } else if(${materializedNext}) {
+    const final=${JSON.stringify(finalAssignment)}, current=repository(); fs.writeFileSync(${JSON.stringify(assignmentStatePath)},final); fs.writeFileSync(${JSON.stringify(scenarioStatePath)},'realize-verification-environment@1');
+    fs.mkdirSync(path.join(root,'.lifecycle/work'),{recursive:true}); fs.writeFileSync(path.join(root,'.lifecycle/work/active-assignment.json'),JSON.stringify({contract:'mdlm-assignment-lease@1',id:final,disposition:'active',package:statusPackage,repository:current,phase:'phase@1',scenario:'realize-verification-environment@1'},null,2)+'\\n');
+    out({ok:true,command:'next',package:statusPackage,contract:'mdlm-next@1',phase:'phase@1',assignment:{id:final},materializedExecutions:[],outcome:'assignment',diagnostics:[]});
+  } else out({ok:true,command:'next',package:statusPackage,contract:'mdlm-next@1',phase:'phase@1',assignment:{id:assignment},materializedExecutions:[],outcome:'assignment',diagnostics:[]});
+}
 else {process.stderr.write('unexpected '+JSON.stringify(a));process.exit(8)}
 `;
   await writeFile(mdlm, script); await chmod(mdlm, 0o755);
@@ -106,7 +127,10 @@ else {process.stderr.write('unexpected '+JSON.stringify(a));process.exit(8)}
       },
     },
   };
-  return { scratch, repository, request, mdlm, mdlmPi, tooling, assignment, assignmentStatePath, scenarioStatePath, malformedDigestPath, executionId };
+  return {
+    scratch, repository, request, mdlm, mdlmPi, tooling, assignment, assignmentStatePath, scenarioStatePath,
+    malformedDigestPath, executionId, nextCountPath, staleAssignment, finalAssignment, materializedExecution,
+  };
 }
 
 const run003CheckpointFixture = path.join(root, 'test', 'fixtures', 'calculator-run-003-checkpoint');
@@ -762,6 +786,68 @@ test('run and resume submit and commit an external Assignment exactly once', asy
   assert.equal(Number(git(['rev-list', '--count', 'HEAD'], repository)), 2);
   const calls = (await readFile(path.join(scratch, 'calls.log'), 'utf8')).trim().split('\n').map(JSON.parse);
   assert.equal(calls.filter(a => a[0] === 'scenario' && a[1] === 'submit').length, 1);
+});
+
+test('accepted external publication automatically closes one package-authored execution and checkpoints the final Assignment', async () => {
+  const value = await fixture({ materializedNext: true });
+  const initialCommitCount = Number(git(['rev-list', '--count', 'HEAD'], value.repository));
+
+  const execution = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
+
+  assert.equal(execution.status, 0, execution.stderr);
+  const output = JSON.parse(execution.stdout);
+  assert.equal(output.status, 'completed', execution.stdout);
+  assert.equal(output.outcome, 'accepted-publication');
+  assert.deepEqual(output.nextAssignment, {
+    id: value.finalAssignment,
+    scenario: 'realize-verification-environment@1',
+    phase: 'pre-submission',
+  });
+  assert.equal(output.publicationClosure.status, 'completed');
+  assert.deepEqual(output.publicationClosure.executions.map(item => item.id), [value.materializedExecution]);
+  assert.equal(Number(git(['rev-list', '--count', 'HEAD'], value.repository)), initialCommitCount + 2);
+  assert.deepEqual(
+    git(['log', '-2', '--format=%s'], value.repository).split('\n'),
+    [
+      `mdlm: publish create-review-context@1 (${value.materializedExecution})`,
+      `mdlm: publish register-pilot-target@1 (${value.executionId})`,
+    ],
+  );
+  assert.equal(git(['status', '--porcelain=v1'], value.repository), '');
+  assert.equal(await readFile(value.nextCountPath, 'utf8'), '2');
+  const lease = JSON.parse(await readFile(path.join(value.repository, '.lifecycle/work/active-assignment.json')));
+  assert.equal(lease.id, value.finalAssignment);
+  const post = JSON.parse(await readFile(path.join(output.postRunSnapshot.snapshotDirectory, 'snapshot.json')));
+  assert.equal(post.assignment.id, value.finalAssignment);
+  assert.deepEqual(post.assignment.repository, {
+    head: git(['rev-parse', 'HEAD'], value.repository),
+    trackedState: post.lifecycleRepository.trackedState,
+  });
+  const trusted = JSON.parse(await readFile(path.join(value.repository, '.git', 'mdlm-demo-orchestrator', 'repository-identity.json')));
+  assert.deepEqual(trusted.lifecycleRepository, post.lifecycleRepository);
+});
+
+test('automatic publication closure resumes its owned commit without replaying next or the external response', async () => {
+  const value = await fixture({ materializedNext: true });
+  const crashed = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request), {
+    ...process.env,
+    MDLM_DEMO_TEST_CRASH: 'materialized-publication:after-git-commit',
+  });
+  assert.equal(crashed.status, 86, crashed.stderr);
+
+  const resumed = exec(process.execPath, [cli, 'resume'], root, JSON.stringify({
+    ...value.request,
+    contract: 'mdlm-demo-resume-request@1',
+    evidenceDirectory: path.join(value.scratch, 'resume-evidence'),
+  }));
+
+  assert.equal(resumed.status, 0, resumed.stderr);
+  const output = JSON.parse(resumed.stdout);
+  assert.equal(output.publicationClosure.status, 'completed', resumed.stdout);
+  assert.equal(await readFile(value.nextCountPath, 'utf8'), '2');
+  assert.equal((await readFile(path.join(value.scratch, 'submit-count'), 'utf8')).trim().split('\n').length, 1);
+  assert.equal(git(['log', '--format=%s', '--all'], value.repository).split('\n')
+    .filter(subject => subject === `mdlm: publish create-review-context@1 (${value.materializedExecution})`).length, 1);
 });
 
 test('ordinary Assignments invoke mdlm-pi with exact argv and request-bound timeout environment', async () => {
