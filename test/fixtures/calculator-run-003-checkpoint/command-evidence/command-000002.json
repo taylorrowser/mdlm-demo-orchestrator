@@ -1,0 +1,29 @@
+{
+  "argv": [
+    "/home/ubuntu/git/mdlm-successor-demos/.tooling-issue-214/node_modules/.bin/mdlm-pi",
+    "run",
+    "/home/ubuntu/git/mdlm-successor-demos/issue-212/calculator-post214-resumable-20260825T0050Z",
+    "--mdlm",
+    "/home/ubuntu/git/mdlm-demo-orchestrator/bin/mdlm-demo-mdlm-shim.mjs",
+    "--provider",
+    "openai-codex",
+    "--model",
+    "gpt-5.6-sol",
+    "--thinking",
+    "high"
+  ],
+  "cwd": "/home/ubuntu/git/mdlm-successor-demos/issue-212/calculator-post214-resumable-20260825T0050Z",
+  "startedAt": "2026-08-25T01:57:32.219Z",
+  "completedAt": "2026-08-25T01:58:50.502Z",
+  "timeoutMs": 900000,
+  "timedOut": false,
+  "outputLimitExceeded": false,
+  "observedOutputBytes": 802,
+  "exitStatus": 1,
+  "signal": null,
+  "spawnError": null,
+  "stdoutBase64": "QXNzaWdubWVudCAwMTEwZmI2Yi01YTBkLTQyMjgtOTg2Ny01OGVkM2UyN2E0YTQ6IGVzdGFibGlzaC1pbml0aWFsLXdheWZpbmRpbmctbWFwQDIKQ29tbWl0dGVkIDI3ZTFiNzk2ZDA1Mjg0NjBiNzZkOTNkMmFlNDkzMjg5Y2VhMzYwNTc6IGVzdGFibGlzaC1pbml0aWFsLXdheWZpbmRpbmctbWFwQDIKQ29tbWl0dGVkIDg1NmFhYjgwNGViYjA5NzU5OGNmNzVjYzQzN2Y5MzNiZDBlNTU2OWQ6IGNyZWF0ZS1yZXZpZXctY29udGV4dEAxCg==",
+  "stderrBase64": "ewogICJzdGF0dXMiOiAib3BlcmF0aW9uYWwtZmFpbHVyZSIsCiAgImVycm9yIjogIk1ETE0gY291bGQgbm90IHByZXBhcmUgdGhlIEFzc2lnbm1lbnQiLAogICJkZXRhaWxzIjogewogICAgImNvbnRyYWN0IjogIm1kbG0tZGVtby1yZXNlcnZlZC1zdG9wQDEiLAogICAgInR5cGUiOiAiYXNzaWdubWVudC1jaGVja3BvaW50IiwKICAgICJwaGFzZSI6ICJiZWZvcmUtd29ya2VyIiwKICAgICJhc3NpZ25tZW50IjogIjZkYjdiZGE3LTcwNDMtNDQ2Yi1hMzhhLTJkYWFiNmM2ZGYzZSIsCiAgICAic2NlbmFyaW8iOiAiZnJlZXplLXNvdXJjZS1ib3VuZGFyeUAxIiwKICAgICJwYWNrZXRQYXRoIjogIi9ob21lL3VidW50dS9naXQvbWRsbS1zdWNjZXNzb3ItZGVtb3MvZXZpZGVuY2UvaXNzdWUtMjEyLWZpbmFsL2NhbGN1bGF0b3ItcG9zdDIxNC9wcml2YXRlLXN0YXRlL2Fzc2lnbm1lbnRzLzAxMTBmYjZiLTVhMGQtNDIyOC05ODY3LTU4ZWQzZTI3YTRhNC1kZjRiNGQyMzgzNjYvc2hpbS9zdG9wcy82ZGI3YmRhNy03MDQzLTQ0NmItYTM4YS0yZGFhYjZjNmRmM2UuanNvbiIKICB9Cn0K",
+  "stdoutSha256": "sha256:48fbf6f383722ccc2d33b56ea654c53e7f42cb05d873a4a50df9cba55eb26363",
+  "stderrSha256": "sha256:f995a2a55c3a507e0f6b29a84321b8de49a4fe8c62342a4923663eea102cd0be"
+}

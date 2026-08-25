@@ -1,0 +1,12 @@
+{
+  "status": "operational-failure",
+  "error": "MDLM could not prepare the Assignment",
+  "details": {
+    "contract": "mdlm-demo-reserved-stop@1",
+    "type": "assignment-checkpoint",
+    "phase": "before-worker",
+    "assignment": "6db7bda7-7043-446b-a38a-2daab6c6df3e",
+    "scenario": "freeze-source-boundary@1",
+    "packetPath": "/home/ubuntu/git/mdlm-successor-demos/evidence/issue-212-final/calculator-post214/private-state/assignments/0110fb6b-5a0d-4228-9867-58ed3e27a4a4-df4b4d238366/shim/stops/6db7bda7-7043-446b-a38a-2daab6c6df3e.json"
+  }
+}

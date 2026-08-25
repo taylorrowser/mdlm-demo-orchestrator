@@ -42,6 +42,7 @@ Every `run` and `resume` first resolves the lifecycle repository and worktree-pr
 | Clean command interruption before submission starts | Continue the same Assignment |
 | External adapter stop before submission | Re-run the adapter against the same packet bytes |
 | Authenticated A-to-B checkpoint with active B at the exact clean packet boundary | Complete A, advance repository identity once, and return B pre-submission |
+| Later B run with an old-runner A-to-B checkpoint still retained under A's private state | Reconcile the checkpoint once, complete A, then continue B without invoking A |
 | Captured response, submission not started | Submit the captured exact bytes |
 | Accepted execution with journaled output paths and Git blob identities | Before generic drift checks, finish or recognize the one exact publication commit by HEAD, parent, subject, paths, and blobs |
 | Completed transaction journal | Return `already-completed`; do not submit or commit again |
@@ -57,6 +58,10 @@ A failed command is not enough to make a retry safe. The journal must still say 
 
 A clean unrelated lifecycle-repository commit is drift, not recovery. Expected values supplied by a later request cannot bless changes to source, harness, artifact, executable target, installed Process Package, or an existing Assignment boundary. Successive ordinary Assignments get separate immutable directories beneath `stateDirectory/assignments`; repository identity and locking remain repository-wide.
 
+A later B `run` or `resume` may repair the old-runner case where A reached a clean B boundary but the repository-wide identity still names A. Recovery runs before the generic repository-drift check. It requires A's assignment identity, both command-evidence triplets, shim configuration, and sole retained B packet. The runner verifies raw byte hashes, Base64 fields, argv, executable paths, working directory, timeout and process termination fields, typed stderr, operator settings, package identity, Scenario, and both repository fingerprints. It rejects symlinks, missing files, extra commands or stops, same-Assignment checkpoints, dirty state, and any current boundary other than the packet's exact clean B boundary. The retained `mdlm-pi` stdout is hash-checked but never used as semantic proof.
+
+The recovery writes one `mdlm-demo-checkpoint-reconciliation@1` journal beneath the worktree-private Git directory. File and directory `fsync` plus atomic rename make its `authenticated`, `boundary-advanced`, and `completed` phases resumable. It advances repository identity only from the recorded A boundary, writes A's completed transaction once, and leaves lifecycle data untouched. Repeating recovery verifies the retained bytes and returns `checkpointReconciliation.status: "already-reconciled"`; it does not invoke `mdlm-pi` for A or prepare A again.
+
 ## Evidence
 
 `snapshot` creates the requested directory with exclusive creation. A second call cannot replace it. The directory contains:
@@ -70,6 +75,8 @@ A clean unrelated lifecycle-repository commit is drift, not recovery. Expected v
 - exact source and qualification-harness commit/tree identities, harness repository locator, and harness manifest bytes
 - separate MDLM and MDLM-Pi archive identities, configured/real executable identities, the lockfile identity, and a path-independent digest of the complete installed tooling tree (relative entry names, types, modes, symlink targets, sizes, and file digests)
 - `manifest.json` with byte lengths and SHA-256 values
+
+`test/fixtures/calculator-run-003-checkpoint` retains the real run-003 A identity, both command triplets, shim configuration, and B stop packet byte for byte. The process test asserts each fixture SHA-256 before deriving scratch-repository boundaries from it.
 
 Every command record includes spawn errors and output-limit state as well as exit/signal/deadline evidence. Nonzero commands, malformed JSON, and semantic contract violations produce a complete immutable snapshot whose result is `command-failure`; evidence capture does not substitute an exception for the failed command. `mdlm doctor --json` is checked against the shape the CLI emits: command `doctor`, boolean `ok`, safe diagnostics, Process Package identity, baseline verification counts, and generated projection summaries. Doctor output has no contract discriminator. Status and Assignment JSON must retain their exact versioned contract and command discriminators, supported outcome/allocation/disposition, Process Package, repository fingerprint, and Assignment shapes before the runner exposes semantic state. Every run also returns a post-run snapshot.
 

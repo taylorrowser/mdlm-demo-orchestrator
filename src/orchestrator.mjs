@@ -88,84 +88,94 @@ async function executeRun(request, context, assignmentDirectory, journalPath, sn
   if (!identityMatch) return stopped('run-identity-drift', 'operator, artifact, installed Process Package, executable target, source, or harness identity changed', snapshotResult, assignmentId);
 
   const journal = await optionalJson(journalPath);
+  const checkpointRecovery = captured.lifecycleRepository.clean === true
+    ? await reconcilePriorAssignmentCheckpoint({ request, context, assignmentDirectory, captured, processPackage })
+    : { ok: true, result: null };
+  if (!checkpointRecovery.ok) {
+    return stopped('checkpoint-reconciliation-failure', checkpointRecovery.detail, snapshotResult, assignmentId);
+  }
+  const withCheckpointRecovery = output => {
+    if (checkpointRecovery.result !== null) output.checkpointReconciliation = checkpointRecovery.result;
+    return output;
+  };
   if (journal?.phase === 'completed') {
     const expected = journal.completedRepository;
     const exactCommitRecovery = expected === undefined && journal.commit === captured.lifecycleRepository.head && captured.lifecycleRepository.clean;
     if (!exactCommitRecovery && !sameJson(expected, captured.lifecycleRepository)) {
-      return stopped('repository-drift', 'repository differs from the completed transaction boundary', snapshotResult, assignmentId);
+      return withCheckpointRecovery(stopped('repository-drift', 'repository differs from the completed transaction boundary', snapshotResult, assignmentId));
     }
-    return result('already-completed', snapshotResult, { assignmentId, executionId: journal.executionId, commit: journal.commit, outcome: journal.outcome });
+    return withCheckpointRecovery(result('already-completed', snapshotResult, { assignmentId, executionId: journal.executionId, commit: journal.commit, outcome: journal.outcome }));
   }
   if (journal?.phase === 'submitting' || journal?.phase === 'uncertain-transaction') {
-    return stopped('uncertain-partial-publication', 'submission began without durable accepted execution evidence', snapshotResult, assignmentId, { transactionPhase: journal.phase });
+    return withCheckpointRecovery(stopped('uncertain-partial-publication', 'submission began without durable accepted execution evidence', snapshotResult, assignmentId, { transactionPhase: journal.phase }));
   }
   if (journal?.phase === 'uncertain-publication') {
-    return stopped('uncertain-partial-publication', 'Git publication state is uncertain', snapshotResult, assignmentId);
+    return withCheckpointRecovery(stopped('uncertain-partial-publication', 'Git publication state is uncertain', snapshotResult, assignmentId));
   }
   if (journal?.phase === 'published-uncommitted' && captured.lifecycleRepository.head !== journal.baseCommit) {
     if (captured.lifecycleRepository.clean !== true) {
-      return stopped('repository-drift', 'repository is dirty after HEAD advanced beyond the journaled publication parent', snapshotResult, assignmentId);
+      return withCheckpointRecovery(stopped('repository-drift', 'repository is dirty after HEAD advanced beyond the journaled publication parent', snapshotResult, assignmentId));
     }
     const publication = { executionId: journal.executionId, scenario: journal.scenario, outputPaths: journal.outputPaths, blobs: journal.blobs };
     try {
       const commit = await commitPublication(context.repository, publication, journal.baseCommit, request.timeoutMs, assignmentDirectory);
       if (commit !== captured.lifecycleRepository.head) throw new Error('snapshot HEAD differs from the exact journaled publication commit');
       await writeJournal(journalPath, { ...journal, phase: 'completed', commit, completedAt: new Date().toISOString(), trustedRepositoryAdvance: true });
-      return result('completed', snapshotResult, { assignmentId, executionId: publication.executionId, commit, recoveredPublication: true, outcome: 'accepted-publication', trustedRepositoryAdvance: true });
+      return withCheckpointRecovery(result('completed', snapshotResult, { assignmentId, executionId: publication.executionId, commit, recoveredPublication: true, outcome: 'accepted-publication', trustedRepositoryAdvance: true }));
     } catch (error) {
-      return stopped('repository-drift', error.message, snapshotResult, assignmentId);
+      return withCheckpointRecovery(stopped('repository-drift', error.message, snapshotResult, assignmentId));
     }
   }
   if (journal?.phase !== 'published-uncommitted' && captured.lifecycleRepository.clean !== true) {
-    return stopped('repository-dirty', 'lifecycle repository has tracked or untracked changes before submission', snapshotResult, assignmentId);
+    return withCheckpointRecovery(stopped('repository-dirty', 'lifecycle repository has tracked or untracked changes before submission', snapshotResult, assignmentId));
   }
 
   const repositoryMatch = await reconcileRepositoryIdentity(context.identityDirectory, assignmentDirectory, assignmentId, captured.lifecycleRepository, assignment.repository);
-  if (!repositoryMatch.ok) return stopped(repositoryMatch.reason, repositoryMatch.detail, snapshotResult, assignmentId);
-  if (captured.diagnosis.ok !== true) return stopped('integrity-drift', 'mdlm doctor did not return ok:true', snapshotResult, assignmentId);
+  if (!repositoryMatch.ok) return withCheckpointRecovery(stopped(repositoryMatch.reason, repositoryMatch.detail, snapshotResult, assignmentId));
+  if (captured.diagnosis.ok !== true) return withCheckpointRecovery(stopped('integrity-drift', 'mdlm doctor did not return ok:true', snapshotResult, assignmentId));
 
   if (journal?.phase === 'published-uncommitted') {
     try {
       const publication = { executionId: journal.executionId, scenario: journal.scenario, outputPaths: journal.outputPaths, blobs: journal.blobs };
       const commit = await commitPublication(context.repository, publication, journal.baseCommit, request.timeoutMs, assignmentDirectory);
       await writeJournal(journalPath, { ...journal, phase: 'completed', commit, completedAt: new Date().toISOString(), trustedRepositoryAdvance: true });
-      return result('completed', snapshotResult, { assignmentId, executionId: publication.executionId, commit, recoveredPublication: true, outcome: 'accepted-publication', trustedRepositoryAdvance: true });
+      return withCheckpointRecovery(result('completed', snapshotResult, { assignmentId, executionId: publication.executionId, commit, recoveredPublication: true, outcome: 'accepted-publication', trustedRepositoryAdvance: true }));
     } catch (error) {
       await writeJournal(journalPath, { ...journal, phase: 'uncertain-publication', error: error.message });
-      return stopped('uncertain-partial-publication', error.message, snapshotResult, assignmentId);
+      return withCheckpointRecovery(stopped('uncertain-partial-publication', error.message, snapshotResult, assignmentId));
     }
   }
 
   const durableCorrection = await inspectCorrectionContext(context, assignment);
   if (durableCorrection.authentic || request.signal === 'correction-session-lost') {
-    return stopped(
+    return withCheckpointRecovery(stopped(
       durableCorrection.authentic ? 'correction-session-unresumable' : 'correction-context-lost',
       durableCorrection.authentic
         ? 'the installed mdlm-pi controller retains the submission journal but has no correction-session resume command; it was not restarted'
         : durableCorrection.detail,
       snapshotResult, assignmentId,
       { correction: durableCorrection, infrastructureStop: true },
-    );
+    ));
   }
   if (assignment.disposition !== 'active' || assignment.id !== assignmentId || assignment.selected !== true || !statusHasActiveAssignment(status, assignmentId)) {
-    return stopped('assignment-not-active', 'requested Assignment is not the selected active durable lease in status and Assignment state', snapshotResult, assignmentId);
+    return withCheckpointRecovery(stopped('assignment-not-active', 'requested Assignment is not the selected active durable lease in status and Assignment state', snapshotResult, assignmentId));
   }
   if (!sameRepositoryFingerprint(assignment.repository, captured.lifecycleRepository)) {
-    return stopped('repository-drift', 'Assignment repository fingerprint differs from the lifecycle repository snapshot', snapshotResult, assignmentId);
+    return withCheckpointRecovery(stopped('repository-drift', 'Assignment repository fingerprint differs from the lifecycle repository snapshot', snapshotResult, assignmentId));
   }
 
   const prepare = await invoke(assignmentDirectory, request.commands.mdlm, ['scenario', 'prepare', assignmentId, '--json'], context.repository, request.timeoutMs);
-  if (!commandSucceeded(prepare)) return stopped('prepare-command-failure', 'MDLM could not prepare the active Assignment', snapshotResult, assignmentId, { process: commandRecord(prepare) });
+  if (!commandSucceeded(prepare)) return withCheckpointRecovery(stopped('prepare-command-failure', 'MDLM could not prepare the active Assignment', snapshotResult, assignmentId, { process: commandRecord(prepare) }));
   let packet;
   try { packet = validateScenarioPrepare(parseJsonBytes(prepare.stdout, 'scenario prepare'), assignmentId); }
-  catch (error) { return stopped('malformed-assignment', error.message, snapshotResult, assignmentId, { process: commandRecord(prepare) }); }
+  catch (error) { return withCheckpointRecovery(stopped('malformed-assignment', error.message, snapshotResult, assignmentId, { process: commandRecord(prepare) })); }
   if (!sameProcessPackageIdentity(packet.package, assignment.package) || !sameJson(packet.repository, assignment.repository)) {
-    return stopped('assignment-fingerprint-drift', 'prepared packet differs from the snapshotted Assignment', snapshotResult, assignmentId);
+    return withCheckpointRecovery(stopped('assignment-fingerprint-drift', 'prepared packet differs from the snapshotted Assignment', snapshotResult, assignmentId));
   }
   if (!externalScenarios.has(packet.scenario?.reference)) {
-    return runPiAssignment(request, context, assignmentDirectory, assignment, snapshotResult);
+    return withCheckpointRecovery(await runPiAssignment(request, context, assignmentDirectory, assignment, snapshotResult));
   }
-  return runExternalAssignment(request, context, assignmentDirectory, journalPath, assignment, packet, prepare.stdout, snapshotResult, journal);
+  return withCheckpointRecovery(await runExternalAssignment(request, context, assignmentDirectory, journalPath, assignment, packet, prepare.stdout, snapshotResult, journal));
 }
 
 async function runExternalAssignment(request, context, assignmentDirectory, journalPath, assignment, packet, packetBytes, snapshotResult, existingJournal) {
@@ -488,6 +498,342 @@ function reconcileProcessPackage(statusPackage, assignmentPackage, doctorPackage
   } catch {
     return null;
   }
+}
+
+async function reconcilePriorAssignmentCheckpoint({ request, context, assignmentDirectory, captured, processPackage }) {
+  const assignmentId = request.assignmentId;
+  const globalPath = path.join(context.identityDirectory, 'repository-identity.json');
+  const global = await optionalJson(globalPath);
+  if (global === null) return { ok: true, result: null };
+  try {
+    if (global.contract !== 'mdlm-demo-repository-identity@1' || !global.lifecycleRepository) {
+      throw new Error('prior durable repository identity is malformed');
+    }
+    const reconciliationDirectory = path.join(context.identityDirectory, 'checkpoint-reconciliations');
+    const existing = await existingCheckpointReconciliation(reconciliationDirectory, assignmentId);
+    if (existing === null && sameJson(global.lifecycleRepository, captured.lifecycleRepository)) {
+      return { ok: true, result: null };
+    }
+    let sourceDirectory;
+    let priorStatus = null;
+    if (existing !== null) {
+      priorStatus = existing.document.phase;
+      sourceDirectory = existing.document.sourceAssignmentDirectory;
+      if (typeof sourceDirectory !== 'string') throw new Error('checkpoint reconciliation has no source Assignment directory');
+    } else {
+      const candidates = await priorBoundaryAssignments(path.dirname(assignmentDirectory), assignmentDirectory, global.lifecycleRepository);
+      if (candidates.length === 0) return { ok: true, result: null };
+      if (candidates.length !== 1) throw new Error('prior repository boundary has ambiguous Assignment checkpoint sources');
+      sourceDirectory = candidates[0];
+    }
+
+    const authenticated = await authenticatePriorAssignmentCheckpoint({
+      request, context, sourceDirectory, captured, processPackage,
+      priorRepository: existing?.document.priorRepository ?? global.lifecycleRepository,
+    });
+    const journalName = `${assignmentKey(authenticated.fromAssignment)}-to-${assignmentKey(assignmentId)}.json`;
+    const journalPath = path.join(reconciliationDirectory, journalName);
+    if (existing !== null) {
+      if (existing.path !== journalPath) throw new Error('checkpoint reconciliation filename differs from its authenticated Assignments');
+      if (!sameJson(reconciliationEvidence(existing.document), reconciliationEvidence(authenticated.record))) {
+        throw new Error('checkpoint reconciliation journal differs from the retained command evidence');
+      }
+      if (!['authenticated', 'boundary-advanced', 'completed'].includes(existing.document.phase)) {
+        throw new Error(`unsupported checkpoint reconciliation phase '${existing.document.phase}'`);
+      }
+    } else {
+      await mkdir(reconciliationDirectory, { recursive: true, mode: 0o700 });
+      await syncDirectory(context.identityDirectory);
+      await writeJournal(journalPath, { ...authenticated.record, phase: 'authenticated' });
+    }
+
+    const final = await completeCheckpointReconciliation({
+      journalPath,
+      journal: { ...authenticated.record, phase: priorStatus ?? 'authenticated' },
+      globalPath,
+      global,
+      sourceDirectory,
+    });
+    return {
+      ok: true,
+      result: {
+        status: priorStatus === 'completed' ? 'already-reconciled' : 'reconciled',
+        fromAssignment: final.fromAssignment,
+        toAssignment: final.toAssignment,
+      },
+    };
+  } catch (error) {
+    return { ok: false, detail: `retained Assignment checkpoint is not authentic: ${error instanceof Error ? error.message : String(error)}` };
+  }
+}
+
+async function existingCheckpointReconciliation(directory, toAssignment) {
+  let entries;
+  try { entries = await readdir(directory, { withFileTypes: true }); }
+  catch (error) { if (error.code === 'ENOENT') return null; throw error; }
+  await requireCanonicalDirectory(directory);
+  const matches = [];
+  for (const entry of entries) {
+    if (!entry.name.endsWith('.json')) continue;
+    if (!entry.isFile()) throw new Error('checkpoint reconciliation journal is not a regular file');
+    const file = path.join(directory, entry.name);
+    const document = JSON.parse((await readCanonicalEvidenceFile(file)).bytes.toString('utf8'));
+    if (document.contract === 'mdlm-demo-checkpoint-reconciliation@1' && document.toAssignment === toAssignment) {
+      matches.push({ path: file, document });
+    }
+  }
+  if (matches.length > 1) throw new Error('more than one checkpoint reconciliation targets the current Assignment');
+  return matches[0] ?? null;
+}
+
+async function priorBoundaryAssignments(assignmentsDirectory, currentAssignmentDirectory, priorRepository) {
+  await requireCanonicalDirectory(assignmentsDirectory);
+  const entries = await readdir(assignmentsDirectory, { withFileTypes: true });
+  const candidates = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const directory = path.join(assignmentsDirectory, entry.name);
+    if (directory === currentAssignmentDirectory) continue;
+    const identityPath = path.join(directory, 'identity.json');
+    let identity;
+    try { identity = JSON.parse((await readCanonicalEvidenceFile(identityPath)).bytes.toString('utf8')); }
+    catch (error) { if (error.code === 'ENOENT') continue; throw error; }
+    if (sameJson(identity.lifecycleRepository, priorRepository)) candidates.push(directory);
+  }
+  return candidates;
+}
+
+async function authenticatePriorAssignmentCheckpoint({ request, context, sourceDirectory, captured, processPackage, priorRepository }) {
+  const toAssignment = request.assignmentId;
+  await requireCanonicalDirectory(sourceDirectory);
+  const identityEvidence = await readCanonicalEvidenceFile(path.join(sourceDirectory, 'identity.json'));
+  const identity = JSON.parse(identityEvidence.bytes.toString('utf8'));
+  if (identity.contract !== 'mdlm-demo-assignment-identity@1' || typeof identity.assignmentId !== 'string' ||
+      !sameJson(Object.keys(identity).sort(), ['assignmentId', 'assignmentRepository', 'contract', 'lifecycleRepository'])) {
+    throw new Error('source Assignment identity is malformed');
+  }
+  const fromAssignment = identity.assignmentId;
+  if (fromAssignment === toAssignment) throw new Error('checkpoint source and target are the same Assignment');
+  if (path.basename(sourceDirectory) !== assignmentKey(fromAssignment)) throw new Error('source Assignment directory does not match its identity');
+  if (!sameJson(identity.lifecycleRepository, priorRepository) || !sameRepositoryFingerprint(identity.assignmentRepository, priorRepository)) {
+    throw new Error('source Assignment identity does not equal the prior durable repository boundary');
+  }
+  if (priorRepository.clean !== true || captured.lifecycleRepository?.clean !== true) {
+    throw new Error('checkpoint boundaries must both be clean');
+  }
+  if (sameJson(priorRepository, captured.lifecycleRepository)) throw new Error('checkpoint does not advance the repository boundary');
+
+  const shimDirectory = path.join(sourceDirectory, 'shim');
+  const stopsDirectory = path.join(shimDirectory, 'stops');
+  const commandDirectory = path.join(sourceDirectory, 'command-evidence');
+  await requireCanonicalDirectory(shimDirectory);
+  await requireCanonicalDirectory(stopsDirectory);
+  await requireCanonicalDirectory(commandDirectory);
+  const commandNames = (await readdir(commandDirectory)).sort();
+  const expectedCommandNames = [
+    'command-000001.json', 'command-000001.stderr', 'command-000001.stdout',
+    'command-000002.json', 'command-000002.stderr', 'command-000002.stdout',
+  ];
+  if (!sameJson(commandNames, expectedCommandNames)) throw new Error('command evidence is missing, ambiguous, or has a later command');
+  const stopNames = (await readdir(stopsDirectory)).sort();
+  if (!sameJson(stopNames, [`${toAssignment}.json`])) throw new Error('private stop evidence is missing or ambiguous');
+
+  const configEvidence = await readCanonicalEvidenceFile(path.join(shimDirectory, 'config.json'));
+  const config = JSON.parse(configEvidence.bytes.toString('utf8'));
+  if (config.contract !== 'mdlm-demo-shim-config@1' ||
+      !sameJson(Object.keys(config).sort(), ['allowedAssignment', 'contract', 'package', 'realMdlm', 'repository', 'stopDirectory', 'timeoutMs']) ||
+      config.allowedAssignment !== fromAssignment || !sameConfiguredPath(config.realMdlm, request.commands.mdlm) ||
+      !sameProcessPackageIdentity(config.package, processPackage) || !sameJson(config.repository, identity.assignmentRepository) ||
+      path.resolve(config.stopDirectory) !== stopsDirectory || config.timeoutMs !== (request.timeoutMs ?? 30_000)) {
+    throw new Error('source shim configuration differs from the current provenance, package, repository, or Assignment');
+  }
+
+  const first = await authenticateStoredCommand(commandDirectory, '000001');
+  const expectedPrepare = [request.commands.mdlm, 'scenario', 'prepare', fromAssignment, '--json'];
+  requireStoredProcess(first.record, expectedPrepare, context.repository, request.timeoutMs ?? 30_000, 0);
+  if (first.stderr.length !== 0) throw new Error('source Scenario prepare command has stderr bytes');
+  const preparedSource = validateScenarioPrepare(JSON.parse(first.stdout.toString('utf8')), {
+    assignmentId: fromAssignment, package: processPackage, repository: identity.assignmentRepository,
+  });
+
+  const second = await authenticateStoredCommand(commandDirectory, '000002');
+  const expectedPi = [
+    request.commands.mdlmPi, 'run', context.repository, '--mdlm', mdlmShim,
+    '--provider', request.operator.provider, '--model', request.operator.model,
+    '--thinking', request.operator.thinking,
+  ];
+  requireStoredProcess(second.record, expectedPi, context.repository, request.timeoutMs ?? 30_000, 1);
+  const failure = JSON.parse(second.stderr.toString('utf8'));
+  if (!sameJson(Object.keys(failure).sort(), ['details', 'error', 'status']) || failure.status !== 'operational-failure' ||
+      failure.error !== 'MDLM could not prepare the Assignment') {
+    throw new Error('mdlm-pi stderr is not the exact typed prepare failure');
+  }
+  const stop = failure.details;
+  if (!stop || !sameJson(Object.keys(stop).sort(), ['assignment', 'contract', 'packetPath', 'phase', 'scenario', 'type']) ||
+      stop.contract !== 'mdlm-demo-reserved-stop@1' || stop.type !== 'assignment-checkpoint' || stop.phase !== 'before-worker' ||
+      stop.assignment !== toAssignment || typeof stop.scenario !== 'string') {
+    throw new Error('mdlm-pi stderr is not an exact A-to-B Assignment checkpoint stop');
+  }
+  const packetFile = path.join(stopsDirectory, `${toAssignment}.json`);
+  if (path.resolve(stop.packetPath) !== packetFile) throw new Error('checkpoint packet path is not canonical inside the source Assignment stop directory');
+  const packetEvidence = await readCanonicalEvidenceFile(packetFile);
+  const packet = validateScenarioPrepare(JSON.parse(packetEvidence.bytes.toString('utf8')), {
+    assignmentId: toAssignment, package: processPackage, repository: captured.lifecycleRepository && {
+      head: captured.lifecycleRepository.head, trackedState: captured.lifecycleRepository.trackedState,
+    },
+  });
+  if (packet.scenario.reference !== stop.scenario) throw new Error('checkpoint Scenario differs from the retained packet');
+  if (captured.diagnosis?.ok !== true || !statusHasActiveAssignment(captured.status, toAssignment) ||
+      captured.assignment?.id !== toAssignment || captured.assignment.selected !== true || captured.assignment.disposition !== 'active') {
+    throw new Error('current status, doctor, and Assignment do not select active Assignment B');
+  }
+  if (captured.assignment.scenarioReference !== packet.scenario.reference ||
+      !sameProcessPackageIdentity(packet.package, captured.status?.package) ||
+      !sameProcessPackageIdentity(packet.package, captured.assignment.package) ||
+      !sameProcessPackageIdentity(packet.package, captured.diagnosis?.package)) {
+    throw new Error('current Scenario or Process Package differs from the retained packet');
+  }
+  if (!sameJson(captured.assignment.repository, packet.repository) ||
+      !sameRepositoryFingerprint(packet.repository, captured.lifecycleRepository)) {
+    throw new Error('current Assignment or repository boundary differs from the retained packet');
+  }
+
+  const evidence = {
+    identity: evidenceManifest(identityEvidence),
+    config: evidenceManifest(configEvidence),
+    commands: [
+      ...first.evidence.map(evidenceManifest),
+      ...second.evidence.map(evidenceManifest),
+    ],
+    packet: evidenceManifest(packetEvidence),
+  };
+  return {
+    fromAssignment,
+    record: {
+      contract: 'mdlm-demo-checkpoint-reconciliation@1',
+      phase: 'authenticated',
+      fromAssignment,
+      toAssignment,
+      sourceAssignmentDirectory: sourceDirectory,
+      priorRepository,
+      completedRepository: captured.lifecycleRepository,
+      scenario: packet.scenario.reference,
+      sourceScenario: preparedSource.scenario.reference,
+      package: processPackage,
+      evidence,
+    },
+  };
+}
+
+async function authenticateStoredCommand(directory, index) {
+  const files = await Promise.all(['json', 'stdout', 'stderr'].map(extension =>
+    readCanonicalEvidenceFile(path.join(directory, `command-${index}.${extension}`))));
+  const [recordEvidence, stdoutEvidence, stderrEvidence] = files;
+  const record = JSON.parse(recordEvidence.bytes.toString('utf8'));
+  const expectedKeys = [
+    'argv', 'completedAt', 'cwd', 'exitStatus', 'observedOutputBytes', 'outputLimitExceeded', 'signal',
+    'spawnError', 'startedAt', 'stderrBase64', 'stderrSha256', 'stdoutBase64', 'stdoutSha256', 'timedOut', 'timeoutMs',
+  ].sort();
+  if (!sameJson(Object.keys(record).sort(), expectedKeys)) throw new Error(`command-${index} record has an unsupported shape`);
+  const stdout = stdoutEvidence.bytes;
+  const stderr = stderrEvidence.bytes;
+  if (record.stdoutSha256 !== sha256(stdout) || record.stderrSha256 !== sha256(stderr) ||
+      record.stdoutBase64 !== stdout.toString('base64') || record.stderrBase64 !== stderr.toString('base64') ||
+      record.observedOutputBytes !== stdout.length + stderr.length) {
+    throw new Error(`command-${index} raw bytes differ from the authenticated command record`);
+  }
+  return { record, stdout, stderr, evidence: files };
+}
+
+function requireStoredProcess(record, argv, cwd, timeoutMs, exitStatus) {
+  if (!sameJson(record.argv, argv) || path.resolve(record.cwd) !== path.resolve(cwd) || record.timeoutMs !== timeoutMs ||
+      record.timedOut !== false || record.outputLimitExceeded !== false || record.exitStatus !== exitStatus ||
+      record.signal !== null || record.spawnError !== null || typeof record.startedAt !== 'string' || typeof record.completedAt !== 'string' ||
+      !Number.isFinite(Date.parse(record.startedAt)) || !Number.isFinite(Date.parse(record.completedAt)) ||
+      Date.parse(record.completedAt) < Date.parse(record.startedAt)) {
+    throw new Error('stored command executable, argv, repository, timeout, or process termination fields differ');
+  }
+}
+
+async function readCanonicalEvidenceFile(file) {
+  const information = await lstat(file);
+  if (!information.isFile() || information.isSymbolicLink()) throw new Error(`checkpoint evidence is not a regular file: ${file}`);
+  const resolved = await realpath(file);
+  if (resolved !== path.resolve(file)) throw new Error(`checkpoint evidence has a symbolic-link path component: ${file}`);
+  return { path: resolved, bytes: await readFile(resolved) };
+}
+
+async function requireCanonicalDirectory(directory) {
+  const information = await lstat(directory);
+  if (!information.isDirectory() || information.isSymbolicLink() || await realpath(directory) !== path.resolve(directory)) {
+    throw new Error(`checkpoint evidence directory is not canonical: ${directory}`);
+  }
+}
+
+function evidenceManifest(evidence) {
+  return { path: evidence.path, bytes: evidence.bytes.length, digest: sha256(evidence.bytes) };
+}
+
+function reconciliationEvidence(value) {
+  return {
+    contract: value.contract,
+    fromAssignment: value.fromAssignment,
+    toAssignment: value.toAssignment,
+    sourceAssignmentDirectory: value.sourceAssignmentDirectory,
+    priorRepository: value.priorRepository,
+    completedRepository: value.completedRepository,
+    scenario: value.scenario,
+    sourceScenario: value.sourceScenario,
+    package: value.package,
+    evidence: value.evidence,
+  };
+}
+
+async function completeCheckpointReconciliation({ journalPath, journal, globalPath, global, sourceDirectory }) {
+  const advancedIdentity = {
+    contract: 'mdlm-demo-repository-identity@1',
+    lifecycleRepository: journal.completedRepository,
+    lastAssignment: { id: journal.fromAssignment, outcome: 'accepted-publication', completed: true },
+  };
+  if (journal.phase === 'completed') {
+    const completedTarget = sameJson(global.lifecycleRepository, journal.completedRepository) &&
+      global.lastAssignment?.id === journal.toAssignment && global.lastAssignment.completed === true;
+    if (!sameJson(global, advancedIdentity) && !completedTarget) {
+      throw new Error('completed checkpoint reconciliation global boundary differs');
+    }
+  } else if (journal.phase === 'authenticated') {
+    if (sameJson(global.lifecycleRepository, journal.priorRepository)) {
+      await durableWriteJson(globalPath, advancedIdentity, 'checkpoint-reconciliation-global');
+    } else if (!sameJson(global, advancedIdentity)) {
+      throw new Error('global repository identity advanced to an unrelated boundary');
+    }
+  } else if (!sameJson(global, advancedIdentity)) {
+    throw new Error('global repository identity does not match the journaled checkpoint advance');
+  }
+  if (journal.phase === 'authenticated') {
+    journal = { ...journal, phase: 'boundary-advanced' };
+    await writeJournal(journalPath, journal);
+  }
+
+  const transactionPath = path.join(sourceDirectory, 'transaction.json');
+  const completedSource = {
+    contract: 'mdlm-demo-transaction-journal@2',
+    phase: 'completed',
+    assignmentId: journal.fromAssignment,
+    scenario: journal.sourceScenario,
+    outcome: 'accepted-publication',
+    completedRepository: journal.completedRepository,
+    trustedRepositoryAdvance: true,
+    checkpointReconciliation: journalPath,
+  };
+  const existingTransaction = await optionalJson(transactionPath);
+  if (existingTransaction === null) await durableWriteJson(transactionPath, completedSource, 'checkpoint-reconciliation-assignment');
+  else if (!sameJson(existingTransaction, completedSource)) throw new Error('source Assignment transaction differs from the checkpoint reconciliation');
+  if (journal.phase !== 'completed') {
+    journal = { ...journal, phase: 'completed' };
+    await writeJournal(journalPath, journal);
+  }
+  return journal;
 }
 
 async function reconcileRepositoryIdentity(identityDirectory, assignmentDirectory, assignmentId, lifecycle, assignmentRepository) {

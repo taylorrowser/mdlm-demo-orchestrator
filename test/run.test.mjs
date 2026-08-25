@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { chmod, mkdtemp, mkdir, readFile, readdir, stat, symlink, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, mkdir, readFile, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import os from 'node:os';
@@ -13,9 +13,12 @@ const cli = path.join(root, 'bin/mdlm-demo-runner.mjs');
 function exec(program, args, cwd, input, env = process.env) { const r = spawnSync(program, args, { cwd, input, env, encoding: 'utf8', timeout: 20_000 }); return r; }
 function git(args, cwd) { const r = exec('git', args, cwd); assert.equal(r.status, 0, r.stderr); return r.stdout.trim(); }
 function digest(file, cwd) { return `sha256:${exec('sha256sum', [file], cwd).stdout.split(' ')[0]}`; }
+function assignmentKeyForTest(assignmentId) {
+  const suffix = createHash('sha256').update(assignmentId).digest('hex').slice(-12);
+  return `${assignmentId.replace(/[^A-Za-z0-9._-]/g, '_')}-${suffix}`;
+}
 function assignmentDirectory(request) {
-  const suffix = createHash('sha256').update(request.assignmentId).digest('hex').slice(-12);
-  return path.join(request.stateDirectory, 'assignments', `${request.assignmentId}-${suffix}`);
+  return path.join(request.stateDirectory, 'assignments', assignmentKeyForTest(request.assignmentId));
 }
 
 async function fixture({
@@ -103,6 +106,135 @@ else {process.stderr.write('unexpected '+JSON.stringify(a));process.exit(8)}
     },
   };
   return { scratch, repository, request, mdlm, mdlmPi, tooling, assignment, assignmentStatePath, scenarioStatePath, malformedDigestPath, executionId };
+}
+
+const run003CheckpointFixture = path.join(root, 'test', 'fixtures', 'calculator-run-003-checkpoint');
+const run003AssignmentA = '0110fb6b-5a0d-4228-9867-58ed3e27a4a4';
+const run003AssignmentB = '6db7bda7-7043-446b-a38a-2daab6c6df3e';
+
+function cleanLifecycle(repository) {
+  const head = git(['rev-parse', 'HEAD^{commit}'], repository);
+  return {
+    head,
+    tree: git(['rev-parse', 'HEAD^{tree}'], repository),
+    trackedState: `sha256:${createHash('sha256').update(`${head}\0staged\0\0worktree\0`).digest('hex')}`,
+    clean: true,
+    porcelainSha256: `sha256:${createHash('sha256').update('').digest('hex')}`,
+  };
+}
+
+function commandRecord(template, { argv, cwd, timeoutMs, stdout, stderr, exitStatus }) {
+  return {
+    ...template,
+    argv,
+    cwd,
+    timeoutMs,
+    timedOut: false,
+    outputLimitExceeded: false,
+    observedOutputBytes: stdout.length + stderr.length,
+    exitStatus,
+    signal: null,
+    spawnError: null,
+    stdoutBase64: stdout.toString('base64'),
+    stderrBase64: stderr.toString('base64'),
+    stdoutSha256: `sha256:${createHash('sha256').update(stdout).digest('hex')}`,
+    stderrSha256: `sha256:${createHash('sha256').update(stderr).digest('hex')}`,
+  };
+}
+
+async function writeEvidenceTriplet(directory, index, record, stdout, stderr) {
+  await writeFile(path.join(directory, `command-${index}.json`), `${JSON.stringify(record, null, 2)}\n`);
+  await writeFile(path.join(directory, `command-${index}.stdout`), stdout);
+  await writeFile(path.join(directory, `command-${index}.stderr`), stderr);
+}
+
+async function afterFactCheckpointFixture({ mutate } = {}) {
+  const packetTemplate = JSON.parse(await readFile(path.join(run003CheckpointFixture, 'shim', 'stops', `${run003AssignmentB}.json`)));
+  const workerLog = path.join(os.tmpdir(), `mdlm-demo-after-fact-worker-${process.pid}-${Date.now()}-${Math.random()}`);
+  const piScript = `#!/usr/bin/env node\nconst fs=require('node:fs'); const config=JSON.parse(fs.readFileSync(process.env.MDLM_DEMO_SHIM_CONFIG,'utf8')); fs.appendFileSync(${JSON.stringify(workerLog)},config.allowedAssignment+'\\n'); console.log('{"status":"lock-conflict"}'); process.exit(5);\n`;
+  const value = await fixture({
+    scenarioReference: 'freeze-source-boundary@1',
+    piScript,
+    statusPackage: packetTemplate.package,
+    assignmentPackage: packetTemplate.package,
+    doctorPackage: { id: 'mdlm-bootstrap', version: '0.74.0', ...packetTemplate.package },
+    packetPackage: packetTemplate.package,
+  });
+  value.request.signal = 'clean-interrupted-command';
+  value.request.assignmentId = run003AssignmentB;
+  await writeFile(value.assignmentStatePath, run003AssignmentB);
+  await writeFile(value.scenarioStatePath, 'freeze-source-boundary@1');
+
+  const oldLifecycle = cleanLifecycle(value.repository);
+  await writeFile(path.join(value.repository, 'accepted-a.txt'), 'accepted A publication\n');
+  git(['add', 'accepted-a.txt'], value.repository);
+  git(['commit', '-m', 'accepted A publication'], value.repository);
+  const currentLifecycle = cleanLifecycle(value.repository);
+
+  const identityDirectory = path.join(value.repository, '.git', 'mdlm-demo-orchestrator');
+  await mkdir(identityDirectory, { recursive: true });
+  await writeFile(path.join(identityDirectory, 'repository-identity.json'), JSON.stringify({
+    contract: 'mdlm-demo-repository-identity@1', lifecycleRepository: oldLifecycle, lastAssignment: null,
+  }));
+
+  const aRequest = { ...value.request, assignmentId: run003AssignmentA };
+  const aDirectory = assignmentDirectory(aRequest);
+  const evidenceDirectory = path.join(aDirectory, 'command-evidence');
+  const stopDirectory = path.join(aDirectory, 'shim', 'stops');
+  await mkdir(evidenceDirectory, { recursive: true });
+  await mkdir(stopDirectory, { recursive: true });
+  const aRepository = { head: oldLifecycle.head, trackedState: oldLifecycle.trackedState };
+  const identity = {
+    contract: 'mdlm-demo-assignment-identity@1', assignmentId: run003AssignmentA,
+    lifecycleRepository: oldLifecycle, assignmentRepository: aRepository,
+  };
+  await writeFile(path.join(aDirectory, 'identity.json'), `${JSON.stringify(identity, null, 2)}\n`);
+  const config = {
+    contract: 'mdlm-demo-shim-config@1', realMdlm: value.mdlm, allowedAssignment: run003AssignmentA,
+    package: packetTemplate.package, repository: aRepository, stopDirectory, timeoutMs: value.request.timeoutMs,
+  };
+  await writeFile(path.join(aDirectory, 'shim', 'config.json'), `${JSON.stringify(config, null, 2)}\n`);
+
+  const packet = { ...packetTemplate, repository: { head: currentLifecycle.head, trackedState: currentLifecycle.trackedState } };
+  const packetPath = path.join(stopDirectory, `${run003AssignmentB}.json`);
+  await writeFile(packetPath, `${JSON.stringify(packet, null, 2)}\n`);
+
+  const command1Template = JSON.parse(await readFile(path.join(run003CheckpointFixture, 'command-evidence', 'command-000001.json')));
+  const preparedA = { ...packetTemplate, assignment: { ...packetTemplate.assignment, id: run003AssignmentA }, repository: aRepository, scenario: { reference: 'ordinary-a@1' } };
+  const stdout1 = Buffer.from(`${JSON.stringify(preparedA)}\n`);
+  const stderr1 = Buffer.alloc(0);
+  const command1 = commandRecord(command1Template, {
+    argv: [value.mdlm, 'scenario', 'prepare', run003AssignmentA, '--json'], cwd: value.repository,
+    timeoutMs: value.request.timeoutMs, stdout: stdout1, stderr: stderr1, exitStatus: 0,
+  });
+  await writeEvidenceTriplet(evidenceDirectory, '000001', command1, stdout1, stderr1);
+
+  const stdout2 = await readFile(path.join(run003CheckpointFixture, 'command-evidence', 'command-000002.stdout'));
+  const typedFailure = {
+    status: 'operational-failure', error: 'MDLM could not prepare the Assignment',
+    details: {
+      contract: 'mdlm-demo-reserved-stop@1', type: 'assignment-checkpoint', phase: 'before-worker',
+      assignment: run003AssignmentB, scenario: 'freeze-source-boundary@1', packetPath,
+    },
+  };
+  const stderr2 = Buffer.from(`${JSON.stringify(typedFailure, null, 2)}\n`);
+  const command2Template = JSON.parse(await readFile(path.join(run003CheckpointFixture, 'command-evidence', 'command-000002.json')));
+  const command2 = commandRecord(command2Template, {
+    argv: [
+      value.mdlmPi, 'run', value.repository, '--mdlm', path.join(root, 'bin', 'mdlm-demo-mdlm-shim.mjs'),
+      '--provider', value.request.operator.provider, '--model', value.request.operator.model,
+      '--thinking', value.request.operator.thinking,
+    ],
+    cwd: value.repository, timeoutMs: value.request.timeoutMs, stdout: stdout2, stderr: stderr2, exitStatus: 1,
+  });
+  await writeEvidenceTriplet(evidenceDirectory, '000002', command2, stdout2, stderr2);
+
+  const context = {
+    ...value, workerLog, oldLifecycle, currentLifecycle, identityDirectory, aDirectory,
+    evidenceDirectory, stopDirectory, packetPath, packet, config, command1, command2,
+  };
+  if (mutate) await mutate(context);
+  return context;
 }
 
 test('run accepts the exact calculator run-002 Process Package shapes across command boundaries', async () => {
@@ -597,6 +729,180 @@ fs.appendFileSync(workerLog,config.allowedAssignment+'\\n'); console.log(JSON.st
   assert.equal(drifted.status, 0, drifted.stderr);
   assert.equal(JSON.parse(drifted.stdout).reason, 'repository-drift');
   assert.equal((await readFile(path.join(value.scratch, 'worker.log'), 'utf8')).trim(), next);
+});
+
+test('a later B resume reconciles exact old-runner A-to-B checkpoint evidence once without rerunning A', async () => {
+  const exactHashes = {
+    'identity.json': '528e4c6d51f871efedc6afdbbbd021c91b5856a3e5557a751cfe2d555587de20',
+    'command-evidence/command-000001.json': 'f5b074b82de42fe29e58042ae941ad4c7d316edc126c747bc296a896cf518787',
+    'command-evidence/command-000001.stdout': 'be70f0210a33d6c918aa47d308d17c814db02cdb6fb971523096a30d121994cd',
+    'command-evidence/command-000001.stderr': 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+    'command-evidence/command-000002.json': '00ffaac956bd9043b71ce6815c8a1f7123fab40320c6e626d5e6706edef4773d',
+    'command-evidence/command-000002.stdout': '48fbf6f383722ccc2d33b56ea654c53e7f42cb05d873a4a50df9cba55eb26363',
+    'command-evidence/command-000002.stderr': 'f995a2a55c3a507e0f6b29a84321b8de49a4fe8c62342a4923663eea102cd0be',
+    'shim/config.json': 'a0f46110f50fdba39a32e4bb2aba2b4c769906dc98a894538b0c59221e413306',
+    [`shim/stops/${run003AssignmentB}.json`]: '9489f196547f0e70a4d0432f419c35157be67d03aa4f13ffd93a627bd65e86f8',
+  };
+  for (const [file, expected] of Object.entries(exactHashes)) {
+    assert.equal(createHash('sha256').update(await readFile(path.join(run003CheckpointFixture, file))).digest('hex'), expected, file);
+  }
+  const value = await afterFactCheckpointFixture();
+  const request = { ...value.request, contract: 'mdlm-demo-resume-request@1' };
+
+  const first = exec(process.execPath, [cli, 'resume'], root, JSON.stringify(request));
+
+  assert.equal(first.status, 0, first.stderr);
+  const recovered = JSON.parse(first.stdout);
+  assert.equal(recovered.status, 'stopped', first.stdout);
+  assert.equal(recovered.reason, 'lock-conflict');
+  assert.deepEqual(recovered.checkpointReconciliation, {
+    status: 'reconciled', fromAssignment: run003AssignmentA, toAssignment: run003AssignmentB,
+  });
+  const reconciliationDirectory = path.join(value.identityDirectory, 'checkpoint-reconciliations');
+  const reconciliationFiles = await readdir(reconciliationDirectory);
+  assert.deepEqual(reconciliationFiles, [`${assignmentKeyForTest(run003AssignmentA)}-to-${assignmentKeyForTest(run003AssignmentB)}.json`]);
+  const reconciliationPath = path.join(reconciliationDirectory, reconciliationFiles[0]);
+  const reconciliationBytes = await readFile(reconciliationPath);
+  const completedAPath = path.join(value.aDirectory, 'transaction.json');
+  const completedABytes = await readFile(completedAPath);
+  const completedA = JSON.parse(completedABytes);
+  assert.equal(completedA.phase, 'completed');
+  assert.equal(completedA.assignmentId, run003AssignmentA);
+  assert.equal(completedA.outcome, 'accepted-publication');
+  assert.deepEqual(completedA.completedRepository, value.currentLifecycle);
+  const trusted = JSON.parse(await readFile(path.join(value.identityDirectory, 'repository-identity.json')));
+  assert.deepEqual(trusted.lifecycleRepository, value.currentLifecycle);
+  assert.deepEqual(trusted.lastAssignment, { id: run003AssignmentA, outcome: 'accepted-publication', completed: true });
+  const callsAfterFirst = (await readFile(path.join(value.scratch, 'calls.log'), 'utf8')).trim().split('\n').map(JSON.parse);
+  assert.equal(callsAfterFirst.some(args => args[0] === 'scenario' && args[1] === 'prepare' && args[2] === run003AssignmentA), false);
+  assert.deepEqual((await readFile(value.workerLog, 'utf8')).trim().split('\n'), [run003AssignmentB]);
+  assert.deepEqual(cleanLifecycle(value.repository), value.currentLifecycle);
+
+  const second = exec(process.execPath, [cli, 'resume'], root, JSON.stringify(request));
+
+  assert.equal(second.status, 0, second.stderr);
+  const repeated = JSON.parse(second.stdout);
+  assert.equal(repeated.reason, 'lock-conflict');
+  assert.deepEqual(repeated.checkpointReconciliation, {
+    status: 'already-reconciled', fromAssignment: run003AssignmentA, toAssignment: run003AssignmentB,
+  });
+  assert.deepEqual(await readFile(reconciliationPath), reconciliationBytes);
+  assert.deepEqual(await readFile(completedAPath), completedABytes);
+  assert.deepEqual((await readFile(value.workerLog, 'utf8')).trim().split('\n'), [run003AssignmentB, run003AssignmentB]);
+  assert.deepEqual(cleanLifecycle(value.repository), value.currentLifecycle);
+  const allCalls = (await readFile(path.join(value.scratch, 'calls.log'), 'utf8')).trim().split('\n').map(JSON.parse);
+  assert.equal(allCalls.some(args => args[0] === 'scenario' && args[1] === 'prepare' && args[2] === run003AssignmentA), false);
+});
+
+test('checkpoint reconciliation resumes after durable global-boundary and A-completion crash seams', async () => {
+  for (const seam of ['checkpoint-reconciliation-global:after-rename', 'checkpoint-reconciliation-assignment:after-rename']) {
+    const value = await afterFactCheckpointFixture();
+    const request = { ...value.request, contract: 'mdlm-demo-resume-request@1' };
+
+    const crashed = exec(process.execPath, [cli, 'resume'], root, JSON.stringify(request), {
+      ...process.env, MDLM_DEMO_TEST_CRASH: seam,
+    });
+    assert.equal(crashed.status, 86, `${seam}: ${crashed.stderr}`);
+    assert.equal(await stat(value.workerLog).then(() => true, () => false), false, seam);
+
+    const resumed = exec(process.execPath, [cli, 'resume'], root, JSON.stringify(request));
+    assert.equal(resumed.status, 0, `${seam}: ${resumed.stderr}`);
+    const output = JSON.parse(resumed.stdout);
+    assert.equal(output.reason, 'lock-conflict', `${seam}: ${resumed.stdout}`);
+    assert.deepEqual(output.checkpointReconciliation, {
+      status: 'reconciled', fromAssignment: run003AssignmentA, toAssignment: run003AssignmentB,
+    });
+    assert.deepEqual((await readFile(value.workerLog, 'utf8')).trim().split('\n'), [run003AssignmentB]);
+    const completedA = JSON.parse(await readFile(path.join(value.aDirectory, 'transaction.json')));
+    assert.equal(completedA.phase, 'completed');
+    const reconciliationFiles = await readdir(path.join(value.identityDirectory, 'checkpoint-reconciliations'));
+    assert.equal(reconciliationFiles.length, 1, seam);
+    const reconciliation = JSON.parse(await readFile(path.join(value.identityDirectory, 'checkpoint-reconciliations', reconciliationFiles[0])));
+    assert.equal(reconciliation.phase, 'completed');
+  }
+});
+
+test('after-the-fact checkpoint reconciliation rejects tamper, stale boundaries, symlinks, and ambiguous evidence', async () => {
+  const rewrite = async (file, update) => {
+    const value = JSON.parse(await readFile(file));
+    update(value);
+    await writeFile(file, `${JSON.stringify(value, null, 2)}\n`);
+  };
+  const cases = [
+    ['changed raw command bytes', async value => {
+      await writeFile(path.join(value.evidenceDirectory, 'command-000002.stdout'), Buffer.concat([
+        await readFile(path.join(value.evidenceDirectory, 'command-000002.stdout')), Buffer.from('forged\n'),
+      ]));
+    }],
+    ['missing raw command bytes', value => rm(path.join(value.evidenceDirectory, 'command-000002.stderr'))],
+    ['missing retained packet', value => rm(value.packetPath)],
+    ['forged process termination', value => rewrite(path.join(value.evidenceDirectory, 'command-000002.json'), record => { record.exitStatus = 0; })],
+    ['wrong mdlm-pi executable', value => rewrite(path.join(value.evidenceDirectory, 'command-000002.json'), record => { record.argv[0] = '/bin/false'; })],
+    ['wrong command repository', value => rewrite(path.join(value.evidenceDirectory, 'command-000002.json'), record => { record.argv[2] = '/tmp/different-repository'; })],
+    ['wrong operator', value => rewrite(path.join(value.evidenceDirectory, 'command-000002.json'), record => { record.argv[6] = 'different-provider'; })],
+    ['wrong shim', value => rewrite(path.join(value.evidenceDirectory, 'command-000002.json'), record => { record.argv[4] = '/tmp/different-shim'; })],
+    ['wrong configured mdlm executable', value => rewrite(path.join(value.aDirectory, 'shim', 'config.json'), config => { config.realMdlm = '/bin/false'; })],
+    ['wrong package', value => rewrite(value.packetPath, packet => { packet.package.digest = `sha256:${'0'.repeat(64)}`; })],
+    ['stale packet HEAD', value => rewrite(value.packetPath, packet => { packet.repository = { head: value.oldLifecycle.head, trackedState: value.oldLifecycle.trackedState }; })],
+    ['same-A stop', async value => {
+      await rewrite(value.packetPath, packet => { packet.assignment.id = run003AssignmentA; });
+      await rewrite(path.join(value.evidenceDirectory, 'command-000002.stderr'), failure => { failure.details.assignment = run003AssignmentA; });
+      const stderr = await readFile(path.join(value.evidenceDirectory, 'command-000002.stderr'));
+      await rewrite(path.join(value.evidenceDirectory, 'command-000002.json'), record => {
+        record.stderrBase64 = stderr.toString('base64');
+        record.stderrSha256 = `sha256:${createHash('sha256').update(stderr).digest('hex')}`;
+        record.observedOutputBytes = Buffer.from(record.stdoutBase64, 'base64').length + stderr.length;
+      });
+    }],
+    ['symlinked raw evidence', async value => {
+      const file = path.join(value.evidenceDirectory, 'command-000002.stdout');
+      const outside = path.join(value.scratch, 'outside.stdout');
+      await writeFile(outside, await readFile(file));
+      await rm(file);
+      await symlink(outside, file);
+    }],
+    ['ambiguous later command', async value => {
+      const stdout = await readFile(path.join(value.evidenceDirectory, 'command-000002.stdout'));
+      const stderr = await readFile(path.join(value.evidenceDirectory, 'command-000002.stderr'));
+      await writeEvidenceTriplet(value.evidenceDirectory, '000003', value.command2, stdout, stderr);
+    }],
+    ['ambiguous later stop', value => writeFile(path.join(value.stopDirectory, 'later.json'), JSON.stringify(value.packet))],
+    ['unrelated clean advancement', async value => {
+      await writeFile(path.join(value.repository, 'unrelated.txt'), 'unrelated advancement\n');
+      git(['add', 'unrelated.txt'], value.repository);
+      git(['commit', '-m', 'unrelated advancement'], value.repository);
+    }],
+  ];
+
+  for (const [name, mutate] of cases) {
+    const value = await afterFactCheckpointFixture({ mutate });
+    const execution = exec(process.execPath, [cli, 'resume'], root, JSON.stringify({
+      ...value.request, contract: 'mdlm-demo-resume-request@1',
+    }));
+    assert.equal(execution.status, 0, `${name}: ${execution.stderr}`);
+    const output = JSON.parse(execution.stdout);
+    assert.equal(output.status, 'stopped', `${name}: ${execution.stdout}`);
+    assert.equal(output.reason, 'checkpoint-reconciliation-failure', `${name}: ${execution.stdout}`);
+    assert.equal(await stat(value.workerLog).then(() => true, () => false), false, name);
+    const trusted = JSON.parse(await readFile(path.join(value.identityDirectory, 'repository-identity.json')));
+    assert.deepEqual(trusted.lifecycleRepository, value.oldLifecycle, name);
+    assert.equal(await stat(path.join(value.aDirectory, 'transaction.json')).then(() => true, () => false), false, name);
+  }
+});
+
+test('after-the-fact checkpoint reconciliation never blesses a dirty current repository', async () => {
+  const value = await afterFactCheckpointFixture();
+  await writeFile(path.join(value.repository, 'dirty.txt'), 'dirty\n');
+
+  const execution = exec(process.execPath, [cli, 'resume'], root, JSON.stringify({
+    ...value.request, contract: 'mdlm-demo-resume-request@1',
+  }));
+
+  assert.equal(execution.status, 0, execution.stderr);
+  assert.equal(JSON.parse(execution.stdout).reason, 'repository-dirty');
+  assert.equal(await stat(value.workerLog).then(() => true, () => false), false);
+  const trusted = JSON.parse(await readFile(path.join(value.identityDirectory, 'repository-identity.json')));
+  assert.deepEqual(trusted.lifecycleRepository, value.oldLifecycle);
 });
 
 test('controlled worker environment strips Git, Node, and shell startup injection variables', async () => {
