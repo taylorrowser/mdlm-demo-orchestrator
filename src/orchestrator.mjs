@@ -18,6 +18,7 @@ const executionIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]
 const operatorScalarPattern = /^[A-Za-z0-9][A-Za-z0-9._/@:+-]{0,255}$/;
 const thinkingLevels = new Set(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
 const assignmentCheckpointEvidence = Symbol('assignmentCheckpointEvidence');
+const publicationClosureEvidence = Symbol('publicationClosureEvidence');
 const operationalFailureEvidence = Symbol('operationalFailureEvidence');
 const outerTimeoutSafetyReserveMs = 60_000;
 
@@ -48,9 +49,11 @@ export async function run(request, mode) {
       output = stopped('orchestration-failure', error instanceof Error ? error.message : String(error), initial, assignmentId);
     }
     const postDirectory = await nextSnapshotDirectory(evidenceDirectory);
-    const postAssignmentId = output[assignmentCheckpointEvidence]?.packet.assignment.id ?? assignmentId;
+    const postAssignmentId = output[publicationClosureEvidence]?.assignmentId ??
+      output[assignmentCheckpointEvidence]?.packet.assignment.id ?? assignmentId;
     const postRunSnapshot = await snapshotRequest(request, context.repository, postDirectory, postAssignmentId, journalPath, piJournalPath, true);
     output = await finalizeAssignmentCheckpoint(output, postRunSnapshot, assignmentId);
+    output = await finalizePublicationClosure(output, postRunSnapshot);
     output = await finalizeOperationalFailure(output, initial, postRunSnapshot, context, assignmentDirectory, request);
     output.postRunSnapshot = postRunSnapshot;
     await finishTrustedRun(context, assignmentDirectory, journalPath, assignmentId, output, postRunSnapshot);
@@ -84,6 +87,29 @@ async function executeRun(request, context, assignmentDirectory, journalPath, sn
   if (captured.provenance.valid !== true) {
     return stopped('provenance-violation', 'a source, artifact, executable, or harness identity differs', snapshotResult, assignmentId);
   }
+  const closurePath = path.join(assignmentDirectory, 'publication-closure.json');
+  const existingClosure = await optionalCanonicalJson(closurePath);
+  if (existingClosure !== null) {
+    try {
+      const processPackage = normalizeProcessPackage(existingClosure.package, 'publication closure Process Package');
+      if (!sameProcessPackageIdentity(processPackage, captured.status.package) ||
+          !sameProcessPackageIdentity(processPackage, captured.diagnosis.package)) {
+        throw new Error('status or doctor Process Package differs from the publication closure');
+      }
+      const runIdentity = observedRunIdentity(captured.provenance, processPackage, request.operator, request);
+      if (!sameJson(runIdentity, existingClosure.runIdentity) ||
+          !await pinRunIdentity(context.identityDirectory, runIdentity, mode === 'run')) {
+        throw new Error('run identity differs from the publication closure');
+      }
+      return await continuePublicationClosure({
+        request, context, assignmentDirectory, journalPath, closurePath, closure: existingClosure,
+        snapshotResult, processPackage, runIdentity, resumed: true,
+      });
+    } catch (error) {
+      return stopped('publication-closure-failure', error instanceof Error ? error.message : String(error), snapshotResult, assignmentId);
+    }
+  }
+
   const assignment = captured.assignment;
   const status = captured.status;
   const processPackage = reconcileProcessPackage(status.package, assignment.package, captured.diagnosis.package);
@@ -143,6 +169,16 @@ async function executeRun(request, context, assignmentDirectory, journalPath, sn
     if (!exactCommitRecovery && !sameJson(expected, captured.lifecycleRepository)) {
       return withCheckpointRecovery(stopped('repository-drift', 'repository differs from the completed transaction boundary', snapshotResult, assignmentId));
     }
+    if (exactCommitRecovery && journal.package !== undefined) {
+      try {
+        return withCheckpointRecovery(await beginPublicationClosure({
+          request, context, assignmentDirectory, journalPath, snapshotResult, processPackage, runIdentity,
+          completedJournal: journal, recoveredPublication: true,
+        }));
+      } catch (error) {
+        return withCheckpointRecovery(stopped('publication-closure-failure', error instanceof Error ? error.message : String(error), snapshotResult, assignmentId));
+      }
+    }
     return withCheckpointRecovery(result('already-completed', snapshotResult, { assignmentId, executionId: journal.executionId, commit: journal.commit, outcome: journal.outcome }));
   }
   if (journal?.phase === 'submitting' || journal?.phase === 'uncertain-transaction') {
@@ -159,8 +195,18 @@ async function executeRun(request, context, assignmentDirectory, journalPath, sn
     try {
       const commit = await commitPublication(context.repository, publication, journal.baseCommit, request.timeoutMs, assignmentDirectory);
       if (commit !== captured.lifecycleRepository.head) throw new Error('snapshot HEAD differs from the exact journaled publication commit');
-      await writeJournal(journalPath, { ...journal, phase: 'completed', commit, completedAt: new Date().toISOString(), trustedRepositoryAdvance: true });
-      return withCheckpointRecovery(result('completed', snapshotResult, { assignmentId, executionId: publication.executionId, commit, recoveredPublication: true, outcome: 'accepted-publication', trustedRepositoryAdvance: true }));
+      const completedJournal = { ...journal, phase: 'completed', commit, completedAt: new Date().toISOString(), trustedRepositoryAdvance: true };
+      await writeJournal(journalPath, completedJournal);
+      if (journal.package === undefined) {
+        return withCheckpointRecovery(result('completed', snapshotResult, {
+          assignmentId, executionId: publication.executionId, commit, recoveredPublication: true,
+          outcome: 'accepted-publication', trustedRepositoryAdvance: true,
+        }));
+      }
+      return withCheckpointRecovery(await beginPublicationClosure({
+        request, context, assignmentDirectory, journalPath, snapshotResult, processPackage, runIdentity,
+        completedJournal, recoveredPublication: true,
+      }));
     } catch (error) {
       return withCheckpointRecovery(stopped('repository-drift', error.message, snapshotResult, assignmentId));
     }
@@ -174,14 +220,29 @@ async function executeRun(request, context, assignmentDirectory, journalPath, sn
   if (captured.diagnosis.ok !== true) return withCheckpointRecovery(stopped('integrity-drift', 'mdlm doctor did not return ok:true', snapshotResult, assignmentId));
 
   if (journal?.phase === 'published-uncommitted') {
+    const publication = { executionId: journal.executionId, scenario: journal.scenario, outputPaths: journal.outputPaths, blobs: journal.blobs };
+    let completedJournal;
     try {
-      const publication = { executionId: journal.executionId, scenario: journal.scenario, outputPaths: journal.outputPaths, blobs: journal.blobs };
       const commit = await commitPublication(context.repository, publication, journal.baseCommit, request.timeoutMs, assignmentDirectory);
-      await writeJournal(journalPath, { ...journal, phase: 'completed', commit, completedAt: new Date().toISOString(), trustedRepositoryAdvance: true });
-      return withCheckpointRecovery(result('completed', snapshotResult, { assignmentId, executionId: publication.executionId, commit, recoveredPublication: true, outcome: 'accepted-publication', trustedRepositoryAdvance: true }));
+      completedJournal = { ...journal, phase: 'completed', commit, completedAt: new Date().toISOString(), trustedRepositoryAdvance: true };
+      await writeJournal(journalPath, completedJournal);
     } catch (error) {
       await writeJournal(journalPath, { ...journal, phase: 'uncertain-publication', error: error.message });
       return withCheckpointRecovery(stopped('uncertain-partial-publication', error.message, snapshotResult, assignmentId));
+    }
+    if (journal.package === undefined) {
+      return withCheckpointRecovery(result('completed', snapshotResult, {
+        assignmentId, executionId: publication.executionId, commit: completedJournal.commit, recoveredPublication: true,
+        outcome: 'accepted-publication', trustedRepositoryAdvance: true,
+      }));
+    }
+    try {
+      return withCheckpointRecovery(await beginPublicationClosure({
+        request, context, assignmentDirectory, journalPath, snapshotResult, processPackage, runIdentity,
+        completedJournal, recoveredPublication: true,
+      }));
+    } catch (error) {
+      return withCheckpointRecovery(stopped('publication-closure-failure', error instanceof Error ? error.message : String(error), snapshotResult, assignmentId));
     }
   }
 
@@ -214,10 +275,12 @@ async function executeRun(request, context, assignmentDirectory, journalPath, sn
   if (!externalScenarios.has(packet.scenario?.reference)) {
     return withCheckpointRecovery(await runPiAssignment(request, context, assignmentDirectory, assignment, snapshotResult));
   }
-  return withCheckpointRecovery(await runExternalAssignment(request, context, assignmentDirectory, journalPath, assignment, packet, prepare.stdout, snapshotResult, journal));
+  return withCheckpointRecovery(await runExternalAssignment(
+    request, context, assignmentDirectory, journalPath, assignment, packet, prepare.stdout, snapshotResult, journal, runIdentity,
+  ));
 }
 
-async function runExternalAssignment(request, context, assignmentDirectory, journalPath, assignment, packet, packetBytes, snapshotResult, existingJournal) {
+async function runExternalAssignment(request, context, assignmentDirectory, journalPath, assignment, packet, packetBytes, snapshotResult, existingJournal, runIdentity) {
   const assignmentId = assignment.id;
   const packetPath = path.join(assignmentDirectory, 'prepared-packet.json');
   await writeOnceOrMatch(packetPath, packetBytes);
@@ -254,13 +317,283 @@ async function runExternalAssignment(request, context, assignmentDirectory, jour
   }
   const published = { ...journal, phase: 'published-uncommitted', executionId: publication.executionId, outputPaths: publication.outputPaths, blobs: publication.blobs };
   await writeJournal(journalPath, published);
+  let completedJournal;
   try {
     const commit = await commitPublication(context.repository, publication, journal.baseCommit, request.timeoutMs, assignmentDirectory);
-    await writeJournal(journalPath, { ...published, phase: 'completed', commit, completedAt: new Date().toISOString(), trustedRepositoryAdvance: true });
-    return result('completed', snapshotResult, { assignmentId, executionId: publication.executionId, commit, outcome: 'accepted-publication', trustedRepositoryAdvance: true });
+    completedJournal = { ...published, phase: 'completed', commit, completedAt: new Date().toISOString(), trustedRepositoryAdvance: true };
+    await writeJournal(journalPath, completedJournal);
+    maybeInjectedCrash('publication-closure', 'after-transaction-completed');
   } catch (error) {
     await writeJournal(journalPath, { ...published, phase: 'uncertain-publication', error: error.message });
     return stopped('uncertain-partial-publication', error.message, snapshotResult, assignmentId);
+  }
+  try {
+    return await beginPublicationClosure({
+      request, context, assignmentDirectory, journalPath, snapshotResult, processPackage: packet.package, runIdentity,
+      completedJournal, recoveredPublication: false,
+    });
+  } catch (error) {
+    return stopped('publication-closure-failure', error instanceof Error ? error.message : String(error), snapshotResult, assignmentId);
+  }
+}
+
+async function beginPublicationClosure({
+  request, context, assignmentDirectory, journalPath, snapshotResult, processPackage, runIdentity,
+  completedJournal, recoveredPublication,
+}) {
+  const closurePath = path.join(assignmentDirectory, 'publication-closure.json');
+  const acceptedTrackedState = sha256(Buffer.from(`${completedJournal.commit}\0staged\0\0worktree\0`));
+  const closure = {
+    contract: 'mdlm-demo-publication-closure@1', phase: 'accepted', assignmentId: completedJournal.assignmentId,
+    scenario: completedJournal.scenario, executionId: completedJournal.executionId, acceptedCommit: completedJournal.commit,
+    acceptedRepository: { head: completedJournal.commit, trackedState: acceptedTrackedState },
+    package: normalizeProcessPackage(processPackage), runIdentity, recoveredPublication,
+    materializedExecutions: [], publications: [], publishedCount: 0,
+  };
+  await durableCreateJson(closurePath, closure, 'publication-closure-accepted');
+  return continuePublicationClosure({
+    request, context, assignmentDirectory, journalPath, closurePath, closure,
+    snapshotResult, processPackage: closure.package, runIdentity, resumed: false,
+  });
+}
+
+async function continuePublicationClosure({
+  request, context, assignmentDirectory, journalPath, closurePath, closure, snapshotResult, processPackage, runIdentity, resumed,
+}) {
+  requirePublicationClosure(closure, request.assignmentId, processPackage, runIdentity);
+  const acceptedTransaction = await optionalCanonicalJson(journalPath);
+  if (acceptedTransaction?.contract !== 'mdlm-demo-transaction-journal@2' ||
+      acceptedTransaction.phase !== 'completed' || acceptedTransaction.assignmentId !== closure.assignmentId ||
+      acceptedTransaction.executionId !== closure.executionId || acceptedTransaction.commit !== closure.acceptedCommit ||
+      acceptedTransaction.trustedRepositoryAdvance !== true ||
+      !sameProcessPackageIdentity(acceptedTransaction.package, closure.package)) {
+    throw new Error('accepted external transaction differs from the publication closure');
+  }
+
+  if (closure.phase === 'accepted') {
+    closure = await startClosureCommand(closurePath, closure, 'materialized-next-started', 1, assignmentDirectory);
+    await invokeClosureCommand(closure.commandEvidencePrefix, request.commands.mdlm, ['next', '--json'], context.repository, request.timeoutMs);
+  }
+  if (closure.phase === 'materialized-next-started') {
+    const next = await authenticatedClosureNext(closure, request, context, 1);
+    if (next.materializedExecutions.length === 0) {
+      closure = { ...closure, phase: 'no-materializations', firstNextAssignment: next.assignment.id };
+      await writeJournal(closurePath, closure);
+    } else {
+      const publications = [];
+      for (const execution of next.materializedExecutions) {
+        const publication = await publicationFromMaterializedExecution(context.repository, execution);
+        publication.blobs = await captureBlobs(context.repository, publication.outputPaths, request.timeoutMs, assignmentDirectory);
+        publications.push(publication);
+      }
+      const changed = await repositoryChangedPaths(context.repository, request.timeoutMs, assignmentDirectory);
+      const staleLeaseRelativePath = '.lifecycle/work/active-assignment.json';
+      const expected = publications.flatMap(item => item.outputPaths).sort();
+      if (!sameJson(changed, expected)) throw new Error('working tree does not contain exactly the ordered materialized transactions');
+      const staleLeasePath = path.join(context.repository, ...staleLeaseRelativePath.split('/'));
+      const staleLeaseEvidence = await readCanonicalFile(staleLeasePath, 'stale Assignment lease');
+      let staleLease;
+      try { staleLease = JSON.parse(staleLeaseEvidence.bytes.toString('utf8')); }
+      catch { throw new Error('stale Assignment lease is not valid JSON'); }
+      if (staleLease.contract !== 'mdlm-assignment-lease@1' || staleLease.id !== next.assignment.id ||
+          staleLease.disposition !== 'active' || !sameProcessPackageIdentity(staleLease.package, closure.package) ||
+          !sameJson(staleLease.repository, closure.acceptedRepository)) {
+        throw new Error('materializing next did not allocate the exact stale pre-publication lease');
+      }
+      closure = {
+        ...closure, phase: 'publishing', firstNextAssignment: next.assignment.id,
+        materializedExecutions: next.materializedExecutions,
+        publications, staleLease: { path: staleLeasePath, digest: sha256(staleLeaseEvidence.bytes), bytesBase64: staleLeaseEvidence.bytes.toString('base64') },
+      };
+      await writeJournal(closurePath, closure);
+    }
+  }
+  if (closure.phase === 'no-materializations') {
+    return publicationClosureResult(snapshotResult, closure, null, resumed);
+  }
+
+  while (closure.phase === 'publishing' && closure.publishedCount < closure.publications.length) {
+    const publication = closure.publications[closure.publishedCount];
+    const baseCommit = closure.publishedCount === 0
+      ? closure.acceptedCommit
+      : closure.publications[closure.publishedCount - 1].commit;
+    const remainingPaths = closure.publications.slice(closure.publishedCount).flatMap(item => item.outputPaths).sort();
+    const commit = await commitPublication(
+      context.repository, publication, baseCommit, request.timeoutMs, assignmentDirectory,
+      { expectedWorktreePaths: remainingPaths, crashPhase: 'materialized-publication' },
+    );
+    const publications = closure.publications.map((item, index) => index === closure.publishedCount ? { ...item, commit } : item);
+    closure = { ...closure, publications, publishedCount: closure.publishedCount + 1 };
+    await writeJournal(closurePath, closure);
+  }
+  if (closure.phase === 'publishing' && closure.publishedCount === closure.publications.length) {
+    closure = { ...closure, phase: 'retiring-stale-lease', finalCommit: closure.publications.at(-1).commit };
+    await writeJournal(closurePath, closure);
+  }
+  if (closure.phase === 'retiring-stale-lease') {
+    await retireExactStaleLease(closure.staleLease);
+    closure = { ...closure, phase: 'stale-lease-retired' };
+    await writeJournal(closurePath, closure);
+  }
+  if (closure.phase === 'stale-lease-retired') {
+    closure = await startClosureCommand(closurePath, closure, 'final-next-started', 2, assignmentDirectory);
+    await invokeClosureCommand(closure.commandEvidencePrefix, request.commands.mdlm, ['next', '--json'], context.repository, request.timeoutMs);
+  }
+  if (closure.phase === 'final-next-started') {
+    const next = await authenticatedClosureNext(closure, request, context, 2);
+    if (next.materializedExecutions.length !== 0) throw new Error('final next unexpectedly materialized more package-authored executions');
+    closure = { ...closure, phase: 'completed', finalAssignment: next.assignment.id };
+    await writeJournal(closurePath, closure);
+  }
+  if (closure.phase !== 'completed') throw new Error(`unsupported publication closure phase '${closure.phase}'`);
+  return publicationClosureResult(snapshotResult, closure, closure.finalAssignment, resumed);
+}
+
+function requirePublicationClosure(closure, assignmentId, processPackage, runIdentity) {
+  if (!closure || closure.contract !== 'mdlm-demo-publication-closure@1' || closure.assignmentId !== assignmentId ||
+      !executionIdPattern.test(closure.executionId ?? '') || !/^[0-9a-f]{40,64}$/.test(closure.acceptedCommit ?? '') ||
+      !externalScenarios.has(closure.scenario) || !sameProcessPackageIdentity(closure.package, processPackage) ||
+      !sameJson(closure.runIdentity, runIdentity) || !Array.isArray(closure.publications) ||
+      !Array.isArray(closure.materializedExecutions) || !Number.isSafeInteger(closure.publishedCount)) {
+    throw new Error('publication closure journal is malformed or belongs to another accepted response');
+  }
+}
+
+async function startClosureCommand(closurePath, closure, phase, index, assignmentDirectory) {
+  const commandDirectory = path.join(assignmentDirectory, 'publication-closure-command-evidence');
+  const prefix = path.join(commandDirectory, `command-${String(index).padStart(6, '0')}`);
+  const updated = { ...closure, phase, commandEvidencePrefix: prefix };
+  await writeJournal(closurePath, updated);
+  return updated;
+}
+
+async function invokeClosureCommand(prefix, program, args, cwd, timeoutMs) {
+  const existing = await Promise.all(['json', 'stdout', 'stderr'].map(extension => optionalLstat(`${prefix}.${extension}`)));
+  if (existing.some(value => value !== null)) throw new Error('publication closure command evidence already exists or is incomplete');
+  await mkdir(path.dirname(prefix), { recursive: true, mode: 0o700 });
+  await syncDirectory(path.dirname(prefix));
+  const output = await runProcess(program, args, { cwd, timeoutMs, env: controlledEnvironment() });
+  await writeExclusiveSynced(`${prefix}.stdout`, output.stdout);
+  await writeExclusiveSynced(`${prefix}.stderr`, output.stderr);
+  await writeExclusiveSynced(`${prefix}.json`, Buffer.from(`${JSON.stringify(commandRecord(output), null, 2)}\n`));
+  await syncDirectory(path.dirname(prefix));
+}
+
+async function writeExclusiveSynced(file, bytes) {
+  const handle = await open(file, 'wx', 0o400);
+  try { await handle.writeFile(bytes); await handle.sync(); }
+  finally { await handle.close(); }
+}
+
+async function authenticatedClosureNext(closure, request, context, index) {
+  let stored;
+  try { stored = await authenticateStoredCommand(path.dirname(closure.commandEvidencePrefix), String(index).padStart(6, '0')); }
+  catch (error) { throw new Error(`publication closure next is uncertain and will not be replayed: ${error instanceof Error ? error.message : String(error)}`); }
+  requireStoredProcess(stored.record, [request.commands.mdlm, 'next', '--json'], context.repository, request.timeoutMs, 0);
+  if (stored.stderr.length !== 0) throw new Error('publication closure next wrote stderr');
+  let next;
+  try { next = JSON.parse(stored.stdout.toString('utf8')); }
+  catch { throw new Error('publication closure next stdout is not valid JSON'); }
+  const keys = ['assignment', 'command', 'contract', 'diagnostics', 'materializedExecutions', 'ok', 'outcome', 'package', 'phase'];
+  if (!next || !sameJson(Object.keys(next).sort(), keys) || next.contract !== 'mdlm-next@1' || next.command !== 'next' ||
+      next.ok !== true || next.outcome !== 'assignment' || !sameProcessPackageIdentity(next.package, closure.package) ||
+      typeof next.phase !== 'string' || next.phase.length === 0 || !next.assignment ||
+      !sameJson(Object.keys(next.assignment).sort(), ['id']) || !executionIdPattern.test(next.assignment.id ?? '') ||
+      !Array.isArray(next.diagnostics) || next.diagnostics.length !== 0 || !Array.isArray(next.materializedExecutions)) {
+    throw new Error('publication closure next did not return one exact Assignment outcome');
+  }
+  const ids = new Set();
+  for (const execution of next.materializedExecutions) {
+    if (!execution || !sameJson(Object.keys(execution).sort(), ['id', 'scenario', 'status']) ||
+        !executionIdPattern.test(execution.id ?? '') || !/^.+@[1-9][0-9]*$/.test(execution.scenario ?? '') ||
+        execution.status !== 'completed' || ids.has(execution.id)) {
+      throw new Error('publication closure next returned a malformed or duplicate materialized execution');
+    }
+    ids.add(execution.id);
+  }
+  return next;
+}
+
+async function publicationFromMaterializedExecution(repository, expected) {
+  const executionPath = `.lifecycle/data/.transactions/${expected.id}/execution.json`;
+  const evidence = await readCanonicalFile(path.join(repository, ...executionPath.split('/')), 'materialized execution');
+  let execution;
+  try { execution = JSON.parse(evidence.bytes.toString('utf8')); }
+  catch { throw new Error('materialized execution record is not valid JSON'); }
+  const paths = execution?.outputs?.map(item => item?.lifecycleDatum?.path);
+  if (execution.contract !== 'mdlm-scenario-execution@4' || execution.id !== expected.id || execution.status !== 'completed' ||
+      execution.definition?.scenario !== expected.scenario || execution.response?.contract !== 'mdlm-assignment-response@1' ||
+      typeof execution.response.assignment !== 'string' || !Array.isArray(paths) || paths.length === 0 ||
+      paths.some(value => typeof value !== 'string')) {
+    throw new Error('materialized execution does not match the exact completed next result');
+  }
+  return {
+    executionId: expected.id, scenario: expected.scenario,
+    outputPaths: await canonicalPublicationPaths(repository, expected.id, [executionPath, ...paths]),
+  };
+}
+
+async function repositoryChangedPaths(repository, timeoutMs, assignmentDirectory) {
+  const status = await invoke(assignmentDirectory, 'git', ['status', '--porcelain=v1', '-z', '--untracked-files=all'], repository, timeoutMs);
+  if (!commandSucceeded(status)) throw new Error('repository status cannot authenticate materialized publications');
+  return porcelainPaths(status.stdout).sort();
+}
+
+async function retireExactStaleLease(evidence) {
+  const observed = await optionalLstat(evidence.path);
+  if (observed === null) return;
+  const current = await readCanonicalFile(evidence.path, 'stale Assignment lease');
+  if (sha256(current.bytes) !== evidence.digest || current.bytes.toString('base64') !== evidence.bytesBase64) {
+    throw new Error('stale Assignment lease changed before retirement');
+  }
+  await rm(evidence.path);
+  await syncDirectory(path.dirname(evidence.path));
+}
+
+function publicationClosureResult(snapshotResult, closure, finalAssignment, resumed) {
+  const output = result(resumed ? 'already-completed' : 'completed', snapshotResult, {
+    assignmentId: closure.assignmentId, executionId: closure.executionId, commit: closure.acceptedCommit,
+    ...(closure.recoveredPublication ? { recoveredPublication: true } : {}),
+    outcome: 'accepted-publication', trustedRepositoryAdvance: true,
+    ...(closure.phase === 'no-materializations' ? {} : {
+      publicationClosure: {
+        status: 'completed',
+        executions: closure.publications.map(item => ({ id: item.executionId, scenario: item.scenario, commit: item.commit })),
+      },
+    }),
+  });
+  if (finalAssignment !== null) output[publicationClosureEvidence] = { assignmentId: finalAssignment, closure };
+  return output;
+}
+
+async function finalizePublicationClosure(output, postSnapshot) {
+  const evidence = output[publicationClosureEvidence];
+  if (evidence === undefined) return output;
+  delete output[publicationClosureEvidence];
+  try {
+    if (postSnapshot.status !== 'complete') throw new Error('publication closure post-run snapshot is incomplete');
+    const captured = JSON.parse(await readFile(path.join(postSnapshot.snapshotDirectory, 'snapshot.json'), 'utf8'));
+    const closure = evidence.closure;
+    if (captured.lifecycleRepository?.clean !== true || captured.lifecycleRepository.head !== closure.finalCommit ||
+        captured.diagnosis?.ok !== true || !sameProcessPackageIdentity(captured.status?.package, closure.package) ||
+        !sameProcessPackageIdentity(captured.diagnosis?.package, closure.package) ||
+        !statusHasActiveAssignment(captured.status, evidence.assignmentId) || captured.assignment?.id !== evidence.assignmentId ||
+        captured.assignment.selected !== true || captured.assignment.disposition !== 'active' ||
+        !sameProcessPackageIdentity(captured.assignment.package, closure.package) ||
+        !sameJson(captured.assignment.repository, captured.assignmentRepository) ||
+        !sameRepositoryFingerprint(captured.assignmentRepository, captured.lifecycleRepository)) {
+      throw new Error('final next Assignment is not bound to the final clean publication commit');
+    }
+    output.nextAssignment = { id: evidence.assignmentId, scenario: captured.assignment.scenarioReference, phase: 'pre-submission' };
+    return output;
+  } catch (error) {
+    output.status = 'stopped';
+    output.recoverable = false;
+    output.reason = 'publication-closure-checkpoint-failure';
+    output.detail = error instanceof Error ? error.message : String(error);
+    output.trustedRepositoryAdvance = false;
+    delete output.nextAssignment;
+    return output;
   }
 }
 
@@ -2348,7 +2681,7 @@ async function captureBlobs(repository, outputPaths, timeoutMs, assignmentDirect
   return blobs;
 }
 
-async function commitPublication(repository, publication, baseCommit, timeoutMs, assignmentDirectory) {
+async function commitPublication(repository, publication, baseCommit, timeoutMs, assignmentDirectory, options = {}) {
   await validatePublication(repository, publication);
   const head = await invoke(assignmentDirectory, 'git', ['rev-parse', 'HEAD^{commit}'], repository, timeoutMs);
   if (!commandSucceeded(head)) throw new Error('repository HEAD cannot be inspected');
@@ -2358,7 +2691,8 @@ async function commitPublication(repository, publication, baseCommit, timeoutMs,
   const status = await invoke(assignmentDirectory, 'git', ['status', '--porcelain=v1', '-z', '--untracked-files=all'], repository, timeoutMs);
   if (!commandSucceeded(status)) throw new Error('repository status cannot be inspected');
   const changed = porcelainPaths(status.stdout).sort();
-  if (!sameJson(changed, expected)) throw new Error('working tree does not contain exactly the accepted transaction outputs');
+  const expectedWorktreePaths = options.expectedWorktreePaths ?? expected;
+  if (!sameJson(changed, expectedWorktreePaths)) throw new Error('working tree does not contain exactly the accepted transaction outputs');
   await verifyBlobs(repository, publication.blobs, 'worktree', timeoutMs, assignmentDirectory);
   const add = await invoke(assignmentDirectory, 'git', ['add', '--', ...expected], repository, timeoutMs);
   if (!commandSucceeded(add)) throw new Error('Git could not stage the accepted transaction');
@@ -2366,7 +2700,7 @@ async function commitPublication(repository, publication, baseCommit, timeoutMs,
   if (!commandSucceeded(staged) || !sameJson(staged.stdout.toString('utf8').split('\0').filter(Boolean).sort(), expected)) throw new Error('Git staged paths differ from the canonical publication');
   const commit = await invoke(assignmentDirectory, 'git', ['commit', '-m', `mdlm: publish ${publication.scenario} (${publication.executionId})`, '--', ...expected], repository, timeoutMs);
   if (!commandSucceeded(commit)) throw new Error('Git publication commit failed');
-  maybeInjectedCrash('publication', 'after-git-commit');
+  maybeInjectedCrash(options.crashPhase ?? 'publication', 'after-git-commit');
   const newHead = await invoke(assignmentDirectory, 'git', ['rev-parse', 'HEAD^{commit}'], repository, timeoutMs);
   if (!commandSucceeded(newHead)) throw new Error('Git could not inspect publication commit');
   const commitId = newHead.stdout.toString('utf8').trim();
