@@ -2119,6 +2119,13 @@ test('runner rejects transaction journals that are symlinks or have a symlinked 
     assert.match(stopped.detail, pathType === 'transaction symlink'
       ? /checkpoint evidence is not a regular file/
       : /checkpoint evidence has a symbolic-link path component/);
+    const snapshotRecord = JSON.parse(await readFile(path.join(stopped.snapshot.snapshotDirectory, 'snapshot.json')));
+    assert.equal(snapshotRecord.journal.present, false, pathType);
+    assert.equal(Object.hasOwn(snapshotRecord.journal, 'bytesBase64'), false, pathType);
+    assert.equal(Object.hasOwn(snapshotRecord.journal, 'digest'), false, pathType);
+    assert.match(snapshotRecord.journal.error, pathType === 'transaction symlink'
+      ? /optional evidence is not a regular file/
+      : /optional evidence has a symbolic-link path component/);
     assert.equal(await stat(workerLog).then(() => true, () => false), false, pathType);
   }
 });

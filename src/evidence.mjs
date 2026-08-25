@@ -415,12 +415,17 @@ function requiredNonempty(value, label) { if (typeof value !== 'string' || value
 
 async function captureOptional(file) {
   if (typeof file !== 'string') return { present: false };
+  const requested = path.resolve(file);
   try {
-    const bytes = await readFile(file);
-    return { present: true, path: path.resolve(file), bytesBase64: bytes.toString('base64'), digest: sha256(bytes) };
+    const information = await lstat(requested);
+    if (!information.isFile() || information.isSymbolicLink()) throw new Error(`optional evidence is not a regular file: ${requested}`);
+    const resolved = await realpath(requested);
+    if (resolved !== requested) throw new Error(`optional evidence has a symbolic-link path component: ${requested}`);
+    const bytes = await readFile(resolved);
+    return { present: true, path: resolved, bytesBase64: bytes.toString('base64'), digest: sha256(bytes) };
   } catch (error) {
-    if (error.code === 'ENOENT') return { present: false, path: path.resolve(file) };
-    return { present: false, path: path.resolve(file), error: error.message };
+    if (error.code === 'ENOENT') return { present: false, path: requested };
+    return { present: false, path: requested, error: error.message };
   }
 }
 
