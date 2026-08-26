@@ -112,6 +112,26 @@ async function executeRun(request, context, assignmentDirectory, journalPath, sn
 
   const assignment = captured.assignment;
   const status = captured.status;
+  const advancing = advancingControllerJournal(captured, assignmentId);
+  if (advancing.present) {
+    if (!advancing.ok) return stopped('advancing-journal-invalid', advancing.detail, snapshotResult, assignmentId);
+    try {
+      const controllerAssignment = await authenticateAdvancingControllerRecovery({
+        context, assignmentDirectory, captured, assignmentId,
+        advancement: advancing.advancement, processPackage: advancing.processPackage,
+      });
+      const runIdentity = observedRunIdentity(captured.provenance, advancing.processPackage, request.operator, request);
+      if (mode !== 'resume') {
+        return stopped('wrong-recovery-mode', "an advancing controller journal requires 'resume'", snapshotResult, assignmentId, { recoverable: true, requiredNextMode: 'resume' });
+      }
+      if (!await pinRunIdentity(context.identityDirectory, runIdentity, false)) {
+        return stopped('run-identity-drift', 'operator, mdlm-pi timeout policy, artifact, installed Process Package, executable target, source, or harness identity changed', snapshotResult, assignmentId);
+      }
+      return await runPiAssignment(request, context, assignmentDirectory, controllerAssignment, status, snapshotResult);
+    } catch (error) {
+      return stopped('advancing-journal-invalid', error instanceof Error ? error.message : String(error), snapshotResult, assignmentId);
+    }
+  }
   const processPackage = reconcileProcessPackage(status.package, assignment.package, captured.diagnosis.package);
   if (processPackage === null) return stopped('package-drift', 'doctor, status, and Assignment Process Package identities differ', snapshotResult, assignmentId);
   const runIdentity = observedRunIdentity(captured.provenance, processPackage, request.operator, request);
@@ -1686,6 +1706,90 @@ function reconcileProcessPackage(statusPackage, assignmentPackage, doctorPackage
   }
 }
 
+function advancingControllerJournal(captured, assignmentId) {
+  if (captured.piJournal?.present !== true) return { present: false };
+  let journal;
+  let bytes;
+  try {
+    bytes = Buffer.from(captured.piJournal.bytesBase64, 'base64');
+    if (bytes.toString('base64') !== captured.piJournal.bytesBase64 || sha256(bytes) !== captured.piJournal.digest) {
+      throw new Error('captured mdlm-pi journal bytes do not match their snapshot digest');
+    }
+    journal = JSON.parse(bytes.toString('utf8'));
+  } catch (error) {
+    return { present: true, ok: false, detail: `mdlm-pi journal is malformed: ${error.message}` };
+  }
+  if (journal.phase !== 'advancing') return { present: false };
+  try {
+    if (journal.contract !== 'mdlm-pi-run-journal@1' ||
+        !sameJson(Object.keys(journal).sort(), ['advancement', 'contract', 'phase'])) {
+      throw new Error('advancing mdlm-pi journal envelope is invalid');
+    }
+    const advancement = journal.advancement;
+    if (!advancement || typeof advancement !== 'object' || Array.isArray(advancement) ||
+        !sameJson(Object.keys(advancement).sort(), ['baseCommit', 'package', 'pending', 'previousTransactionId', 'purpose', 'repository'])) {
+      throw new Error('advancing mdlm-pi journal body is invalid');
+    }
+    const processPackage = normalizeProcessPackage(advancement.package, 'advancing journal package');
+    if (!sameProcessPackageIdentity(processPackage, captured.status.package) ||
+        !sameProcessPackageIdentity(processPackage, captured.diagnosis.package)) {
+      throw new Error('advancing journal, status, and doctor Process Package identities differ');
+    }
+    if (captured.status.ok !== true || captured.diagnosis.ok !== true ||
+        captured.assignment.id !== assignmentId || captured.assignment.selected !== false ||
+        captured.status.currentOutcome?.outcome !== 'assignment' ||
+        captured.status.currentOutcome.assignment?.allocation !== 'not-allocated') {
+      throw new Error('advancing journal does not accompany one completed deselected Assignment');
+    }
+    if (captured.lifecycleRepository.clean !== true ||
+        !sameRepositoryFingerprint(advancement.repository, captured.lifecycleRepository) ||
+        advancement.baseCommit !== captured.lifecycleRepository.head) {
+      throw new Error('advancing journal does not bind the current clean repository');
+    }
+    if (advancement.purpose !== 'ordinary-allocation' || !Array.isArray(advancement.pending) || advancement.pending.length !== 0) {
+      throw new Error('advancing journal is not at the supported empty ordinary-allocation boundary');
+    }
+    const recent = captured.status.recentTransaction;
+    if (recent?.available !== true || recent.status !== 'completed' ||
+        typeof advancement.previousTransactionId !== 'string' || advancement.previousTransactionId !== recent.id) {
+      throw new Error('advancing journal does not identify the completed recent transaction');
+    }
+    return { present: true, ok: true, advancement, processPackage };
+  } catch (error) {
+    return { present: true, ok: false, detail: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+async function authenticateAdvancingControllerRecovery({ context, assignmentDirectory, captured, assignmentId, advancement, processPackage }) {
+  const identity = await optionalCanonicalJson(path.join(assignmentDirectory, 'identity.json'));
+  const global = await optionalCanonicalJson(path.join(context.identityDirectory, 'repository-identity.json'));
+  if (identity?.contract !== 'mdlm-demo-assignment-identity@1' || identity.assignmentId !== assignmentId ||
+      !sameJson(Object.keys(identity).sort(), ['assignmentId', 'assignmentRepository', 'contract', 'lifecycleRepository']) ||
+      global?.contract !== 'mdlm-demo-repository-identity@1' ||
+      !sameJson(Object.keys(global).sort(), ['contract', 'lastAssignment', 'lifecycleRepository']) ||
+      !sameJson(identity.lifecycleRepository, global.lifecycleRepository) ||
+      !sameRepositoryFingerprint(identity.assignmentRepository, identity.lifecycleRepository)) {
+    throw new Error('advancing recovery lacks the exact prior Assignment and repository identities');
+  }
+  if (identity.lifecycleRepository.clean !== true || identity.lifecycleRepository.head === captured.lifecycleRepository.head) {
+    throw new Error('advancing recovery does not cross a new clean publication boundary');
+  }
+  await authenticateLifecycleTransactionAncestry(
+    context.repository,
+    identity.lifecycleRepository.head,
+    captured.lifecycleRepository.head,
+    assignmentId,
+  );
+  const subject = await runProcess('git', ['show', '-s', '--format=%s', captured.lifecycleRepository.head], {
+    cwd: context.repository, timeoutMs: 900_000, env: gitEnvironment(),
+  });
+  if (!commandSucceeded(subject) ||
+      !subject.stdout.toString('utf8').trim().endsWith(` (${advancement.previousTransactionId})`)) {
+    throw new Error('advancing journal recent transaction does not identify the current publication commit');
+  }
+  return { id: assignmentId, package: processPackage, repository: identity.assignmentRepository };
+}
+
 async function reconcileMaterializedNext({ request, context, assignmentDirectory, captured, processPackage, runIdentity }) {
   const recovery = request.materializedNextRecovery;
   const reconciliationDirectory = path.join(context.identityDirectory, 'materialized-next-reconciliations');
@@ -2310,7 +2414,7 @@ async function requirePinnedEvidence(pin, label) {
   return evidence;
 }
 
-async function authenticateLifecycleTransactionAncestry(repository, oldHead, newHead) {
+async function authenticateLifecycleTransactionAncestry(repository, oldHead, newHead, finalAssignmentId) {
   const runGit = async args => {
     const result = await runProcess('git', args, { cwd: repository, timeoutMs: 900_000, env: gitEnvironment() });
     if (!commandSucceeded(result)) throw new Error(`Git ancestry evidence failed for ${args.join(' ')}`);
@@ -2343,6 +2447,9 @@ async function authenticateLifecycleTransactionAncestry(repository, oldHead, new
         !Array.isArray(outputPaths) || outputPaths.length === 0 ||
         !sameJson(paths, [executionPath, ...outputPaths].sort())) {
       throw new Error('intermediate commit does not correspond to one completed lifecycle transaction');
+    }
+    if (commit === newHead && finalAssignmentId !== undefined && execution.response.assignment !== finalAssignmentId) {
+      throw new Error('final lifecycle transaction does not belong to the recovering Assignment');
     }
     parent = commit;
   }
