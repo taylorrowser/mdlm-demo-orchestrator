@@ -24,6 +24,7 @@ function assignmentDirectory(request) {
 async function fixture({
   uncertainSubmit = false,
   correctionRequiredSubmit = false,
+  correctionsRemaining = 1,
   scenarioReference = 'register-pilot-target@1',
   piScript = '#!/bin/sh\nexit 0\n',
   executionId = '55555555-5555-4555-8555-555555555555',
@@ -78,7 +79,8 @@ const fs=require('node:fs'),crypto=require('node:crypto'),path=require('node:pat
 const a=process.argv.slice(2), root=process.cwd(), log=${JSON.stringify(path.join(scratch, 'calls.log'))};
 fs.appendFileSync(log,JSON.stringify(a)+'\\n');
 const assignment=fs.readFileSync(${JSON.stringify(assignmentStatePath)},'utf8'), scenario=fs.readFileSync(${JSON.stringify(scenarioStatePath)},'utf8');
-const malformedPath=${JSON.stringify(malformedDigestPath)}, malformedResponses=fs.existsSync(malformedPath)?[{digest:fs.readFileSync(malformedPath,'utf8'),diagnostics:[{code:'FIX',message:'correct it'}]}]:[];
+const correctionDiagnostics=[{code:'scenario-output-required-link-missing',path:'outputs.target.links.derived-from',message:'required link missing'}];
+const malformedPath=${JSON.stringify(malformedDigestPath)}, malformedResponses=fs.existsSync(malformedPath)?[{digest:fs.readFileSync(malformedPath,'utf8'),diagnostics:correctionDiagnostics}]:[];
 const statusPackage=${JSON.stringify(statusPackage)}, assignmentPackage=${JSON.stringify(assignmentPackage)}, doctorPackage=${JSON.stringify(doctorPackage)}, packetPackage=${JSON.stringify(packetPackage)};
 function repository(){const head=execFileSync('git',['rev-parse','HEAD^{commit}'],{encoding:'utf8'}).trim(); const staged=execFileSync('git',['diff','--binary','--no-ext-diff','--cached','HEAD','--'],{encoding:'utf8'}); const worktree=execFileSync('git',['diff','--binary','--no-ext-diff','--'],{encoding:'utf8'}); return {head,trackedState:'sha256:'+crypto.createHash('sha256').update(head+'\\0staged\\0'+staged+'\\0worktree\\0'+worktree).digest('hex')}}
 const repo=repository();
@@ -87,7 +89,7 @@ if(a[0]==='doctor') out({ok:true,command:'doctor',package:doctorPackage,baseline
 else if(a[0]==='status') out({contract:'mdlm-status@1',ok:true,command:'status',package:statusPackage,currentOutcome:${attentionRequired ? "{outcome:'attention-required',assignment:{allocation:'active',id:assignment},authorityRequirement:{mode:'attended',authority:'stakeholder',delegationAllowed:false}}" : "{outcome:'assignment',assignment:{allocation:'active',id:assignment}}"},recentTransaction:{available:false}});
 else if(a[0]==='assignment') { const requested=a[2]; if(requested!==assignment) out({contract:'mdlm-assignment-state@1',ok:true,command:'assignment.show',assignment:{id:requested},selected:false,diagnostics:[]}); else out({contract:'mdlm-assignment-state@1',ok:true,command:'assignment.show',assignment:{id:assignment},selected:true,package:assignmentPackage,repository:repo,scenarioReference:scenario,disposition:'active',retryAvailability:{},malformedResponses}); }
 else if(a[0]==='scenario'&&a[1]==='prepare') out({contract:'mdlm-assignment-packet@2',ok:true,command:'scenario.prepare',assignment:{id:assignment},package:packetPackage,repository:repo,scenario:{reference:scenario},responseSchema:{},exactInputs:[]});
-else if(a[0]==='scenario'&&a[1]==='submit') { let chunks=[]; process.stdin.on('data',x=>chunks.push(x)); process.stdin.on('end',()=>{const bytes=Buffer.concat(chunks); fs.appendFileSync(${JSON.stringify(path.join(scratch, 'submit-count'))},'1\\n'); const digest='sha256:'+crypto.createHash('sha256').update(bytes).digest('hex'); if(${correctionRequiredSubmit}) { fs.writeFileSync(malformedPath,digest); out({ok:false,command:'scenario.submit',contract:'mdlm-assignment-disposition@1',assignment:{id:assignment},disposition:'correction-required',orchestration:{action:'correct-response',automaticReplacement:false},malformedResponse:{attempt:1,correctionsRemaining:1,diagnostics:[{code:'scenario-output-required-link-missing',path:'outputs.target.links.derived-from',message:'required link missing'}]},diagnostics:[{code:'scenario-output-required-link-missing',path:'outputs.target.links.derived-from',message:'required link missing'}]}); process.exitCode=1; } else { const id=${JSON.stringify(executionId)}; const dir=path.join(root,'.lifecycle/data/.transactions',id); fs.mkdirSync(dir,{recursive:true}); fs.writeFileSync(path.join(dir,'execution.json'),'execution\\n'); fs.writeFileSync(path.join(dir,'target.json'),'target\\n'); if(${uncertainSubmit}) process.exit(9); else out({contract:'mdlm-scenario-execution@4',ok:true,command:'scenario.submit',execution:{contract:'mdlm-scenario-execution@4',id,status:'completed',response:{assignment,digest},definition:{scenario},outputs:[{lifecycleDatum:{path:${publicationPath ? JSON.stringify(publicationPath) : "'.lifecycle/data/.transactions/'+id+'/target.json'"}}}]}}); } }); }
+else if(a[0]==='scenario'&&a[1]==='submit') { let chunks=[]; process.stdin.on('data',x=>chunks.push(x)); process.stdin.on('end',()=>{const bytes=Buffer.concat(chunks); fs.appendFileSync(${JSON.stringify(path.join(scratch, 'submit-count'))},'1\\n'); const digest='sha256:'+crypto.createHash('sha256').update(bytes).digest('hex'); if(${correctionRequiredSubmit}) { fs.writeFileSync(malformedPath,digest); out({ok:false,command:'scenario.submit',contract:'mdlm-assignment-disposition@1',assignment:{id:assignment},disposition:'correction-required',orchestration:{action:'correct-response',automaticReplacement:false},malformedResponse:{attempt:1,correctionsRemaining:${correctionsRemaining},diagnostics:correctionDiagnostics},diagnostics:correctionDiagnostics}); process.exitCode=1; } else { const id=${JSON.stringify(executionId)}; const dir=path.join(root,'.lifecycle/data/.transactions',id); fs.mkdirSync(dir,{recursive:true}); fs.writeFileSync(path.join(dir,'execution.json'),'execution\\n'); fs.writeFileSync(path.join(dir,'target.json'),'target\\n'); if(${uncertainSubmit}) process.exit(9); else out({contract:'mdlm-scenario-execution@4',ok:true,command:'scenario.submit',execution:{contract:'mdlm-scenario-execution@4',id,status:'completed',response:{assignment,digest},definition:{scenario},outputs:[{lifecycleDatum:{path:${publicationPath ? JSON.stringify(publicationPath) : "'.lifecycle/data/.transactions/'+id+'/target.json'"}}}]}}); } }); }
 else if(a[0]==='next') {
   const countPath=${JSON.stringify(nextCountPath)}, count=fs.existsSync(countPath)?Number(fs.readFileSync(countPath,'utf8')):0; fs.writeFileSync(countPath,String(count+1));
   if(${materializedNext}&&count===0){
@@ -1132,7 +1134,25 @@ test('a structured correction-required submission remains recoverable without an
   assert.equal(resumed.status, 0, resumed.stderr);
   assert.equal(JSON.parse(resumed.stdout).reason, 'malformed-response-correction-required');
   assert.equal((await readFile(path.join(value.scratch, 'submit-count'), 'utf8')).trim().split('\n').length, 1);
+
+  const journalPath = path.join(assignmentDirectory(value.request), 'transaction.json');
+  const tampered = JSON.parse(await readFile(journalPath, 'utf8'));
+  tampered.submission.stdoutSha256 = `sha256:${'0'.repeat(64)}`;
+  await writeFile(journalPath, `${JSON.stringify(tampered, null, 2)}\n`);
+  const refused = exec(process.execPath, [cli, 'resume'], root, JSON.stringify({ ...value.request, contract: 'mdlm-demo-resume-request@1' }));
+  assert.equal(refused.status, 0, refused.stderr);
+  assert.equal(JSON.parse(refused.stdout).reason, 'correction-boundary-drift');
+  assert.equal((await readFile(path.join(value.scratch, 'submit-count'), 'utf8')).trim().split('\n').length, 1);
   assert.equal(Number(git(['rev-list', '--count', 'HEAD'], value.repository)), 1);
+});
+
+test('a correction-required disposition claiming two remaining attempts is uncertain', async () => {
+  const value = await fixture({ correctionRequiredSubmit: true, correctionsRemaining: 2 });
+  const execution = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
+  assert.equal(execution.status, 0, execution.stderr);
+  const stopped = JSON.parse(execution.stdout);
+  assert.equal(stopped.reason, 'uncertain-partial-publication');
+  assert.equal(stopped.transactionPhase, 'uncertain-transaction');
 });
 
 test('an uncertain submission is never repeated on resume', async () => {
