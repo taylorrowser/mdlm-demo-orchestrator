@@ -2187,7 +2187,8 @@ const fs=require('node:fs'),path=require('node:path'); const configPath=process.
     assert.equal(output.operationalFailureRecovery?.verified ?? false, false, name);
   }
 
-  const piScript = `#!/usr/bin/env node\nprocess.stderr.write(Buffer.from('${failureBase64}','base64')); process.exit(1);\n`;
+  const attemptsPath = path.join(os.tmpdir(), `mdlm-demo-uncertain-private-evidence-${process.pid}-${Date.now()}`);
+  const piScript = `#!/usr/bin/env node\nrequire('node:fs').appendFileSync(${JSON.stringify(attemptsPath)}, 'invoked\\n'); process.stderr.write(Buffer.from('${failureBase64}','base64')); process.exit(1);\n`;
   const value = await fixture({ scenarioReference: 'ordinary@1', piScript });
   value.request.signal = 'clean-interrupted-command';
   const preexistingStops = path.join(assignmentDirectory(value.request), 'shim', 'stops');
@@ -2199,6 +2200,14 @@ const fs=require('node:fs'),path=require('node:path'); const configPath=process.
   assert.equal(output.reason, 'mdlm-pi-operational-failure');
   assert.equal(output.recoverable, false);
   assert.match(output.operationalFailureRecovery.uncertainty, /pre-run evidence/);
+
+  const repeated = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
+  assert.equal(repeated.status, 0, repeated.stderr);
+  const repeatedOutput = JSON.parse(repeated.stdout);
+  assert.equal(repeatedOutput.reason, 'mdlm-pi-operational-failure');
+  assert.equal(repeatedOutput.recoverable, false);
+  assert.equal(await readFile(attemptsPath, 'utf8'), 'invoked\n');
+  assert.equal((await readdir(path.join(assignmentDirectory(value.request), 'durable-command'))).some(name => name.startsWith('attempt-')), false);
 });
 
 test('mdlm-pi exit codes and typed results distinguish lifecycle outcomes from operational failures', async () => {

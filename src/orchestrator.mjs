@@ -1069,7 +1069,7 @@ async function durableCommandConsumed(attempt, assignmentDirectory) {
       !sameJson(consumption.orchestration.postRunManifest, { path: manifestEvidence.path, digest: manifestEvidence.digest })) {
     throw new Error('durable command consumption differs from its post-run snapshot');
   }
-  return true;
+  return output;
 }
 
 async function requireDurableConsumptionBoundary(authorization, processResult, output, snapshot, assignmentDirectory) {
@@ -1168,7 +1168,22 @@ async function authenticateDurableCommandAttempt(attempt, assignmentDirectory) {
 async function recoverDurableAssignmentCommand({ request, context, assignmentDirectory, snapshotResult, status, diagnosis, mode }) {
   const protocolDirectory = path.join(assignmentDirectory, 'durable-command');
   const attempt = await latestDurableCommandAttempt(protocolDirectory);
-  if (attempt === null || await durableCommandConsumed(attempt, assignmentDirectory)) return null;
+  if (attempt === null) return null;
+  const consumedOutput = await durableCommandConsumed(attempt, assignmentDirectory);
+  if (consumedOutput !== false) {
+    if (consumedOutput.recoverable === false && consumedOutput.trustedRepositoryAdvance !== true) {
+      if (consumedOutput.reason === 'correction-session-lost') {
+        return stopped(
+          'correction-session-unresumable',
+          'the consumed durable result records a lost correction session that cannot be restarted',
+          snapshotResult,
+          request.assignmentId,
+        );
+      }
+      return consumedOutput;
+    }
+    return null;
+  }
   const authorizationPath = attempt.authorizationPath;
   const authorization = await optionalCanonicalJson(authorizationPath);
   if (authorization?.contract !== 'mdlm-demo-command-authorization@1' || authorization.purpose !== 'assignment-worker' ||
