@@ -893,6 +893,316 @@ test('automatic publication closure resumes its owned commit without replaying n
     .filter(subject => subject === `mdlm: publish create-review-context@1 (${value.materializedExecution})`).length, 1);
 });
 
+test('completed transaction journal does not mask an unconsumed durable child result', async () => {
+  const attemptsPath = path.join(os.tmpdir(), `mdlm-demo-completed-journal-attempts-${process.pid}-${Date.now()}-${Math.random()}`);
+  const piScript = `#!/usr/bin/env node\nconst fs=require('node:fs'); fs.appendFileSync(${JSON.stringify(attemptsPath)},'1\\n'); console.log('{"status":"lifecycle-complete"}');\n`;
+  const value = await fixture({ scenarioReference: 'ordinary@1', piScript });
+  value.request.signal = 'clean-interrupted-command';
+  const crashed = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request), { ...process.env, MDLM_DEMO_TEST_CRASH: 'completed:after-rename' });
+  assert.equal(crashed.status, 86, crashed.stderr);
+  assert.equal(await readFile(attemptsPath, 'utf8'), '1\n');
+  const resumed = exec(process.execPath, [cli, 'resume'], root, JSON.stringify({ ...value.request, contract: 'mdlm-demo-resume-request@1' }));
+  assert.equal(resumed.status, 0, resumed.stderr);
+  const output = JSON.parse(resumed.stdout);
+  assert.equal(output.status, 'completed');
+  assert.equal(output.process.exitStatus, 0);
+  assert.equal(await readFile(attemptsPath, 'utf8'), '1\n');
+  await stat(path.join(assignmentDirectory(value.request), 'durable-command', 'consumption.json'));
+});
+
+test('durable result authentication rejects an incoherent all-null process outcome', async () => {
+  const attemptsPath = path.join(os.tmpdir(), `mdlm-demo-null-outcome-attempts-${process.pid}-${Date.now()}-${Math.random()}`);
+  const piScript = `#!/usr/bin/env node\nconst fs=require('node:fs'); fs.appendFileSync(${JSON.stringify(attemptsPath)},'1\\n'); console.log('{"status":"lifecycle-complete"}');\n`;
+  const value = await fixture({ scenarioReference: 'ordinary@1', piScript });
+  value.request.signal = 'clean-interrupted-command';
+  const crashed = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request), { ...process.env, MDLM_DEMO_TEST_CRASH: 'durable-command:after-result' });
+  assert.equal(crashed.status, 86, crashed.stderr);
+  const resultPath = path.join(assignmentDirectory(value.request), 'durable-command', 'result.json');
+  await chmod(resultPath, 0o600);
+  const result = JSON.parse(await readFile(resultPath));
+  Object.assign(result.process, { exitStatus: null, signal: null, spawnError: null, timedOut: false, outputLimitExceeded: false });
+  await writeFile(resultPath, `${JSON.stringify(result, null, 2)}\n`);
+  await chmod(resultPath, 0o400);
+  const resumed = exec(process.execPath, [cli, 'resume'], root, JSON.stringify({ ...value.request, contract: 'mdlm-demo-resume-request@1' }));
+  assert.equal(resumed.status, 0, resumed.stderr);
+  const output = JSON.parse(resumed.stdout);
+  assert.equal(output.reason, 'durable-command-uncertain');
+  assert.equal(output.recoverable, false);
+  assert.equal(await readFile(attemptsPath, 'utf8'), '1\n');
+});
+
+test('legacy command migration rejects evidence without a coherent process outcome', async () => {
+  const attemptsPath = path.join(os.tmpdir(), `mdlm-demo-legacy-null-attempts-${process.pid}-${Date.now()}-${Math.random()}`);
+  const piScript = `#!/usr/bin/env node\nconst fs=require('node:fs'); fs.appendFileSync(${JSON.stringify(attemptsPath)},'1\\n'); console.log('{"status":"lifecycle-complete"}');\n`;
+  const value = await fixture({ scenarioReference: 'ordinary@1', piScript });
+  value.request.signal = 'clean-interrupted-command';
+  const commandDirectory = path.join(assignmentDirectory(value.request), 'command-evidence');
+  await mkdir(commandDirectory, { recursive: true });
+  const stdout = Buffer.from('{"status":"lifecycle-complete"}\n');
+  const stderr = Buffer.alloc(0);
+  const record = commandRecord({ startedAt: '2026-01-01T00:00:00.000Z', completedAt: '2026-01-01T00:00:01.000Z' }, {
+    argv: ['/unknown-worker'], cwd: value.repository, timeoutMs: value.request.timeoutMs, stdout, stderr, exitStatus: null,
+  });
+  await writeEvidenceTriplet(commandDirectory, '000001', record, stdout, stderr);
+  const execution = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
+  assert.equal(execution.status, 0, execution.stderr);
+  const output = JSON.parse(execution.stdout);
+  assert.equal(output.status, 'stopped');
+  assert.equal(output.reason, 'orchestration-failure');
+  await assert.rejects(readFile(attemptsPath), error => error.code === 'ENOENT');
+});
+
+test('durable consumption cross-binds the authenticated process and complete post-run snapshot', async () => {
+  for (const mutation of ['process', 'disposition', 'snapshot digest', 'pre-command snapshot', 'foreign snapshot']) {
+    const attemptsPath = path.join(os.tmpdir(), `mdlm-demo-consumption-${mutation.replaceAll(' ', '-')}-${process.pid}-${Date.now()}-${Math.random()}`);
+    const piScript = `#!/usr/bin/env node\nconst fs=require('node:fs'); fs.appendFileSync(${JSON.stringify(attemptsPath)},'1\\n'); console.log('{"status":"lifecycle-complete"}');\n`;
+    const value = await fixture({ scenarioReference: 'ordinary@1', piScript });
+    value.request.signal = 'clean-interrupted-command';
+    const first = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
+    assert.equal(first.status, 0, `${mutation}: ${first.stderr}`);
+    const consumptionPath = path.join(assignmentDirectory(value.request), 'durable-command', 'consumption.json');
+    await chmod(consumptionPath, 0o600);
+    const consumption = JSON.parse(await readFile(consumptionPath));
+    if (mutation === 'process') consumption.orchestration.output.process.exitStatus = 9;
+    else if (mutation === 'disposition') consumption.orchestration.output.trustedRepositoryAdvance = false;
+    else if (mutation === 'snapshot digest') consumption.orchestration.output.postRunSnapshot.digest = `sha256:${'0'.repeat(64)}`;
+    else {
+      let substitutedSnapshot;
+      if (mutation === 'pre-command snapshot') {
+        substitutedSnapshot = consumption.orchestration.output.snapshot;
+      } else {
+        const foreign = await fixture({ scenarioReference: 'ordinary@1', piScript: '#!/bin/sh\nprintf \'%s\\n\' \'{"status":"lifecycle-complete"}\'\n' });
+        foreign.request.signal = 'clean-interrupted-command';
+        const foreignExecution = exec(process.execPath, [cli, 'run'], root, JSON.stringify(foreign.request));
+        assert.equal(foreignExecution.status, 0, foreignExecution.stderr);
+        substitutedSnapshot = JSON.parse(foreignExecution.stdout).postRunSnapshot;
+      }
+      consumption.orchestration.output.postRunSnapshot = substitutedSnapshot;
+      consumption.orchestration.postRunManifest = {
+        path: path.join(substitutedSnapshot.snapshotDirectory, 'manifest.json'),
+        digest: substitutedSnapshot.digest,
+      };
+    }
+    consumption.orchestration.outputDigest = `sha256:${createHash('sha256').update(Buffer.from(JSON.stringify(consumption.orchestration.output))).digest('hex')}`;
+    await writeFile(consumptionPath, `${JSON.stringify(consumption, null, 2)}\n`);
+    await chmod(consumptionPath, 0o400);
+    const resumed = exec(process.execPath, [cli, 'resume'], root, JSON.stringify({ ...value.request, contract: 'mdlm-demo-resume-request@1' }));
+    assert.equal(resumed.status, 0, `${mutation}: ${resumed.stderr}`);
+    const output = JSON.parse(resumed.stdout);
+    assert.equal(output.reason, 'durable-command-uncertain', mutation);
+    assert.equal(output.recoverable, false, mutation);
+    assert.equal(await readFile(attemptsPath, 'utf8'), '1\n', mutation);
+  }
+});
+
+test('unconsumed typed operational failure recovery reuses its authenticated marker', async () => {
+  const value = await operationalFailureFixture();
+  const crashed = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request), { ...process.env, MDLM_DEMO_TEST_CRASH: 'operational-recovery-marker:after-rename' });
+  assert.equal(crashed.status, 86, crashed.stderr);
+  assert.equal(await readFile(value.attemptsPath, 'utf8'), '1');
+  const resumed = exec(process.execPath, [cli, 'resume'], root, JSON.stringify({ ...value.request, contract: 'mdlm-demo-resume-request@1' }));
+  assert.equal(resumed.status, 0, resumed.stderr);
+  const output = JSON.parse(resumed.stdout);
+  assert.equal(output.reason, 'pre-submission-operational-failure');
+  assert.equal(output.recoverable, true);
+  assert.equal(await readFile(value.attemptsPath, 'utf8'), '1');
+  assert.deepEqual(await readdir(operationalRecoveryDirectoryForTest(value)), [path.basename(output.operationalFailureRecovery.marker.path)]);
+  await stat(path.join(assignmentDirectory(value.request), 'durable-command', 'consumption.json'));
+});
+
+test('a completed child result survives a parent crash and is consumed without spawning again', async () => {
+  const invocationPath = path.join(os.tmpdir(), `mdlm-demo-durable-result-${process.pid}-${Date.now()}`);
+  const piScript = `#!/usr/bin/env node\nrequire('node:fs').appendFileSync(${JSON.stringify(invocationPath)}, 'invoked\\n'); console.log('{"status":"lifecycle-complete"}');\n`;
+  const value = await fixture({ scenarioReference: 'ordinary@1', piScript });
+  value.request.signal = 'clean-interrupted-command';
+
+  const crashed = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request), {
+    ...process.env, MDLM_DEMO_TEST_CRASH: 'durable-command:after-result',
+  });
+  assert.equal(crashed.status, 86, crashed.stderr);
+  const durableDirectory = path.join(assignmentDirectory(value.request), 'durable-command');
+  const authorization = JSON.parse(await readFile(path.join(durableDirectory, 'authorization.json'), 'utf8'));
+  assert.deepEqual(authorization.command.argv.slice(0, 3), [value.mdlmPi, 'run', value.repository]);
+  assert.equal(authorization.command.cwd, value.repository);
+  assert.equal(authorization.command.timeoutMs, value.request.timeoutMs);
+  assert.deepEqual(authorization.command.input, { present: false, bytes: 0, digest: `sha256:${createHash('sha256').digest('hex')}` });
+  assert.match(authorization.command.environment.digest, /^sha256:[0-9a-f]{64}$/);
+  assert.equal(JSON.parse(await readFile(path.join(durableDirectory, 'result.json'), 'utf8')).contract, 'mdlm-demo-command-result@1');
+  assert.equal(await stat(path.join(durableDirectory, 'consumption.json')).then(() => true, () => false), false);
+
+  const recovered = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
+  assert.equal(recovered.status, 0, recovered.stderr);
+  const output = JSON.parse(recovered.stdout);
+  assert.equal(output.status, 'completed', recovered.stdout);
+  assert.equal(output.reason, 'lifecycle-complete', recovered.stdout);
+  assert.equal(await readFile(invocationPath, 'utf8'), 'invoked\n');
+  assert.equal(JSON.parse(await readFile(path.join(durableDirectory, 'consumption.json'), 'utf8')).contract, 'mdlm-demo-command-consumption@1');
+  assert.equal((await readdir(durableDirectory)).some(name => name.startsWith('attempt-')), false);
+});
+
+test('synced pending durable command records recover without an uncertain replay', async () => {
+  for (const phase of ['authorization', 'result', 'consumption']) {
+    const invocationPath = path.join(os.tmpdir(), `mdlm-demo-pending-${phase}-${process.pid}-${Date.now()}`);
+    const piScript = `#!/usr/bin/env node\nrequire('node:fs').appendFileSync(${JSON.stringify(invocationPath)}, 'invoked\\n'); console.log('{"status":"lifecycle-complete"}');\n`;
+    const value = await fixture({ scenarioReference: 'ordinary@1', piScript });
+    value.request.signal = 'clean-interrupted-command';
+    const crashed = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request), {
+      ...process.env, MDLM_DEMO_TEST_CRASH: `durable-command-${phase}:after-temp-sync`,
+    });
+    assert.equal(crashed.status, 86, `${phase}: ${crashed.stderr}`);
+
+    const resumed = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
+    assert.equal(resumed.status, 0, `${phase}: ${resumed.stderr}`);
+    const output = JSON.parse(resumed.stdout);
+    if (phase === 'authorization') {
+      assert.equal(output.reason, 'durable-command-uncertain', phase);
+      assert.equal(await stat(invocationPath).then(() => true, () => false), false, phase);
+    } else {
+      assert.equal(output.status, phase === 'result' ? 'completed' : 'already-completed', phase);
+      assert.equal(await readFile(invocationPath, 'utf8'), 'invoked\n', phase);
+    }
+    const durableDirectory = path.join(assignmentDirectory(value.request), 'durable-command');
+    assert.equal((await readdir(durableDirectory)).some(name => name.endsWith('.pending')), false, phase);
+  }
+});
+
+test('a repository change after durable result capture is uncertain and never consumed', async () => {
+  const invocationPath = path.join(os.tmpdir(), `mdlm-demo-post-result-drift-${process.pid}-${Date.now()}`);
+  const piScript = `#!/usr/bin/env node\nrequire('node:fs').appendFileSync(${JSON.stringify(invocationPath)}, 'invoked\\n'); console.log('{"status":"lifecycle-complete"}');\n`;
+  const value = await fixture({ scenarioReference: 'ordinary@1', piScript });
+  value.request.signal = 'clean-interrupted-command';
+  const crashed = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request), {
+    ...process.env, MDLM_DEMO_TEST_CRASH: 'durable-command:after-result',
+  });
+  assert.equal(crashed.status, 86, crashed.stderr);
+  await writeFile(path.join(value.repository, 'unrelated.txt'), 'unrelated\n');
+  git(['add', 'unrelated.txt'], value.repository);
+  git(['commit', '-m', 'unrelated post-result change'], value.repository);
+
+  const resumed = exec(process.execPath, [cli, 'resume'], root, JSON.stringify({
+    ...value.request, contract: 'mdlm-demo-resume-request@1',
+  }));
+  assert.equal(resumed.status, 0, resumed.stderr);
+  const output = JSON.parse(resumed.stdout);
+  assert.equal(output.reason, 'durable-command-uncertain');
+  assert.equal(output.recoverable, false);
+  assert.match(output.detail, /repository changed after the durable child result/);
+  assert.equal(await readFile(invocationPath, 'utf8'), 'invoked\n');
+  const durableDirectory = path.join(assignmentDirectory(value.request), 'durable-command');
+  assert.equal(await stat(path.join(durableDirectory, 'consumption.json')).then(() => true, () => false), false);
+  assert.equal(await stat(path.join(assignmentDirectory(value.request), 'transaction.json')).then(() => true, () => false), false);
+});
+
+test('retry history authenticates every retained durable attempt before recovery', async () => {
+  const value = await operationalFailureFixture();
+  const first = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
+  assert.equal(first.status, 0, first.stderr);
+  const second = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
+  assert.equal(second.status, 0, second.stderr);
+  assert.equal(JSON.parse(second.stdout).status, 'completed');
+  assert.equal(await readFile(value.attemptsPath, 'utf8'), '2');
+
+  const durableDirectory = path.join(assignmentDirectory(value.request), 'durable-command');
+  await rm(path.join(durableDirectory, 'result.json'));
+  const resumed = exec(process.execPath, [cli, 'resume'], root, JSON.stringify({
+    ...value.request, contract: 'mdlm-demo-resume-request@1',
+  }));
+  assert.equal(resumed.status, 0, resumed.stderr);
+  const output = JSON.parse(resumed.stdout);
+  assert.equal(output.reason, 'durable-command-uncertain');
+  assert.match(output.detail, /no complete durable result/);
+  assert.equal(await readFile(value.attemptsPath, 'utf8'), '2');
+});
+
+test('durable authorization input identity must match its decision context', async () => {
+  const invocationPath = path.join(os.tmpdir(), `mdlm-demo-input-binding-${process.pid}-${Date.now()}`);
+  const piScript = `#!/usr/bin/env node\nrequire('node:fs').appendFileSync(${JSON.stringify(invocationPath)}, 'invoked\\n'); console.log('{"status":"lifecycle-complete"}');\n`;
+  const value = await fixture({ scenarioReference: 'ordinary@1', piScript });
+  value.request.signal = 'clean-interrupted-command';
+  const crashed = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request), {
+    ...process.env, MDLM_DEMO_TEST_CRASH: 'durable-command:after-result',
+  });
+  assert.equal(crashed.status, 86, crashed.stderr);
+  const durableDirectory = path.join(assignmentDirectory(value.request), 'durable-command');
+  const authorizationPath = path.join(durableDirectory, 'authorization.json');
+  const resultPath = path.join(durableDirectory, 'result.json');
+  await chmod(authorizationPath, 0o600);
+  const authorization = JSON.parse(await readFile(authorizationPath, 'utf8'));
+  authorization.command.input.bytes = 1;
+  await writeFile(authorizationPath, `${JSON.stringify(authorization, null, 2)}\n`);
+  await chmod(authorizationPath, 0o400);
+  await chmod(resultPath, 0o600);
+  const durableResult = JSON.parse(await readFile(resultPath, 'utf8'));
+  durableResult.authorization.digest = `sha256:${createHash('sha256').update(await readFile(authorizationPath)).digest('hex')}`;
+  await writeFile(resultPath, `${JSON.stringify(durableResult, null, 2)}\n`);
+  await chmod(resultPath, 0o400);
+
+  const resumed = exec(process.execPath, [cli, 'resume'], root, JSON.stringify({
+    ...value.request, contract: 'mdlm-demo-resume-request@1',
+  }));
+  assert.equal(resumed.status, 0, resumed.stderr);
+  const output = JSON.parse(resumed.stdout);
+  assert.equal(output.reason, 'durable-command-uncertain');
+  assert.match(output.detail, /absent input contradicts its decision context/);
+  assert.equal(await readFile(invocationPath, 'utf8'), 'invoked\n');
+});
+
+test('output-limited durable results fail closed instead of authenticating truncated streams', async () => {
+  const invocationPath = path.join(os.tmpdir(), `mdlm-demo-output-limit-${process.pid}-${Date.now()}`);
+  const piScript = `#!/usr/bin/env node\nrequire('node:fs').appendFileSync(${JSON.stringify(invocationPath)}, 'invoked\\n'); console.log('{"status":"lifecycle-complete"}');\n`;
+  const value = await fixture({ scenarioReference: 'ordinary@1', piScript });
+  value.request.signal = 'clean-interrupted-command';
+  const crashed = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request), {
+    ...process.env, MDLM_DEMO_TEST_CRASH: 'durable-command:after-result',
+  });
+  assert.equal(crashed.status, 86, crashed.stderr);
+  const resultPath = path.join(assignmentDirectory(value.request), 'durable-command', 'result.json');
+  await chmod(resultPath, 0o600);
+  const durableResult = JSON.parse(await readFile(resultPath, 'utf8'));
+  durableResult.process.outputLimitExceeded = true;
+  durableResult.process.observedOutputBytes += 1;
+  await writeFile(resultPath, `${JSON.stringify(durableResult, null, 2)}\n`);
+  await chmod(resultPath, 0o400);
+
+  const resumed = exec(process.execPath, [cli, 'resume'], root, JSON.stringify({
+    ...value.request, contract: 'mdlm-demo-resume-request@1',
+  }));
+  assert.equal(resumed.status, 0, resumed.stderr);
+  const output = JSON.parse(resumed.stdout);
+  assert.equal(output.reason, 'durable-command-uncertain');
+  assert.equal(output.recoverable, false);
+  assert.match(output.detail, /incomplete or incoherent/);
+  assert.equal(await readFile(invocationPath, 'utf8'), 'invoked\n');
+  assert.equal(await stat(path.join(assignmentDirectory(value.request), 'durable-command', 'consumption.json')).then(() => true, () => false), false);
+});
+
+test('crash recovery compares an operational failure with its authorized pre-command snapshot', async () => {
+  const { run008 } = await readAnchoredRun008Fixture();
+  const attemptsPath = path.join(os.tmpdir(), `mdlm-demo-authorized-initial-${process.pid}-${Date.now()}`);
+  const piScript = `#!/usr/bin/env node\nconst fs=require('node:fs'); fs.appendFileSync(${JSON.stringify(attemptsPath)}, 'invoked\\n'); fs.writeFileSync('worker-change.txt', 'changed\\n'); process.stderr.write(Buffer.from('${run008.process.stderrBase64}','base64')); process.exit(1);\n`;
+  const value = await fixture({ scenarioReference: 'ordinary@1', piScript });
+  value.request.signal = 'clean-interrupted-command';
+
+  const crashed = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request), {
+    ...process.env, MDLM_DEMO_TEST_CRASH: 'durable-command:after-result',
+  });
+  assert.equal(crashed.status, 86, crashed.stderr);
+
+  const recovered = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
+  assert.equal(recovered.status, 0, recovered.stderr);
+  const output = JSON.parse(recovered.stdout);
+  assert.equal(output.reason, 'mdlm-pi-operational-failure');
+  assert.equal(output.recoverable, false);
+  assert.equal(output.operationalFailureRecovery.verified, false);
+  assert.match(output.operationalFailureRecovery.uncertainty, /repository bytes or identity changed/);
+
+  const repeated = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
+  assert.equal(repeated.status, 0, repeated.stderr);
+  assert.equal(JSON.parse(repeated.stdout).reason, 'mdlm-pi-operational-failure');
+  assert.equal(await readFile(attemptsPath, 'utf8'), 'invoked\n');
+  assert.equal((await readdir(path.join(assignmentDirectory(value.request), 'durable-command'))).some(name => name.startsWith('attempt-')), false);
+});
+
 test('ordinary Assignments invoke mdlm-pi with exact argv and request-bound timeout environment', async () => {
   const argvPath = path.join(os.tmpdir(), `mdlm-demo-operator-argv-${process.pid}-${Date.now()}`);
   const piScript = `#!/usr/bin/env node\nrequire('node:fs').writeFileSync(${JSON.stringify(argvPath)}, JSON.stringify({argv:process.argv.slice(2),commandTimeout:process.env.MDLM_PI_COMMAND_TIMEOUT_MS,assignmentTimeout:process.env.MDLM_PI_ASSIGNMENT_TIMEOUT_MS})); console.log('{"status":"process-dead-end"}'); process.exit(2);\n`;
@@ -1813,7 +2123,9 @@ test('operational failure marker publication recovers after a synced pending-wri
   }));
 
   assert.equal(resumed.status, 0, resumed.stderr);
-  assert.equal(JSON.parse(resumed.stdout).reason, 'wrong-recovery-mode');
+  const output = JSON.parse(resumed.stdout);
+  assert.equal(output.reason, 'pre-submission-operational-failure');
+  assert.equal(output.recoverable, true);
   assert.equal(await readFile(value.attemptsPath, 'utf8'), '1');
   assert.equal((await readdir(operationalRecoveryDirectoryForTest(value))).some(name => name.endsWith('.pending')), false);
 });
@@ -1902,7 +2214,8 @@ const fs=require('node:fs'),path=require('node:path'); const configPath=process.
     assert.equal(output.operationalFailureRecovery?.verified ?? false, false, name);
   }
 
-  const piScript = `#!/usr/bin/env node\nprocess.stderr.write(Buffer.from('${failureBase64}','base64')); process.exit(1);\n`;
+  const attemptsPath = path.join(os.tmpdir(), `mdlm-demo-uncertain-private-evidence-${process.pid}-${Date.now()}`);
+  const piScript = `#!/usr/bin/env node\nrequire('node:fs').appendFileSync(${JSON.stringify(attemptsPath)}, 'invoked\\n'); process.stderr.write(Buffer.from('${failureBase64}','base64')); process.exit(1);\n`;
   const value = await fixture({ scenarioReference: 'ordinary@1', piScript });
   value.request.signal = 'clean-interrupted-command';
   const preexistingStops = path.join(assignmentDirectory(value.request), 'shim', 'stops');
@@ -1914,6 +2227,28 @@ const fs=require('node:fs'),path=require('node:path'); const configPath=process.
   assert.equal(output.reason, 'mdlm-pi-operational-failure');
   assert.equal(output.recoverable, false);
   assert.match(output.operationalFailureRecovery.uncertainty, /pre-run evidence/);
+
+  const repeated = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
+  assert.equal(repeated.status, 0, repeated.stderr);
+  const repeatedOutput = JSON.parse(repeated.stdout);
+  assert.equal(repeatedOutput.reason, 'mdlm-pi-operational-failure');
+  assert.equal(repeatedOutput.recoverable, false);
+  assert.equal(await readFile(attemptsPath, 'utf8'), 'invoked\n');
+  const durableDirectory = path.join(assignmentDirectory(value.request), 'durable-command');
+  assert.equal((await readdir(durableDirectory)).some(name => name.startsWith('attempt-')), false);
+
+  const consumptionPath = path.join(durableDirectory, 'consumption.json');
+  await chmod(consumptionPath, 0o600);
+  const consumption = JSON.parse(await readFile(consumptionPath));
+  consumption.orchestration.output.recoverable = true;
+  consumption.orchestration.outputDigest = `sha256:${createHash('sha256').update(Buffer.from(JSON.stringify(consumption.orchestration.output))).digest('hex')}`;
+  await writeFile(consumptionPath, `${JSON.stringify(consumption, null, 2)}\n`);
+  await chmod(consumptionPath, 0o400);
+  const adversarial = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
+  assert.equal(adversarial.status, 0, adversarial.stderr);
+  assert.equal(JSON.parse(adversarial.stdout).reason, 'durable-command-uncertain');
+  assert.equal(await readFile(attemptsPath, 'utf8'), 'invoked\n');
+  assert.equal((await readdir(durableDirectory)).some(name => name.startsWith('attempt-')), false);
 });
 
 test('mdlm-pi exit codes and typed results distinguish lifecycle outcomes from operational failures', async () => {
