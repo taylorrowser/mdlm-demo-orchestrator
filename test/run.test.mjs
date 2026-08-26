@@ -90,7 +90,7 @@ if(a[0]==='doctor') out({ok:true,command:'doctor',package:doctorPackage,baseline
 else if(a[0]==='status') out({contract:'mdlm-status@1',ok:true,command:'status',package:statusPackage,currentOutcome:${assignmentSelected ? (attentionRequired ? "{outcome:'attention-required',assignment:{allocation:'active',id:assignment},authorityRequirement:{mode:'attended',authority:'stakeholder',delegationAllowed:false}}" : "{outcome:'assignment',assignment:{allocation:'active',id:assignment}}") : "{outcome:'assignment',assignment:{allocation:'not-allocated'}}"},recentTransaction:${assignmentSelected ? "{available:false}" : "{available:true,id:'99999999-9999-4999-8999-999999999999',status:'completed',scenario:'ordinary@1'}"}});
 else if(a[0]==='assignment') { const requested=a[2]; if(requested!==assignment||!${assignmentSelected}) out({contract:'mdlm-assignment-state@1',ok:true,command:'assignment.show',assignment:{id:requested},selected:false,diagnostics:[]}); else out({contract:'mdlm-assignment-state@1',ok:true,command:'assignment.show',assignment:{id:assignment},selected:true,package:assignmentPackage,repository:repo,scenarioReference:scenario,disposition:'active',retryAvailability:{},malformedResponses}); }
 else if(a[0]==='scenario'&&a[1]==='prepare') out({contract:'mdlm-assignment-packet@2',ok:true,command:'scenario.prepare',assignment:{id:assignment},package:packetPackage,repository:repo,scenario:{reference:scenario},responseSchema:{},exactInputs:[]});
-else if(a[0]==='scenario'&&a[1]==='submit') { let chunks=[]; process.stdin.on('data',x=>chunks.push(x)); process.stdin.on('end',()=>{const bytes=Buffer.concat(chunks); fs.appendFileSync(${JSON.stringify(path.join(scratch, 'submit-count'))},'1\\n'); const digest='sha256:'+crypto.createHash('sha256').update(bytes).digest('hex'); if(${correctionRequiredSubmit}) { fs.writeFileSync(malformedPath,digest); out({ok:false,command:'scenario.submit',contract:'mdlm-assignment-disposition@1',assignment:{id:assignment},disposition:'correction-required',orchestration:{action:'correct-response',automaticReplacement:false},malformedResponse:{attempt:1,correctionsRemaining:${correctionsRemaining},diagnostics:correctionDiagnostics},diagnostics:correctionDiagnostics}); process.exitCode=1; } else { const id=${JSON.stringify(executionId)}; const dir=path.join(root,'.lifecycle/data/.transactions',id); fs.mkdirSync(dir,{recursive:true}); fs.writeFileSync(path.join(dir,'execution.json'),'execution\\n'); fs.writeFileSync(path.join(dir,'target.json'),'target\\n'); if(${uncertainSubmit}) process.exit(9); else out({contract:'mdlm-scenario-execution@4',ok:true,command:'scenario.submit',execution:{contract:'mdlm-scenario-execution@4',id,status:'completed',response:{assignment,digest},definition:{scenario},outputs:[{lifecycleDatum:{path:${publicationPath ? JSON.stringify(publicationPath) : "'.lifecycle/data/.transactions/'+id+'/target.json'"}}}]}}); } }); }
+else if(a[0]==='scenario'&&a[1]==='submit') { let chunks=[]; process.stdin.on('data',x=>chunks.push(x)); process.stdin.on('end',()=>{const bytes=Buffer.concat(chunks); fs.appendFileSync(${JSON.stringify(path.join(scratch, 'submit-count'))},'1\\n'); const digest='sha256:'+crypto.createHash('sha256').update(bytes).digest('hex'); if(${correctionRequiredSubmit}&&!fs.existsSync(malformedPath)) { fs.writeFileSync(malformedPath,digest); out({ok:false,command:'scenario.submit',contract:'mdlm-assignment-disposition@1',assignment:{id:assignment},disposition:'correction-required',orchestration:{action:'correct-response',automaticReplacement:false},malformedResponse:{attempt:1,correctionsRemaining:${correctionsRemaining},diagnostics:correctionDiagnostics},diagnostics:correctionDiagnostics}); process.exitCode=1; } else { const id=${JSON.stringify(executionId)}; const dir=path.join(root,'.lifecycle/data/.transactions',id); fs.mkdirSync(dir,{recursive:true}); fs.writeFileSync(path.join(dir,'execution.json'),'execution\\n'); fs.writeFileSync(path.join(dir,'target.json'),'target\\n'); if(${uncertainSubmit}) process.exit(9); else out({contract:'mdlm-scenario-execution@4',ok:true,command:'scenario.submit',execution:{contract:'mdlm-scenario-execution@4',id,status:'completed',response:{assignment,digest},definition:{scenario},outputs:[{lifecycleDatum:{path:${publicationPath ? JSON.stringify(publicationPath) : "'.lifecycle/data/.transactions/'+id+'/target.json'"}}}]}}); } }); }
 else if(a[0]==='next') {
   const countPath=${JSON.stringify(nextCountPath)}, count=fs.existsSync(countPath)?Number(fs.readFileSync(countPath,'utf8')):0; fs.writeFileSync(countPath,String(count+1));
   if(${materializedNext}&&count===0){
@@ -134,7 +134,7 @@ else {process.stderr.write('unexpected '+JSON.stringify(a));process.exit(8)}
   };
   return {
     scratch, repository, request, mdlm, mdlmPi, tooling, assignment, assignmentStatePath, scenarioStatePath,
-    malformedDigestPath, executionId, nextCountPath, staleAssignment, finalAssignment, materializedExecution,
+    malformedDigestPath, responsePath, executionId, nextCountPath, staleAssignment, finalAssignment, materializedExecution,
   };
 }
 
@@ -1143,6 +1143,81 @@ test('a structured correction-required submission remains recoverable without an
   const refused = exec(process.execPath, [cli, 'resume'], root, JSON.stringify({ ...value.request, contract: 'mdlm-demo-resume-request@1' }));
   assert.equal(refused.status, 0, refused.stderr);
   assert.equal(JSON.parse(refused.stdout).reason, 'correction-boundary-drift');
+  assert.equal((await readFile(path.join(value.scratch, 'submit-count'), 'utf8')).trim().split('\n').length, 1);
+  assert.equal(Number(git(['rev-list', '--count', 'HEAD'], value.repository)), 1);
+});
+
+test('a bound correction resumes after a post-bind parent crash without replaying the malformed response', async () => {
+  const value = await fixture({ correctionRequiredSubmit: true });
+  const first = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
+  assert.equal(first.status, 0, first.stderr);
+  assert.equal(JSON.parse(first.stdout).reason, 'malformed-response-correction-required');
+
+  const correctedBytes = Buffer.from(`{"contract":"mdlm-assignment-response@1","assignment":"${value.assignment}","kind":"proposal","proposal":{"outputs":[]}}\n`);
+  await writeFile(value.responsePath, correctedBytes);
+  const correctedDigest = `sha256:${createHash('sha256').update(correctedBytes).digest('hex')}`;
+  const request = {
+    ...value.request,
+    contract: 'mdlm-demo-resume-request@1',
+    correctionContinuation: { responsePath: value.responsePath, digest: correctedDigest },
+  };
+  const crashed = exec(process.execPath, [cli, 'resume'], root, JSON.stringify(request), {
+    ...process.env, MDLM_DEMO_TEST_CRASH: 'correction-continuation:after-bind',
+  });
+  assert.equal(crashed.status, 86, crashed.stderr);
+  const bound = JSON.parse(await readFile(path.join(assignmentDirectory(value.request), 'transaction.json'), 'utf8'));
+  assert.equal(bound.phase, 'correction-bound');
+  assert.equal(bound.originalResponse.digest, await readFile(value.malformedDigestPath, 'utf8'));
+  assert.deepEqual(bound.correctionInput, {
+    contract: 'mdlm-demo-correction-input@1',
+    assignmentId: value.assignment,
+    scenario: 'register-pilot-target@1',
+    package: bound.package,
+    repository: bound.repository,
+    lifecycleRepository: value.repository,
+    packetDigest: bound.packetDigest,
+    path: value.responsePath,
+    digest: correctedDigest,
+    bytes: correctedBytes.length,
+    bytesBase64: correctedBytes.toString('base64'),
+  });
+  assert.equal((await readFile(path.join(value.scratch, 'submit-count'), 'utf8')).trim().split('\n').length, 1);
+
+  const resumed = exec(process.execPath, [cli, 'resume'], root, JSON.stringify(request));
+  assert.equal(resumed.status, 0, resumed.stderr);
+  assert.equal(JSON.parse(resumed.stdout).status, 'completed');
+  assert.equal((await readFile(path.join(value.scratch, 'submit-count'), 'utf8')).trim().split('\n').length, 2);
+  assert.equal(Number(git(['rev-list', '--count', 'HEAD'], value.repository)), 2);
+  const completed = JSON.parse(await readFile(path.join(assignmentDirectory(value.request), 'transaction.json'), 'utf8'));
+  assert.equal(completed.responseDigest, correctedDigest);
+  assert.equal(completed.originalResponse.digest, await readFile(value.malformedDigestPath, 'utf8'));
+});
+
+test('a bound correction fails closed when its public input path drifts', async () => {
+  const value = await fixture({ correctionRequiredSubmit: true });
+  const first = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
+  assert.equal(first.status, 0, first.stderr);
+  assert.equal(JSON.parse(first.stdout).reason, 'malformed-response-correction-required');
+
+  const correctedBytes = Buffer.from(`{"contract":"mdlm-assignment-response@1","assignment":"${value.assignment}","kind":"proposal","proposal":{"outputs":[]}}\n`);
+  await writeFile(value.responsePath, correctedBytes);
+  const request = {
+    ...value.request,
+    contract: 'mdlm-demo-resume-request@1',
+    correctionContinuation: {
+      responsePath: value.responsePath,
+      digest: `sha256:${createHash('sha256').update(correctedBytes).digest('hex')}`,
+    },
+  };
+  const crashed = exec(process.execPath, [cli, 'resume'], root, JSON.stringify(request), {
+    ...process.env, MDLM_DEMO_TEST_CRASH: 'correction-continuation:after-bind',
+  });
+  assert.equal(crashed.status, 86, crashed.stderr);
+  await writeFile(value.responsePath, `${correctedBytes.toString('utf8').trim()} `);
+
+  const resumed = exec(process.execPath, [cli, 'resume'], root, JSON.stringify(request));
+  assert.equal(resumed.status, 0, resumed.stderr);
+  assert.equal(JSON.parse(resumed.stdout).reason, 'correction-input-invalid');
   assert.equal((await readFile(path.join(value.scratch, 'submit-count'), 'utf8')).trim().split('\n').length, 1);
   assert.equal(Number(git(['rev-list', '--count', 'HEAD'], value.repository)), 1);
 });
