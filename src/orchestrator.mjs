@@ -1146,9 +1146,34 @@ function requireResultDerivedDisposition(decoded, output) {
     }
     return;
   }
-  if (output.trustedRepositoryAdvance === true) {
-    throw new Error('durable command consumption advances a repository for a non-advancing result');
+  if (decoded.kind === 'correction-session-lost') {
+    if (output.status !== 'stopped' || output.reason !== 'correction-session-lost' ||
+        output.outcome !== undefined || output.recoverable !== false || output.trustedRepositoryAdvance === true) {
+      throw new Error('durable command consumption disposition differs from its lost correction session result');
+    }
+    return;
   }
+  if (decoded.kind === 'operational-failure') {
+    const recovery = output.operationalFailureRecovery;
+    const verified = recovery?.verified === true;
+    if (output.status !== 'stopped' || output.reason !== (verified ? 'pre-submission-operational-failure' : 'mdlm-pi-operational-failure') ||
+        output.outcome !== (verified ? 'pre-submission-operational-failure' : undefined) ||
+        output.recoverable !== verified || output.trustedRepositoryAdvance === true ||
+        !recovery || (verified
+          ? recovery.assignmentId !== output.assignmentId || recovery.retryCommand !== 'run' || recovery.resumeAllowed !== false || !recovery.marker
+          : recovery.verified !== false || typeof recovery.uncertainty !== 'string' || recovery.uncertainty.length === 0)) {
+      throw new Error('durable command consumption disposition differs from its operational failure result');
+    }
+    return;
+  }
+  if (decoded.kind === 'failure') {
+    if (output.status !== 'stopped' || output.reason !== 'mdlm-pi-contract-failure' ||
+        output.outcome !== undefined || output.recoverable !== false || output.trustedRepositoryAdvance === true) {
+      throw new Error('durable command consumption disposition differs from its command contract failure');
+    }
+    return;
+  }
+  throw new Error('durable command consumption has an unsupported result disposition');
 }
 
 async function authenticateDurableCommandAttempt(attempt, assignmentDirectory) {

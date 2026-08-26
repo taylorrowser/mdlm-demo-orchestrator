@@ -2207,7 +2207,21 @@ const fs=require('node:fs'),path=require('node:path'); const configPath=process.
   assert.equal(repeatedOutput.reason, 'mdlm-pi-operational-failure');
   assert.equal(repeatedOutput.recoverable, false);
   assert.equal(await readFile(attemptsPath, 'utf8'), 'invoked\n');
-  assert.equal((await readdir(path.join(assignmentDirectory(value.request), 'durable-command'))).some(name => name.startsWith('attempt-')), false);
+  const durableDirectory = path.join(assignmentDirectory(value.request), 'durable-command');
+  assert.equal((await readdir(durableDirectory)).some(name => name.startsWith('attempt-')), false);
+
+  const consumptionPath = path.join(durableDirectory, 'consumption.json');
+  await chmod(consumptionPath, 0o600);
+  const consumption = JSON.parse(await readFile(consumptionPath));
+  consumption.orchestration.output.recoverable = true;
+  consumption.orchestration.outputDigest = `sha256:${createHash('sha256').update(Buffer.from(JSON.stringify(consumption.orchestration.output))).digest('hex')}`;
+  await writeFile(consumptionPath, `${JSON.stringify(consumption, null, 2)}\n`);
+  await chmod(consumptionPath, 0o400);
+  const adversarial = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
+  assert.equal(adversarial.status, 0, adversarial.stderr);
+  assert.equal(JSON.parse(adversarial.stdout).reason, 'durable-command-uncertain');
+  assert.equal(await readFile(attemptsPath, 'utf8'), 'invoked\n');
+  assert.equal((await readdir(durableDirectory)).some(name => name.startsWith('attempt-')), false);
 });
 
 test('mdlm-pi exit codes and typed results distinguish lifecycle outcomes from operational failures', async () => {
