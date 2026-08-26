@@ -1176,6 +1176,33 @@ test('output-limited durable results fail closed instead of authenticating trunc
   assert.equal(await stat(path.join(assignmentDirectory(value.request), 'durable-command', 'consumption.json')).then(() => true, () => false), false);
 });
 
+test('crash recovery compares an operational failure with its authorized pre-command snapshot', async () => {
+  const { run008 } = await readAnchoredRun008Fixture();
+  const attemptsPath = path.join(os.tmpdir(), `mdlm-demo-authorized-initial-${process.pid}-${Date.now()}`);
+  const piScript = `#!/usr/bin/env node\nconst fs=require('node:fs'); fs.appendFileSync(${JSON.stringify(attemptsPath)}, 'invoked\\n'); fs.writeFileSync('worker-change.txt', 'changed\\n'); process.stderr.write(Buffer.from('${run008.process.stderrBase64}','base64')); process.exit(1);\n`;
+  const value = await fixture({ scenarioReference: 'ordinary@1', piScript });
+  value.request.signal = 'clean-interrupted-command';
+
+  const crashed = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request), {
+    ...process.env, MDLM_DEMO_TEST_CRASH: 'durable-command:after-result',
+  });
+  assert.equal(crashed.status, 86, crashed.stderr);
+
+  const recovered = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
+  assert.equal(recovered.status, 0, recovered.stderr);
+  const output = JSON.parse(recovered.stdout);
+  assert.equal(output.reason, 'mdlm-pi-operational-failure');
+  assert.equal(output.recoverable, false);
+  assert.equal(output.operationalFailureRecovery.verified, false);
+  assert.match(output.operationalFailureRecovery.uncertainty, /repository bytes or identity changed/);
+
+  const repeated = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
+  assert.equal(repeated.status, 0, repeated.stderr);
+  assert.equal(JSON.parse(repeated.stdout).reason, 'mdlm-pi-operational-failure');
+  assert.equal(await readFile(attemptsPath, 'utf8'), 'invoked\n');
+  assert.equal((await readdir(path.join(assignmentDirectory(value.request), 'durable-command'))).some(name => name.startsWith('attempt-')), false);
+});
+
 test('ordinary Assignments invoke mdlm-pi with exact argv and request-bound timeout environment', async () => {
   const argvPath = path.join(os.tmpdir(), `mdlm-demo-operator-argv-${process.pid}-${Date.now()}`);
   const piScript = `#!/usr/bin/env node\nrequire('node:fs').writeFileSync(${JSON.stringify(argvPath)}, JSON.stringify({argv:process.argv.slice(2),commandTimeout:process.env.MDLM_PI_COMMAND_TIMEOUT_MS,assignmentTimeout:process.env.MDLM_PI_ASSIGNMENT_TIMEOUT_MS})); console.log('{"status":"process-dead-end"}'); process.exit(2);\n`;

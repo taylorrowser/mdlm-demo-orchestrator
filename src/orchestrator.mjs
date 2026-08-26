@@ -896,6 +896,7 @@ async function runPiAssignment(request, context, assignmentDirectory, assignment
       assignment,
       decisionEvidence: decision?.evidence ?? null,
       decisionInputBase64: decisionInput?.toString('base64') ?? null,
+      initialSnapshot: snapshotResult,
       privateEvidenceBefore,
       shimDirectory,
     },
@@ -1180,6 +1181,7 @@ async function authenticateDurableCommandAttempt(attempt, assignmentDirectory) {
   const authorization = await optionalCanonicalJson(attempt.authorizationPath);
   if (authorization === null) throw new Error('durable command attempt has no authorization');
   requireStoredDurableAuthorization(authorization, assignmentDirectory);
+  await authenticateDurableInitialSnapshot(authorization);
   const authorizationEvidence = await immutableFileEvidence(attempt.authorizationPath);
   const resultDocument = await optionalCanonicalJson(attempt.resultPath);
   if (resultDocument === null) throw new Error('authorized child has no complete durable result');
@@ -1229,7 +1231,7 @@ async function recoverDurableAssignmentCommand({ request, context, assignmentDir
   const expectedShimDirectory = path.join(assignmentDirectory, 'shim');
   if (authorization.context.shimDirectory !== expectedShimDirectory ||
       !sameJson(Object.keys(authorization.context).sort(), [
-        'assignment', 'decisionEvidence', 'decisionInputBase64', 'privateEvidenceBefore', 'shimDirectory',
+        'assignment', 'decisionEvidence', 'decisionInputBase64', 'initialSnapshot', 'privateEvidenceBefore', 'shimDirectory',
       ])) {
     throw new Error('durable command orchestration context is malformed');
   }
@@ -1251,6 +1253,12 @@ async function recoverDurableAssignmentCommand({ request, context, assignmentDir
       !sameJson(authorization.command.environment, expectedWithoutInput.environment)) {
     throw new Error('authorized argv, cwd, timeout, input identity, or environment differs');
   }
+  const authorizedInitial = await authenticateDurableInitialSnapshot(authorization);
+  const initial = authorizedInitial.snapshot;
+  if (initial.repository !== context.repository || initial.assignment?.id !== assignment.id ||
+      !sameProcessPackageIdentity(initial.assignment?.package, processPackage)) {
+    throw new Error('authorized initial snapshot differs from the current recovery context');
+  }
   const captured = JSON.parse(await readFile(path.join(snapshotResult.snapshotDirectory, 'snapshot.json'), 'utf8'));
   const observedIdentity = observedRunIdentity(
     captured.provenance, processPackage, request.operator, request,
@@ -1265,7 +1273,7 @@ async function recoverDurableAssignmentCommand({ request, context, assignmentDir
     authorization, authorizationEvidence, resultDocument, assignmentDirectory,
   );
   return interpretPiAssignmentResult({
-    request, context, assignment, snapshotResult, processResult,
+    request, context, assignment, snapshotResult: authorization.context.initialSnapshot, processResult,
     decisionEvidence: authorization.context.decisionEvidence,
     privateEvidenceBefore: authorization.context.privateEvidenceBefore,
     shimDirectory: authorization.context.shimDirectory,
@@ -1370,11 +1378,38 @@ function requireStoredDurableAuthorization(authorization, assignmentDirectory) {
       !sameJson([...command.environment.names].sort(), command.environment.names) || new Set(command.environment.names).size !== command.environment.names.length ||
       !/^sha256:[0-9a-f]{64}$/.test(command.environment.digest ?? '') ||
       !authorization.context || typeof authorization.context !== 'object' || Array.isArray(authorization.context) ||
+      !sameJson(Object.keys(authorization.context).sort(), [
+        'assignment', 'decisionEvidence', 'decisionInputBase64', 'initialSnapshot', 'privateEvidenceBefore', 'shimDirectory',
+      ]) || !validSnapshotReference(authorization.context.initialSnapshot) ||
       !sameJson(Object.keys(compatibility ?? {}).sort(), ['index', 'prefix']) || !Number.isSafeInteger(compatibility.index) || compatibility.index < 1 ||
       compatibility.prefix !== path.join(assignmentDirectory, 'command-evidence', `command-${String(compatibility.index).padStart(6, '0')}`)) {
     throw new Error('durable command authorization is malformed');
   }
   requireDurableDecisionInput(authorization);
+}
+
+function validSnapshotReference(reference) {
+  return reference?.contract === 'mdlm-demo-snapshot-created@1' && reference.status === 'complete' &&
+    sameJson(Object.keys(reference).sort(), ['contract', 'digest', 'snapshotDirectory', 'status']) &&
+    typeof reference.snapshotDirectory === 'string' && path.isAbsolute(reference.snapshotDirectory) &&
+    /^sha256:[0-9a-f]{64}$/.test(reference.digest ?? '');
+}
+
+async function authenticateDurableInitialSnapshot(authorization) {
+  const verified = await verifySnapshot(
+    authorization.context.initialSnapshot.snapshotDirectory,
+    authorization.context.initialSnapshot.digest,
+    false,
+  );
+  const initial = verified.snapshot;
+  const assignment = authorization.context.assignment;
+  const processPackage = normalizeProcessPackage(assignment?.package, 'durable command initial Process Package');
+  if (initial.repository !== authorization.command.cwd || initial.assignment?.id !== assignment?.id ||
+      !sameProcessPackageIdentity(initial.status?.package, processPackage) ||
+      !sameProcessPackageIdentity(initial.diagnosis?.package, processPackage)) {
+    throw new Error('authorized initial snapshot differs from the durable command context');
+  }
+  return verified;
 }
 
 function requireDurableDecisionInput(authorization) {
