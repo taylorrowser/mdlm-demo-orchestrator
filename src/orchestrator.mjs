@@ -20,6 +20,7 @@ const thinkingLevels = new Set(['off', 'minimal', 'low', 'medium', 'high', 'xhig
 const assignmentCheckpointEvidence = Symbol('assignmentCheckpointEvidence');
 const publicationClosureEvidence = Symbol('publicationClosureEvidence');
 const operationalFailureEvidence = Symbol('operationalFailureEvidence');
+const durableResultRepository = Symbol('durableResultRepository');
 const outerTimeoutSafetyReserveMs = 60_000;
 
 export async function run(request, mode) {
@@ -52,11 +53,23 @@ export async function run(request, mode) {
     const postAssignmentId = output[publicationClosureEvidence]?.assignmentId ??
       output[assignmentCheckpointEvidence]?.packet.assignment.id ?? assignmentId;
     const postRunSnapshot = await snapshotRequest(request, context.repository, postDirectory, postAssignmentId, journalPath, piJournalPath, true);
+    if (output[durableResultRepository] !== undefined && postRunSnapshot.status === 'complete') {
+      const postRunRecord = JSON.parse(await readFile(path.join(postRunSnapshot.snapshotDirectory, 'snapshot.json'), 'utf8'));
+      if (!sameJson(output[durableResultRepository], postRunRecord.lifecycleRepository)) {
+        output = stopped(
+          'durable-command-uncertain',
+          'repository changed after the durable child result was captured',
+          initial,
+          assignmentId,
+        );
+      }
+    }
     output = await finalizeAssignmentCheckpoint(output, postRunSnapshot, assignmentId);
     output = await finalizePublicationClosure(output, postRunSnapshot);
     output = await finalizeOperationalFailure(output, initial, postRunSnapshot, context, assignmentDirectory, request);
     output.postRunSnapshot = postRunSnapshot;
     await finishTrustedRun(context, assignmentDirectory, journalPath, assignmentId, output, postRunSnapshot);
+    await recordDurableCommandConsumption(assignmentDirectory, output, postRunSnapshot);
     return output;
   } finally {
     await release();
@@ -112,6 +125,20 @@ async function executeRun(request, context, assignmentDirectory, journalPath, sn
 
   const assignment = captured.assignment;
   const status = captured.status;
+  const existingTransaction = await optionalCanonicalJson(journalPath);
+  try {
+    const recovered = await recoverDurableAssignmentCommand({
+      request, context, assignmentDirectory, snapshotResult, status, diagnosis: captured.diagnosis, mode,
+    });
+    if (recovered !== null) return recovered;
+  } catch (error) {
+    return stopped(
+      'durable-command-uncertain',
+      error instanceof Error ? error.message : String(error),
+      snapshotResult,
+      assignmentId,
+    );
+  }
   const advancing = advancingControllerJournal(captured, assignmentId);
   if (advancing.present) {
     if (!advancing.ok) return stopped('advancing-journal-invalid', advancing.detail, snapshotResult, assignmentId);
@@ -856,16 +883,39 @@ async function runPiAssignment(request, context, assignmentDirectory, assignment
     MDLM_PI_COMMAND_TIMEOUT_MS: String(request.mdlmPiCommandTimeoutMs),
     MDLM_PI_ASSIGNMENT_TIMEOUT_MS: String(request.mdlmPiAssignmentTimeoutMs),
   });
-  const processResult = await invoke(
-    assignmentDirectory, request.commands.mdlmPi, args, context.repository, request.timeoutMs,
-    decision === null ? undefined : Buffer.from(`${decision.wording}\n`), environment,
-  );
+  const decisionInput = decision === null ? undefined : Buffer.from(`${decision.wording}\n`);
+  const processResult = await invokeDurableAssignmentCommand({
+    assignmentDirectory,
+    program: request.commands.mdlmPi,
+    args,
+    cwd: context.repository,
+    timeoutMs: request.timeoutMs,
+    input: decisionInput,
+    env: environment,
+    context: {
+      assignment,
+      decisionEvidence: decision?.evidence ?? null,
+      decisionInputBase64: decisionInput?.toString('base64') ?? null,
+      privateEvidenceBefore,
+      shimDirectory,
+    },
+  });
+  return interpretPiAssignmentResult({
+    request, context, assignment, snapshotResult, processResult,
+    decisionEvidence: decision?.evidence ?? null, privateEvidenceBefore, shimDirectory,
+  });
+}
+
+async function interpretPiAssignmentResult({ request, context, assignment, snapshotResult, processResult, decisionEvidence, privateEvidenceBefore, shimDirectory }) {
+  const assignmentId = assignment.id;
   const decoded = decodeMdlmPiResult(processResult);
   const common = {
     assignmentId,
     process: commandRecord(processResult),
     mdlmPi: decoded,
-    ...(decision === null ? {} : { decision: decision.evidence }),
+    durableResultRepository: processResult[durableResultRepository],
+    [durableResultRepository]: processResult[durableResultRepository],
+    ...(decisionEvidence === null ? {} : { decision: decisionEvidence }),
   };
   if (decoded.kind === 'reserved-stop') {
     const trustedStop = await authenticateReservedStop(decoded.stop, shimDirectory, assignment.package);
@@ -911,13 +961,502 @@ async function runPiAssignment(request, context, assignmentDirectory, assignment
   return output;
 }
 
+function durableCommandAttempt(protocolDirectory, index) {
+  const directory = index === 1 ? protocolDirectory : path.join(protocolDirectory, `attempt-${String(index).padStart(6, '0')}`);
+  return {
+    index, directory,
+    authorizationPath: path.join(directory, 'authorization.json'),
+    resultPath: path.join(directory, 'result.json'),
+    consumptionPath: path.join(directory, 'consumption.json'),
+  };
+}
+
+async function latestDurableCommandAttempt(protocolDirectory) {
+  let entries;
+  try {
+    await requireCanonicalDirectory(protocolDirectory);
+    await recoverPendingDurableCommandWrites(protocolDirectory);
+    entries = await readdir(protocolDirectory);
+  } catch (error) { if (error.code === 'ENOENT') return null; throw error; }
+  const supportedRootEntry = /^(?:authorization|result|consumption)\.json$|^attempt-[0-9]{6}$/;
+  if (entries.some(name => !supportedRootEntry.test(name))) throw new Error('durable command directory contains an unsupported entry');
+  const rootAuthorization = await optionalCanonicalJson(path.join(protocolDirectory, 'authorization.json'));
+  const retryIndexes = entries.map(name => /^attempt-([0-9]{6})$/.exec(name)).filter(Boolean).map(match => Number(match[1])).sort((a, b) => a - b);
+  if (rootAuthorization === null) {
+    if (retryIndexes.length !== 0) throw new Error('durable command retry exists without its first authorization');
+    return null;
+  }
+  for (let offset = 0; offset < retryIndexes.length; offset++) {
+    if (retryIndexes[offset] !== offset + 2) throw new Error('durable command attempts are missing or ambiguous');
+    const retryDirectory = durableCommandAttempt(protocolDirectory, retryIndexes[offset]).directory;
+    await requireCanonicalDirectory(retryDirectory);
+    await recoverPendingDurableCommandWrites(retryDirectory);
+    const retryEntries = await readdir(retryDirectory);
+    if (retryEntries.some(name => !/^(?:authorization|result|consumption)\.json$/.test(name))) {
+      throw new Error('durable command attempt contains an unsupported entry');
+    }
+  }
+  const latestIndex = retryIndexes.at(-1) ?? 1;
+  for (let index = 1; index < latestIndex; index++) {
+    if (!await durableCommandConsumed(durableCommandAttempt(protocolDirectory, index), path.dirname(protocolDirectory))) {
+      throw new Error('an earlier durable command attempt is incomplete or unconsumed');
+    }
+  }
+  return durableCommandAttempt(protocolDirectory, latestIndex);
+}
+
+async function recordDurableCommandConsumption(assignmentDirectory, output, postRunSnapshot) {
+  if (postRunSnapshot.status !== 'complete' || !output.process) return;
+  const protocolDirectory = path.join(assignmentDirectory, 'durable-command');
+  const attempt = await latestDurableCommandAttempt(protocolDirectory);
+  if (attempt === null) return;
+  if (await durableCommandConsumed(attempt, assignmentDirectory)) return;
+  const authenticated = await authenticateDurableCommandAttempt(attempt, assignmentDirectory);
+  if (!sameJson(commandRecord(authenticated.processResult), output.process)) {
+    throw new Error('durable command output process differs from its authenticated result');
+  }
+  if (!sameJson(output.postRunSnapshot, postRunSnapshot)) {
+    throw new Error('durable command output names a different post-run snapshot');
+  }
+  const verifiedSnapshot = await verifySnapshot(postRunSnapshot.snapshotDirectory, postRunSnapshot.digest, true);
+  await requireDurableConsumptionBoundary(
+    authenticated.authorization, authenticated.processResult, output, verifiedSnapshot.snapshot, assignmentDirectory,
+  );
+  const manifestEvidence = await immutableFileEvidence(path.join(postRunSnapshot.snapshotDirectory, 'manifest.json'));
+  if (manifestEvidence.digest !== postRunSnapshot.digest) {
+    throw new Error('durable command post-run snapshot digest differs from its manifest');
+  }
+  const retainedOutput = JSON.parse(JSON.stringify(output));
+  await durableCreateJson(attempt.consumptionPath, {
+    contract: 'mdlm-demo-command-consumption@1',
+    result: { path: authenticated.resultEvidence.path, digest: authenticated.resultEvidence.digest },
+    orchestration: {
+      output: retainedOutput,
+      outputDigest: sha256(Buffer.from(JSON.stringify(retainedOutput))),
+      postRunManifest: { path: manifestEvidence.path, digest: manifestEvidence.digest },
+    },
+  }, 'durable-command-consumption');
+}
+
+async function durableCommandConsumed(attempt, assignmentDirectory) {
+  const consumption = await optionalCanonicalJson(attempt.consumptionPath);
+  if (consumption === null) return false;
+  if (consumption.contract !== 'mdlm-demo-command-consumption@1' ||
+      !sameJson(Object.keys(consumption).sort(), ['contract', 'orchestration', 'result']) ||
+      !sameJson(Object.keys(consumption.orchestration ?? {}).sort(), ['output', 'outputDigest', 'postRunManifest'])) {
+    throw new Error('durable command consumption is malformed');
+  }
+  const authenticated = await authenticateDurableCommandAttempt(attempt, assignmentDirectory);
+  if (!sameJson(consumption.result, { path: authenticated.resultEvidence.path, digest: authenticated.resultEvidence.digest }) ||
+      consumption.orchestration.outputDigest !== sha256(Buffer.from(JSON.stringify(consumption.orchestration.output)))) {
+    throw new Error('durable command consumption differs from its result or output');
+  }
+  const output = consumption.orchestration.output;
+  if (!sameJson(output?.process, commandRecord(authenticated.processResult)) ||
+      output?.postRunSnapshot?.status !== 'complete' ||
+      !/^sha256:[0-9a-f]{64}$/.test(output.postRunSnapshot.digest ?? '')) {
+    throw new Error('durable command consumption does not bind the authenticated process and complete snapshot');
+  }
+  const verifiedSnapshot = await verifySnapshot(
+    output.postRunSnapshot.snapshotDirectory, output.postRunSnapshot.digest, true,
+  );
+  await requireDurableConsumptionBoundary(
+    authenticated.authorization, authenticated.processResult, output, verifiedSnapshot.snapshot, assignmentDirectory,
+  );
+  const manifestPath = path.join(output.postRunSnapshot.snapshotDirectory, 'manifest.json');
+  const manifestEvidence = await immutableFileEvidence(manifestPath);
+  if (manifestEvidence.digest !== output.postRunSnapshot.digest ||
+      !sameJson(consumption.orchestration.postRunManifest, { path: manifestEvidence.path, digest: manifestEvidence.digest })) {
+    throw new Error('durable command consumption differs from its post-run snapshot');
+  }
+  return true;
+}
+
+async function requireDurableConsumptionBoundary(authorization, processResult, output, snapshot, assignmentDirectory) {
+  const assignment = authorization.context.assignment;
+  const processPackage = normalizeProcessPackage(assignment.package, 'durable command Process Package');
+  const decoded = decodeMdlmPiResult(processResult);
+  requireResultDerivedDisposition(decoded, output);
+  const failedCheckpoint = output.reason === 'assignment-checkpoint-authentication-failure' &&
+    output.trustedRepositoryAdvance === false && output.nextAssignment === undefined &&
+    decoded.kind === 'reserved-stop' && decoded.stop.assignment === snapshot.assignment?.id;
+  if (!sameJson(output.mdlmPi, decoded) || snapshot.postRun !== true ||
+      !Number.isFinite(Date.parse(snapshot.createdAt)) || Date.parse(snapshot.createdAt) < Date.parse(processResult.completedAt) ||
+      !sameJson(output.durableResultRepository, processResult[durableResultRepository]) ||
+      !sameJson(processResult[durableResultRepository], snapshot.lifecycleRepository) ||
+      snapshot.repository !== authorization.command.cwd || output.assignmentId !== assignment.id ||
+      !sameProcessPackageIdentity(processPackage, snapshot.status?.package) ||
+      !sameProcessPackageIdentity(processPackage, snapshot.diagnosis?.package) ||
+      (snapshot.assignment?.selected === true && !sameProcessPackageIdentity(processPackage, snapshot.assignment.package))) {
+    throw new Error('durable command consumption snapshot repository, Assignment, or Process Package differs from its authorization');
+  }
+  if (output.nextAssignment !== undefined) {
+    if (snapshot.assignment?.selected !== true || snapshot.assignment.id !== output.nextAssignment.id ||
+        !statusHasActiveAssignment(snapshot.status, output.nextAssignment.id)) {
+      throw new Error('durable command consumption snapshot differs from its authenticated next Assignment');
+    }
+  } else if (snapshot.assignment?.id !== assignment.id && !failedCheckpoint) {
+    throw new Error('durable command consumption snapshot names an unrelated Assignment');
+  }
+  if (output.trustedRepositoryAdvance === true) {
+    const transaction = await optionalCanonicalJson(path.join(assignmentDirectory, 'transaction.json'));
+    if (transaction?.phase !== 'completed' || transaction.assignmentId !== assignment.id ||
+        transaction.trustedRepositoryAdvance !== true || transaction.outcome !== (output.outcome ?? null) ||
+        !sameJson(transaction.completedRepository, snapshot.lifecycleRepository)) {
+      throw new Error('durable command consumption snapshot differs from its completed transaction boundary');
+    }
+  } else if (!failedCheckpoint && !sameRepositoryFingerprint(assignment.repository, snapshot.lifecycleRepository)) {
+    throw new Error('untrusted durable command consumption snapshot differs from its authorized repository boundary');
+  }
+}
+
+function requireResultDerivedDisposition(decoded, output) {
+  if (decoded.kind === 'terminal') {
+    if (output.status !== (decoded.successful ? 'completed' : 'stopped') ||
+        output.reason !== decoded.status || output.outcome !== decoded.status ||
+        output.recoverable !== false || output.trustedRepositoryAdvance !== true) {
+      throw new Error('durable command consumption disposition differs from its terminal result');
+    }
+    return;
+  }
+  if (decoded.kind === 'interruption') {
+    if (output.status !== 'stopped' || output.reason !== decoded.status ||
+        output.outcome !== 'operational-interruption' || output.recoverable !== true ||
+        output.trustedRepositoryAdvance === true) {
+      throw new Error('durable command consumption disposition differs from its interrupted result');
+    }
+    return;
+  }
+  if (decoded.kind === 'reserved-stop') {
+    const authenticatedAdvance = output.reason === 'reserved-shim-stop' && output.nextAssignment !== undefined;
+    const failedCheckpoint = output.reason === 'assignment-checkpoint-authentication-failure';
+    const contractFailure = output.reason === 'mdlm-pi-contract-failure';
+    if (contractFailure) {
+      if (output.status !== 'stopped' || output.recoverable !== false || output.outcome !== undefined ||
+          output.nextAssignment !== undefined || output.trustedRepositoryAdvance === true) {
+        throw new Error('durable command consumption disposition differs from its rejected reserved-stop result');
+      }
+      return;
+    }
+    if ((!authenticatedAdvance && !failedCheckpoint && output.reason !== 'reserved-shim-stop') ||
+        output.status !== (authenticatedAdvance ? 'completed' : 'stopped') ||
+        output.outcome !== (authenticatedAdvance ? 'accepted-publication' : 'pre-submission-stop') ||
+        output.recoverable !== !failedCheckpoint || output.trustedRepositoryAdvance !== authenticatedAdvance) {
+      throw new Error('durable command consumption disposition differs from its reserved-stop result');
+    }
+    return;
+  }
+  if (output.trustedRepositoryAdvance === true) {
+    throw new Error('durable command consumption advances a repository for a non-advancing result');
+  }
+}
+
+async function authenticateDurableCommandAttempt(attempt, assignmentDirectory) {
+  const authorization = await optionalCanonicalJson(attempt.authorizationPath);
+  if (authorization === null) throw new Error('durable command attempt has no authorization');
+  requireStoredDurableAuthorization(authorization, assignmentDirectory);
+  const authorizationEvidence = await immutableFileEvidence(attempt.authorizationPath);
+  const resultDocument = await optionalCanonicalJson(attempt.resultPath);
+  if (resultDocument === null) throw new Error('authorized child has no complete durable result');
+  const processResult = await authenticateDurableCommandResult(
+    authorization, authorizationEvidence, resultDocument, assignmentDirectory,
+  );
+  const resultEvidence = await immutableFileEvidence(attempt.resultPath);
+  return { authorization, authorizationEvidence, resultDocument, resultEvidence, processResult };
+}
+
+async function recoverDurableAssignmentCommand({ request, context, assignmentDirectory, snapshotResult, status, diagnosis, mode }) {
+  const protocolDirectory = path.join(assignmentDirectory, 'durable-command');
+  const attempt = await latestDurableCommandAttempt(protocolDirectory);
+  if (attempt === null || await durableCommandConsumed(attempt, assignmentDirectory)) return null;
+  const authorizationPath = attempt.authorizationPath;
+  const authorization = await optionalCanonicalJson(authorizationPath);
+  if (authorization?.contract !== 'mdlm-demo-command-authorization@1' || authorization.purpose !== 'assignment-worker' ||
+      !sameJson(Object.keys(authorization).sort(), ['command', 'compatibilityEvidence', 'context', 'contract', 'createdAt', 'purpose'])) {
+    throw new Error('durable command authorization is malformed');
+  }
+  const assignment = authorization.context?.assignment;
+  if (assignment?.id !== request.assignmentId) throw new Error('durable command belongs to another Assignment');
+  const processPackage = normalizeProcessPackage(assignment.package, 'durable command Process Package');
+  if (!sameProcessPackageIdentity(processPackage, status.package) ||
+      !sameProcessPackageIdentity(processPackage, diagnosis.package)) {
+    throw new Error('status or doctor Process Package differs from the durable command');
+  }
+  const identity = await optionalCanonicalJson(path.join(assignmentDirectory, 'identity.json'));
+  if (identity?.assignmentId !== assignment.id || !sameJson(identity.assignmentRepository, assignment.repository)) {
+    throw new Error('Assignment identity differs from the durable command context');
+  }
+  const expectedShimDirectory = path.join(assignmentDirectory, 'shim');
+  if (authorization.context.shimDirectory !== expectedShimDirectory ||
+      !sameJson(Object.keys(authorization.context).sort(), [
+        'assignment', 'decisionEvidence', 'decisionInputBase64', 'privateEvidenceBefore', 'shimDirectory',
+      ])) {
+    throw new Error('durable command orchestration context is malformed');
+  }
+  const args = [
+    'run', context.repository, '--mdlm', mdlmShim,
+    '--provider', request.operator.provider, '--model', request.operator.model, '--thinking', request.operator.thinking,
+  ];
+  const environment = controlledEnvironment({
+    MDLM_DEMO_SHIM_CONFIG: path.join(assignmentDirectory, 'shim', 'config.json'),
+    MDLM_PI_COMMAND_TIMEOUT_MS: String(request.mdlmPiCommandTimeoutMs),
+    MDLM_PI_ASSIGNMENT_TIMEOUT_MS: String(request.mdlmPiAssignmentTimeoutMs),
+  });
+  const expectedWithoutInput = durableCommandIdentity(
+    request.commands.mdlmPi, args, context.repository, request.timeoutMs, undefined, environment,
+  );
+  if (!sameJson(authorization.command.argv, expectedWithoutInput.argv) ||
+      authorization.command.cwd !== expectedWithoutInput.cwd ||
+      authorization.command.timeoutMs !== expectedWithoutInput.timeoutMs ||
+      !sameJson(authorization.command.environment, expectedWithoutInput.environment)) {
+    throw new Error('authorized argv, cwd, timeout, input identity, or environment differs');
+  }
+  const captured = JSON.parse(await readFile(path.join(snapshotResult.snapshotDirectory, 'snapshot.json'), 'utf8'));
+  const observedIdentity = observedRunIdentity(
+    captured.provenance, processPackage, request.operator, request,
+  );
+  if (!await pinRunIdentity(context.identityDirectory, observedIdentity, mode === 'run')) {
+    throw new Error('run identity differs from the durable command recovery boundary');
+  }
+  const resultDocument = await optionalCanonicalJson(attempt.resultPath);
+  if (resultDocument === null) throw new Error('authorized child has no complete durable result; its outcome is uncertain and it will not be spawned again');
+  const authorizationEvidence = await immutableFileEvidence(authorizationPath);
+  const processResult = await authenticateDurableCommandResult(
+    authorization, authorizationEvidence, resultDocument, assignmentDirectory,
+  );
+  return interpretPiAssignmentResult({
+    request, context, assignment, snapshotResult, processResult,
+    decisionEvidence: authorization.context.decisionEvidence,
+    privateEvidenceBefore: authorization.context.privateEvidenceBefore,
+    shimDirectory: authorization.context.shimDirectory,
+  });
+}
+
+async function invokeDurableAssignmentCommand({ assignmentDirectory, program, args, cwd, timeoutMs, input, env, context }) {
+  const protocolDirectory = path.join(assignmentDirectory, 'durable-command');
+  const latestAttempt = await latestDurableCommandAttempt(protocolDirectory);
+  const latestConsumed = latestAttempt !== null && await durableCommandConsumed(latestAttempt, assignmentDirectory);
+  const attempt = latestAttempt === null ? durableCommandAttempt(protocolDirectory, 1)
+    : latestConsumed ? durableCommandAttempt(protocolDirectory, latestAttempt.index + 1) : latestAttempt;
+  const { authorizationPath, resultPath } = attempt;
+  const command = durableCommandIdentity(program, args, cwd, timeoutMs, input, env);
+  let authorization = await optionalCanonicalJson(authorizationPath);
+  const newlyAuthorized = authorization === null;
+  if (newlyAuthorized) {
+    const compatibilityEvidence = await reserveCompatibilityEvidence(assignmentDirectory);
+    authorization = {
+      contract: 'mdlm-demo-command-authorization@1', purpose: 'assignment-worker', createdAt: new Date().toISOString(),
+      command, context, compatibilityEvidence,
+    };
+    await durableCreateJson(authorizationPath, authorization, 'durable-command-authorization');
+  } else {
+    requireDurableAuthorization(authorization, command, context, assignmentDirectory);
+  }
+  const authorizationEvidence = await immutableFileEvidence(authorizationPath);
+  let resultDocument = await optionalCanonicalJson(resultPath);
+  if (resultDocument === null) {
+    if (!newlyAuthorized) throw new Error('authorized child has no complete durable result; its outcome is uncertain and it will not be spawned again');
+    const existingAuthorization = await optionalCanonicalJson(authorizationPath);
+    if (!sameJson(existingAuthorization, authorization)) throw new Error('durable command authorization changed before spawn');
+    const output = await runProcess(program, args, { cwd, timeoutMs, input, env });
+    const repository = await captureLifecycleRepository(cwd, timeoutMs);
+    resultDocument = {
+      contract: 'mdlm-demo-command-result@1',
+      authorization: { path: authorizationEvidence.path, digest: authorizationEvidence.digest },
+      process: commandRecord(output),
+      repository,
+    };
+    await durableCreateJson(resultPath, resultDocument, 'durable-command-result');
+    maybeInjectedCrash('durable-command', 'after-result');
+  }
+  return authenticateDurableCommandResult(authorization, authorizationEvidence, resultDocument, assignmentDirectory);
+}
+
+function durableCommandIdentity(program, args, cwd, timeoutMs, input, env) {
+  const inputBytes = input === undefined ? Buffer.alloc(0) : Buffer.from(input);
+  const entries = Object.entries(env).sort(([left], [right]) => left.localeCompare(right));
+  return {
+    argv: [program, ...args], cwd: path.resolve(cwd), timeoutMs,
+    input: { present: input !== undefined, bytes: inputBytes.length, digest: sha256(inputBytes) },
+    environment: { names: entries.map(([name]) => name), digest: sha256(Buffer.from(JSON.stringify(entries))) },
+  };
+}
+
+async function reserveCompatibilityEvidence(assignmentDirectory) {
+  const directory = path.join(assignmentDirectory, 'command-evidence');
+  await mkdir(directory, { recursive: true, mode: 0o700 });
+  const entries = (await readdir(directory)).sort();
+  const grouped = new Map();
+  for (const name of entries) {
+    const match = /^command-([0-9]{6})\.(json|stdout|stderr)$/.exec(name);
+    if (match === null) throw new Error('legacy command evidence contains an unsupported entry');
+    const extensions = grouped.get(match[1]) ?? [];
+    extensions.push(match[2]);
+    grouped.set(match[1], extensions);
+  }
+  let expectedIndex = 1;
+  for (const [index, extensions] of grouped) {
+    if (Number(index) !== expectedIndex++) throw new Error('legacy command evidence indexes are missing or ambiguous');
+    if (!sameJson(extensions.sort(), ['json', 'stderr', 'stdout'])) {
+      throw new Error(`legacy command-${index} evidence is incomplete; child outcome is uncertain`);
+    }
+    await authenticateStoredCommand(directory, index);
+  }
+  const index = grouped.size + 1;
+  const prefix = path.join(directory, `command-${String(index).padStart(6, '0')}`);
+  return { index, prefix };
+}
+
+function requireDurableAuthorization(authorization, command, context, assignmentDirectory) {
+  requireStoredDurableAuthorization(authorization, assignmentDirectory);
+  if (!sameJson(authorization.command, command) || !sameJson(authorization.context, context)) {
+    throw new Error('durable command authorization differs from the requested invocation');
+  }
+}
+
+function requireStoredDurableAuthorization(authorization, assignmentDirectory) {
+  const command = authorization?.command;
+  const compatibility = authorization?.compatibilityEvidence;
+  if (authorization?.contract !== 'mdlm-demo-command-authorization@1' || authorization.purpose !== 'assignment-worker' ||
+      !sameJson(Object.keys(authorization).sort(), ['command', 'compatibilityEvidence', 'context', 'contract', 'createdAt', 'purpose']) ||
+      !Number.isFinite(Date.parse(authorization.createdAt)) ||
+      !sameJson(Object.keys(command ?? {}).sort(), ['argv', 'cwd', 'environment', 'input', 'timeoutMs']) ||
+      !Array.isArray(command.argv) || command.argv.length === 0 || command.argv.some(value => typeof value !== 'string' || value.length === 0) ||
+      typeof command.cwd !== 'string' || !path.isAbsolute(command.cwd) || !Number.isSafeInteger(command.timeoutMs) || command.timeoutMs < 1 ||
+      !sameJson(Object.keys(command.input ?? {}).sort(), ['bytes', 'digest', 'present']) || typeof command.input.present !== 'boolean' ||
+      !Number.isSafeInteger(command.input.bytes) || command.input.bytes < 0 || !/^sha256:[0-9a-f]{64}$/.test(command.input.digest ?? '') ||
+      !sameJson(Object.keys(command.environment ?? {}).sort(), ['digest', 'names']) || !Array.isArray(command.environment.names) ||
+      command.environment.names.some(value => typeof value !== 'string' || value.length === 0) ||
+      !sameJson([...command.environment.names].sort(), command.environment.names) || new Set(command.environment.names).size !== command.environment.names.length ||
+      !/^sha256:[0-9a-f]{64}$/.test(command.environment.digest ?? '') ||
+      !authorization.context || typeof authorization.context !== 'object' || Array.isArray(authorization.context) ||
+      !sameJson(Object.keys(compatibility ?? {}).sort(), ['index', 'prefix']) || !Number.isSafeInteger(compatibility.index) || compatibility.index < 1 ||
+      compatibility.prefix !== path.join(assignmentDirectory, 'command-evidence', `command-${String(compatibility.index).padStart(6, '0')}`)) {
+    throw new Error('durable command authorization is malformed');
+  }
+  requireDurableDecisionInput(authorization);
+}
+
+function requireDurableDecisionInput(authorization) {
+  const input = authorization.command.input;
+  const encoded = authorization.context.decisionInputBase64;
+  const evidence = authorization.context.decisionEvidence;
+  if (encoded === null) {
+    if (evidence !== null || !sameJson(input, {
+      present: false, bytes: 0, digest: sha256(Buffer.alloc(0)),
+    })) throw new Error('durable command absent input contradicts its decision context');
+    return;
+  }
+  if (typeof encoded !== 'string') throw new Error('durable command decision input is malformed');
+  const bytes = Buffer.from(encoded, 'base64');
+  if (bytes.toString('base64') !== encoded || bytes.length < 1 || bytes.at(-1) !== 0x0a ||
+      !sameJson(input, { present: true, bytes: bytes.length, digest: sha256(bytes) }) ||
+      !evidence || !sameJson(Object.keys(evidence).sort(), ['authorityBasis', 'digest', 'origin']) ||
+      evidence.origin !== 'operator-selected' || typeof evidence.authorityBasis !== 'string' || evidence.authorityBasis.length === 0 ||
+      sha256(bytes.subarray(0, -1)) !== evidence.digest) {
+    throw new Error('durable command input differs from its operator decision context');
+  }
+}
+
+async function authenticateDurableCommandResult(authorization, authorizationEvidence, resultDocument, assignmentDirectory) {
+  requireStoredDurableAuthorization(authorization, assignmentDirectory);
+  if (resultDocument?.contract !== 'mdlm-demo-command-result@1' ||
+      !sameJson(Object.keys(resultDocument).sort(), ['authorization', 'contract', 'process', 'repository']) ||
+      !sameJson(resultDocument.authorization, { path: authorizationEvidence.path, digest: authorizationEvidence.digest }) ||
+      !validLifecycleRepository(resultDocument.repository)) {
+    throw new Error('durable command result does not authenticate its exact authorization');
+  }
+  const record = resultDocument.process;
+  const expectedKeys = [
+    'argv', 'completedAt', 'cwd', 'exitStatus', 'observedOutputBytes', 'outputLimitExceeded', 'signal',
+    'spawnError', 'startedAt', 'stderrBase64', 'stderrSha256', 'stdoutBase64', 'stdoutSha256', 'timedOut', 'timeoutMs',
+  ].sort();
+  if (!record || !sameJson(Object.keys(record).sort(), expectedKeys)) {
+    throw new Error('durable command result process identity or termination is malformed');
+  }
+  requireCompleteProcessRecord(record, 'durable command result');
+  if (!sameJson(record.argv, authorization.command.argv) || record.cwd !== authorization.command.cwd ||
+      record.timeoutMs !== authorization.command.timeoutMs) {
+    throw new Error('durable command result process identity differs from its authorization');
+  }
+  const stdout = Buffer.from(record.stdoutBase64, 'base64');
+  const stderr = Buffer.from(record.stderrBase64, 'base64');
+  if (stdout.toString('base64') !== record.stdoutBase64 || stderr.toString('base64') !== record.stderrBase64 ||
+      sha256(stdout) !== record.stdoutSha256 || sha256(stderr) !== record.stderrSha256 ||
+      !retainedOutputMatchesObserved(record, stdout, stderr)) {
+    throw new Error('durable command result streams differ from their authenticated record');
+  }
+  const commandEvidence = authorization.compatibilityEvidence;
+  await persistCompatibilityEvidence(commandEvidence.prefix, record, stdout, stderr);
+  return { ...record, stdout, stderr, commandEvidence, [durableResultRepository]: resultDocument.repository };
+}
+
+function validLifecycleRepository(repository) {
+  return repository && sameJson(Object.keys(repository).sort(), [
+    'clean', 'head', 'porcelainSha256', 'trackedState', 'tree',
+  ]) && /^[0-9a-f]{40,64}$/.test(repository.head ?? '') &&
+    /^[0-9a-f]{40,64}$/.test(repository.tree ?? '') &&
+    /^sha256:[0-9a-f]{64}$/.test(repository.trackedState ?? '') &&
+    /^sha256:[0-9a-f]{64}$/.test(repository.porcelainSha256 ?? '') &&
+    typeof repository.clean === 'boolean';
+}
+
+async function captureLifecycleRepository(repository, timeoutMs) {
+  const options = { cwd: repository, timeoutMs, env: gitEnvironment() };
+  const [head, tree, status, stagedDiff, worktreeDiff] = await Promise.all([
+    runProcess('git', ['rev-parse', 'HEAD^{commit}'], options),
+    runProcess('git', ['rev-parse', 'HEAD^{tree}'], options),
+    runProcess('git', ['status', '--porcelain=v1', '-z', '--untracked-files=all'], options),
+    runProcess('git', ['diff', '--binary', '--no-ext-diff', '--cached', 'HEAD', '--'], options),
+    runProcess('git', ['diff', '--binary', '--no-ext-diff', '--'], options),
+  ]);
+  if (![head, tree, status, stagedDiff, worktreeDiff].every(commandSucceeded)) {
+    throw new Error('repository boundary could not be captured after the durable child result');
+  }
+  const headIdentity = head.stdout.toString('utf8').trim();
+  const treeIdentity = tree.stdout.toString('utf8').trim();
+  if (!/^[0-9a-f]{40,64}$/.test(headIdentity) || !/^[0-9a-f]{40,64}$/.test(treeIdentity)) {
+    throw new Error('repository boundary returned malformed Git identities after the durable child result');
+  }
+  const trackedState = sha256(Buffer.from(
+    `${headIdentity}\0staged\0${stagedDiff.stdout.toString('utf8')}\0worktree\0${worktreeDiff.stdout.toString('utf8')}`,
+  ));
+  return {
+    head: headIdentity,
+    tree: treeIdentity,
+    trackedState,
+    clean: status.stdout.length === 0,
+    porcelainSha256: sha256(status.stdout),
+  };
+}
+
+async function persistCompatibilityEvidence(prefix, record, stdout, stderr) {
+  await writeSyncedOrMatch(`${prefix}.stdout`, stdout);
+  await writeSyncedOrMatch(`${prefix}.stderr`, stderr);
+  await writeSyncedOrMatch(`${prefix}.json`, Buffer.from(`${JSON.stringify(record, null, 2)}\n`));
+  await syncDirectory(path.dirname(prefix));
+}
+
+async function writeSyncedOrMatch(file, bytes) {
+  const existing = await optionalLstat(file);
+  if (existing !== null) {
+    const evidence = await readCanonicalEvidenceFile(file);
+    if (!evidence.bytes.equals(bytes)) throw new Error('durable command compatibility evidence differs from the complete result');
+    return;
+  }
+  await writeExclusiveSynced(file, bytes);
+}
+
 function decodeMdlmPiResult(processResult) {
   const stdout = trailingJson(processResult.stdout);
   const stderr = trailingJson(processResult.stderr);
   const reserved = processResult.exitStatus === 1 ? findReservedStop(stderr) : null;
   if (reserved !== null) return { kind: 'reserved-stop', status: 'reserved-shim-stop', stop: reserved };
-  if (processResult.timedOut || processResult.signal !== null || [129, 130, 143].includes(processResult.exitStatus)) {
-    return { kind: 'interruption', status: processResult.timedOut ? 'mdlm-pi-timeout' : 'mdlm-pi-interrupted', document: stdout ?? stderr };
+  if (processResult.timedOut || processResult.outputLimitExceeded || processResult.signal !== null || [129, 130, 143].includes(processResult.exitStatus)) {
+    const status = processResult.timedOut ? 'mdlm-pi-timeout'
+      : processResult.outputLimitExceeded ? 'mdlm-pi-output-limit'
+        : 'mdlm-pi-interrupted';
+    return { kind: 'interruption', status, document: stdout ?? stderr };
   }
   const document = stdout ?? stderr;
   const status = typeof document?.status === 'string' ? document.status : null;
@@ -1094,7 +1633,10 @@ async function finalizeOperationalFailure(output, initialSnapshot, postSnapshot,
     if (!privateEvidenceAfter.safe) {
       throw new Error(`private post-run evidence is uncertain: ${privateEvidenceAfter.detail}`);
     }
-    const marker = await writeOperationalFailureMarker({
+    const marker = await reuseOperationalFailureMarker({
+      request, context, assignmentDirectory, processPackage: initial.status.package,
+      commandEvidence: evidence.commandEvidence, initial,
+    }) ?? await writeOperationalFailureMarker({
       source: 'verified-finalization',
       request,
       context,
@@ -1157,6 +1699,21 @@ function requireCertainJournalAbsence(value, label) {
   if (!value || value.present !== false || typeof value.path !== 'string' || value.error !== undefined) {
     throw new Error(`${label} is present or uncertain`);
   }
+}
+
+async function reuseOperationalFailureMarker({ request, context, assignmentDirectory, processPackage, commandEvidence, initial }) {
+  const directory = operationalRecoveryDirectory(context, request.assignmentId);
+  await recoverPendingOperationalRecoveryWrites(directory);
+  const runIdentity = observedRunIdentity(initial.provenance, processPackage, request.operator, request);
+  const history = await readOperationalRecoveryHistory({
+    directory, request, context, assignmentDirectory, processPackage, runIdentity,
+  });
+  const matching = history.markers.filter(marker => marker.index === commandEvidence.index);
+  if (matching.length === 0) return null;
+  if (matching.length !== 1 || history.transitions.has(commandEvidence.index)) {
+    throw new Error('durable operational failure marker is ambiguous or already transitioned');
+  }
+  return { path: matching[0].path, digest: matching[0].digest };
 }
 
 async function inspectOperationalPrivateEvidence(assignmentDirectory, piJournalPath, stopsDirectory) {
@@ -1710,6 +2267,24 @@ async function recoverPendingOperationalRecoveryWrites(directory) {
     const target = pending.slice(0, -'.pending'.length);
     const targetInformation = await optionalLstat(target);
     if (targetInformation !== null) throw new Error('operational recovery history contains an ambiguous completed and pending write');
+    JSON.parse((await immutableFileEvidence(pending)).bytes.toString('utf8'));
+    await rename(pending, target);
+    await syncDirectory(directory);
+  }
+}
+
+async function recoverPendingDurableCommandWrites(directory) {
+  const names = await readdir(directory);
+  for (const name of names) {
+    if (!name.endsWith('.pending')) continue;
+    if (!/^(?:authorization|result|consumption)\.json\.pending$/.test(name)) {
+      throw new Error('durable command directory contains an unsupported pending write');
+    }
+    const pending = path.join(directory, name);
+    const target = pending.slice(0, -'.pending'.length);
+    if (await optionalLstat(target) !== null) {
+      throw new Error('durable command attempt contains an ambiguous completed and pending write');
+    }
     JSON.parse((await immutableFileEvidence(pending)).bytes.toString('utf8'));
     await rename(pending, target);
     await syncDirectory(directory);
@@ -2795,14 +3370,39 @@ async function authenticateStoredCommand(directory, index) {
     'spawnError', 'startedAt', 'stderrBase64', 'stderrSha256', 'stdoutBase64', 'stdoutSha256', 'timedOut', 'timeoutMs',
   ].sort();
   if (!sameJson(Object.keys(record).sort(), expectedKeys)) throw new Error(`command-${index} record has an unsupported shape`);
+  requireCompleteProcessRecord(record, `command-${index}`);
   const stdout = stdoutEvidence.bytes;
   const stderr = stderrEvidence.bytes;
   if (record.stdoutSha256 !== sha256(stdout) || record.stderrSha256 !== sha256(stderr) ||
       record.stdoutBase64 !== stdout.toString('base64') || record.stderrBase64 !== stderr.toString('base64') ||
-      record.observedOutputBytes !== stdout.length + stderr.length) {
+      !retainedOutputMatchesObserved(record, stdout, stderr)) {
     throw new Error(`command-${index} raw bytes differ from the authenticated command record`);
   }
   return { record, stdout, stderr, evidence: files };
+}
+
+function retainedOutputMatchesObserved(record, stdout, stderr) {
+  const retainedBytes = stdout.length + stderr.length;
+  return record.observedOutputBytes === retainedBytes;
+}
+
+function requireCompleteProcessRecord(record, label) {
+  const hasExitStatus = Number.isSafeInteger(record.exitStatus);
+  const hasSignal = typeof record.signal === 'string' && record.signal.length > 0;
+  const hasSpawnError = typeof record.spawnError === 'string' && record.spawnError.length > 0;
+  if (!Array.isArray(record.argv) || record.argv.length === 0 || record.argv.some(value => typeof value !== 'string' || value.length === 0) ||
+      typeof record.cwd !== 'string' || !path.isAbsolute(record.cwd) || !Number.isSafeInteger(record.timeoutMs) || record.timeoutMs < 1 ||
+      typeof record.timedOut !== 'boolean' || record.outputLimitExceeded !== false ||
+      !(record.exitStatus === null || hasExitStatus) || !(record.signal === null || hasSignal) ||
+      !(record.spawnError === null || hasSpawnError) || (hasSignal && (hasExitStatus || hasSpawnError)) ||
+      (hasExitStatus && record.exitStatus < 0 && !hasSpawnError) || (hasSpawnError && hasExitStatus && record.exitStatus >= 0) ||
+      (!hasExitStatus && !hasSignal && !hasSpawnError) ||
+      !Number.isSafeInteger(record.observedOutputBytes) || record.observedOutputBytes < 0 ||
+      typeof record.startedAt !== 'string' || typeof record.completedAt !== 'string' ||
+      !Number.isFinite(Date.parse(record.startedAt)) || !Number.isFinite(Date.parse(record.completedAt)) ||
+      Date.parse(record.completedAt) < Date.parse(record.startedAt)) {
+    throw new Error(`${label} process identity or termination is incomplete or incoherent`);
+  }
 }
 
 function requireStoredProcess(record, argv, cwd, timeoutMs, exitStatus) {
