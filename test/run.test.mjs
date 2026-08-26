@@ -1287,8 +1287,8 @@ test('changed executable bytes cannot be blessed by changing configured provenan
   assert.equal(JSON.parse(resumed.stdout).reason, 'run-identity-drift');
 });
 
-test('resume continues an authentic advancing journal after its completed Assignment is deselected', async () => {
-  const invocationPath = path.join(os.tmpdir(), `mdlm-demo-advancing-${process.pid}-${Date.now()}`);
+async function advancingJournalFixture(executionAssignment) {
+  const invocationPath = path.join(os.tmpdir(), `mdlm-demo-advancing-${process.pid}-${Date.now()}-${executionAssignment ?? 'matching'}`);
   const piScript = `#!/usr/bin/env node\nrequire('node:fs').writeFileSync(${JSON.stringify(invocationPath)}, 'invoked\\n'); require('node:fs').unlinkSync('.git/mdlm-pi/run.json'); console.log('{"status":"lifecycle-complete"}');\n`;
   const value = await fixture({ scenarioReference: 'ordinary@1', piScript, assignmentSelected: false });
   const oldHead = git(['rev-parse', 'HEAD'], value.repository);
@@ -1307,7 +1307,7 @@ test('resume continues an authentic advancing journal after its completed Assign
   await writeFile(path.join(transactionRoot, 'execution.json'), `${JSON.stringify({
     contract: 'mdlm-scenario-execution@4', id: transactionId, status: 'completed',
     definition: { scenario: 'ordinary@1' },
-    response: { contract: 'mdlm-assignment-response@1', assignment: value.request.assignmentId },
+    response: { contract: 'mdlm-assignment-response@1', assignment: executionAssignment ?? value.request.assignmentId },
     outputs: [{ lifecycleDatum: { path: outputPath } }],
   })}\n`);
   git(['add', '.lifecycle'], value.repository);
@@ -1341,6 +1341,11 @@ test('resume continues an authentic advancing journal after its completed Assign
   }, null, 2)}\n`);
   value.request.contract = 'mdlm-demo-resume-request@1';
   value.request.signal = 'clean-interrupted-command';
+  return { invocationPath, value };
+}
+
+test('resume continues an authentic advancing journal after its completed Assignment is deselected', async () => {
+  const { invocationPath, value } = await advancingJournalFixture();
 
   const resumed = exec(process.execPath, [cli, 'resume'], root, JSON.stringify(value.request));
 
@@ -1349,6 +1354,19 @@ test('resume continues an authentic advancing journal after its completed Assign
   assert.equal(output.status, 'completed', resumed.stdout);
   assert.equal(output.reason, 'lifecycle-complete', resumed.stdout);
   assert.equal(await readFile(invocationPath, 'utf8'), 'invoked\n');
+});
+
+test('advancing recovery rejects a completed transaction for another Assignment', async () => {
+  const { invocationPath, value } = await advancingJournalFixture('33333333-3333-4333-8333-333333333333');
+
+  const resumed = exec(process.execPath, [cli, 'resume'], root, JSON.stringify(value.request));
+
+  assert.equal(resumed.status, 0, resumed.stderr);
+  const output = JSON.parse(resumed.stdout);
+  assert.equal(output.status, 'stopped', resumed.stdout);
+  assert.equal(output.reason, 'advancing-journal-invalid', resumed.stdout);
+  assert.match(output.detail, /does not belong to the recovering Assignment/);
+  await assert.rejects(readFile(invocationPath), error => error.code === 'ENOENT');
 });
 
 test('lost correction session is not fed shell stdin or restarted without controller resume support', async () => {

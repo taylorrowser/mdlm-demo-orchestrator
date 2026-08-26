@@ -1778,6 +1778,7 @@ async function authenticateAdvancingControllerRecovery({ context, assignmentDire
     context.repository,
     identity.lifecycleRepository.head,
     captured.lifecycleRepository.head,
+    assignmentId,
   );
   const subject = await runProcess('git', ['show', '-s', '--format=%s', captured.lifecycleRepository.head], {
     cwd: context.repository, timeoutMs: 900_000, env: gitEnvironment(),
@@ -2413,7 +2414,7 @@ async function requirePinnedEvidence(pin, label) {
   return evidence;
 }
 
-async function authenticateLifecycleTransactionAncestry(repository, oldHead, newHead) {
+async function authenticateLifecycleTransactionAncestry(repository, oldHead, newHead, finalAssignmentId) {
   const runGit = async args => {
     const result = await runProcess('git', args, { cwd: repository, timeoutMs: 900_000, env: gitEnvironment() });
     if (!commandSucceeded(result)) throw new Error(`Git ancestry evidence failed for ${args.join(' ')}`);
@@ -2446,6 +2447,9 @@ async function authenticateLifecycleTransactionAncestry(repository, oldHead, new
         !Array.isArray(outputPaths) || outputPaths.length === 0 ||
         !sameJson(paths, [executionPath, ...outputPaths].sort())) {
       throw new Error('intermediate commit does not correspond to one completed lifecycle transaction');
+    }
+    if (commit === newHead && finalAssignmentId !== undefined && execution.response.assignment !== finalAssignmentId) {
+      throw new Error('final lifecycle transaction does not belong to the recovering Assignment');
     }
     parent = commit;
   }
