@@ -452,7 +452,7 @@ async function afterFactCheckpointFixture({ mutate } = {}) {
   return context;
 }
 
-async function orphanedCheckpointFixture({ mutate } = {}) {
+async function orphanedCheckpointFixture({ mutate, publishedAssignment = run009AssignmentA } = {}) {
   const workerLog = path.join(os.tmpdir(), `mdlm-demo-orphan-worker-${process.pid}-${Date.now()}-${Math.random()}`);
   const piScript = `#!/usr/bin/env node\nconst fs=require('node:fs'); const config=JSON.parse(fs.readFileSync(process.env.MDLM_DEMO_SHIM_CONFIG,'utf8')); fs.appendFileSync(${JSON.stringify(workerLog)},config.allowedAssignment+'\\n'); console.log('{"status":"lock-conflict"}'); process.exit(5);\n`;
   const processPackage = { reference: 'pkg@1', digest: `sha256:${'1'.repeat(64)}`, language: 'lang@1' };
@@ -587,7 +587,7 @@ async function orphanedCheckpointFixture({ mutate } = {}) {
   })}\n`);
 
   const transactions = [
-    ['aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'revise-question-decision-after-review@1', run009AssignmentA, 'DEC/DEC-TEST/r00001.md'],
+    ['aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'revise-question-decision-after-review@1', publishedAssignment, 'DEC/DEC-TEST/r00001.md'],
     ['bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', 'create-review-context@1', 'internal-assignment', 'BSL/BSL-TEST/r00001.md'],
   ];
   for (const [id, scenario, assignment, output] of transactions) {
@@ -2142,6 +2142,21 @@ test('operator-pinned orphaned child checkpoint completes A once and runs B with
   const calls = (await readFile(path.join(value.scratch, 'calls.log'), 'utf8')).trim().split('\n').map(JSON.parse);
   assert.equal(calls.some(args => args[0] === 'scenario' && args[1] === 'prepare' && args[2] === run009AssignmentA &&
     args.at(-1) === 'recovery-replay'), false);
+});
+
+test('orphaned checkpoint recovery authenticates the completed Assignment publication', async () => {
+  const value = await orphanedCheckpointFixture({
+    publishedAssignment: '33333333-3333-4333-8333-333333333333',
+  });
+
+  const execution = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
+
+  assert.equal(execution.status, 0, execution.stderr);
+  const output = JSON.parse(execution.stdout);
+  assert.equal(output.status, 'stopped', execution.stdout);
+  assert.equal(output.reason, 'checkpoint-reconciliation-failure', execution.stdout);
+  assert.match(output.detail, /does not belong to the completed Assignment/);
+  await assert.rejects(readFile(value.workerLog), error => error.code === 'ENOENT');
 });
 
 test('orphaned checkpoint recovery rejects wrong markers and unrelated advancement before B invocation', async () => {
