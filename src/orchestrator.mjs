@@ -201,21 +201,47 @@ async function executeRun(request, context, assignmentDirectory, journalPath, sn
     }
     return withCheckpointRecovery(result('already-completed', snapshotResult, { assignmentId, executionId: journal.executionId, commit: journal.commit, outcome: journal.outcome }));
   }
-  if (journal?.phase === 'correction-required') {
-    const retained = Array.isArray(assignment.malformedResponses)
-      ? assignment.malformedResponses.find(response => response?.digest === journal.responseDigest)
-      : undefined;
-    const recordedCorrection = correctionFromCommandRecord(
-      journal.submission, assignmentId, request.commands.mdlm, context.repository, request.timeoutMs ?? 30_000,
-    );
-    if (recordedCorrection === null || !sameJson(recordedCorrection, journal.correction) ||
-        !sameJson(retained?.diagnostics, journal.correction?.malformedResponse?.diagnostics) ||
-        captured.lifecycleRepository.clean !== true || !sameRepositoryFingerprint(journal.repository, captured.lifecycleRepository)) {
-      return withCheckpointRecovery(stopped('correction-boundary-drift', 'journaled correction does not match the submission record and active clean Assignment boundary', snapshotResult, assignmentId));
+  if (journal?.phase === 'correction-required' || journal?.phase === 'correction-bound') {
+    let correction;
+    try {
+      correction = await authenticateCorrectionBoundary({
+        journal, assignment, status, assignmentDirectory, captured, processPackage, request, context,
+      });
+    } catch (error) {
+      return withCheckpointRecovery(stopped('correction-boundary-drift', error instanceof Error ? error.message : String(error), snapshotResult, assignmentId));
     }
-    return withCheckpointRecovery(correctionRequiredStop(snapshotResult, assignmentId, journal.correction));
+    if (journal.phase === 'correction-required' && request.correctionContinuation === undefined) {
+      return withCheckpointRecovery(correctionRequiredStop(snapshotResult, assignmentId, correction));
+    }
+    if (mode !== 'resume') {
+      return withCheckpointRecovery(stopped(
+        'wrong-recovery-mode', "correction continuation requires 'resume'", snapshotResult, assignmentId,
+        { recoverable: true, requiredNextMode: 'resume' },
+      ));
+    }
+    if (request.correctionContinuation === undefined) {
+      return withCheckpointRecovery(stopped('correction-input-invalid', 'bound correction continuation requires its exact public input pin', snapshotResult, assignmentId));
+    }
+    let boundJournal;
+    let responseBytes;
+    try {
+      if (journal.phase === 'correction-required') {
+        ({ journal: boundJournal, bytes: responseBytes } = await bindCorrectionInput(journal, request.correctionContinuation, context.repository));
+        await writeJournal(journalPath, boundJournal);
+        maybeInjectedCrash('correction-continuation', 'after-bind');
+      } else {
+        boundJournal = journal;
+        responseBytes = await authenticateBoundCorrectionInput(journal, request.correctionContinuation, context.repository);
+      }
+    } catch (error) {
+      return withCheckpointRecovery(stopped('correction-input-invalid', error instanceof Error ? error.message : String(error), snapshotResult, assignmentId));
+    }
+    return withCheckpointRecovery(await submitExternalResponse({
+      request, context, assignmentDirectory, journalPath, journal: boundJournal, responseBytes,
+      snapshotResult, processPackage, runIdentity, isCorrection: true,
+    }));
   }
-  if (journal?.phase === 'submitting' || journal?.phase === 'uncertain-transaction') {
+  if (journal?.phase === 'submitting' || journal?.phase === 'correction-submitting' || journal?.phase === 'uncertain-transaction') {
     return withCheckpointRecovery(stopped('uncertain-partial-publication', 'submission began without durable accepted execution evidence', snapshotResult, assignmentId, { transactionPhase: journal.phase }));
   }
   if (journal?.phase === 'uncertain-publication') {
@@ -335,17 +361,30 @@ async function runExternalAssignment(request, context, assignmentDirectory, jour
     };
     await writeJournal(journalPath, journal);
   }
-  await writeJournal(journalPath, { ...journal, phase: 'submitting', submissionStartedAt: new Date().toISOString() });
-  const submission = await invoke(assignmentDirectory, request.commands.mdlm, ['scenario', 'submit', '-', '--json'], context.repository, request.timeoutMs, adapted.bytes);
-  const correction = correctionRequiredSubmission(submission, assignmentId);
+  return submitExternalResponse({
+    request, context, assignmentDirectory, journalPath, journal, responseBytes: adapted.bytes,
+    snapshotResult, processPackage: packet.package, runIdentity, isCorrection: false,
+  });
+}
+
+async function submitExternalResponse({
+  request, context, assignmentDirectory, journalPath, journal, responseBytes,
+  snapshotResult, processPackage, runIdentity, isCorrection,
+}) {
+  const assignmentId = journal.assignmentId;
+  const submittingPhase = isCorrection ? 'correction-submitting' : 'submitting';
+  await writeJournal(journalPath, { ...journal, phase: submittingPhase, submissionStartedAt: new Date().toISOString() });
+  const submission = await invoke(assignmentDirectory, request.commands.mdlm, ['scenario', 'submit', '-', '--json'], context.repository, request.timeoutMs, responseBytes);
+  const correction = isCorrection ? null : correctionRequiredSubmission(submission, assignmentId);
   if (correction !== null) {
     await writeJournal(journalPath, {
       ...journal, phase: 'correction-required', submission: commandRecord(submission), correction,
     });
     return correctionRequiredStop(snapshotResult, assignmentId, correction);
   }
+  const submissionEvidence = isCorrection ? { correctionSubmission: commandRecord(submission) } : { submission: commandRecord(submission) };
   if (!commandSucceeded(submission)) {
-    await writeJournal(journalPath, { ...journal, phase: 'uncertain-transaction', submission: commandRecord(submission) });
+    await writeJournal(journalPath, { ...journal, ...submissionEvidence, phase: 'uncertain-transaction' });
     return stopped('uncertain-partial-publication', 'submission process did not yield accepted execution evidence', snapshotResult, assignmentId, { transactionPhase: 'uncertain-transaction' });
   }
   let publication;
@@ -353,10 +392,13 @@ async function runExternalAssignment(request, context, assignmentDirectory, jour
     publication = await publicationFromSubmission(parseJsonBytes(submission.stdout, 'scenario submit'), journal, context.repository);
     publication.blobs = await captureBlobs(context.repository, publication.outputPaths, request.timeoutMs, assignmentDirectory);
   } catch (error) {
-    await writeJournal(journalPath, { ...journal, phase: 'uncertain-transaction', submission: commandRecord(submission), error: error.message });
+    await writeJournal(journalPath, { ...journal, ...submissionEvidence, phase: 'uncertain-transaction', error: error.message });
     return stopped('uncertain-partial-publication', error.message, snapshotResult, assignmentId, { transactionPhase: 'uncertain-transaction' });
   }
-  const published = { ...journal, phase: 'published-uncommitted', executionId: publication.executionId, outputPaths: publication.outputPaths, blobs: publication.blobs };
+  const published = {
+    ...journal, ...submissionEvidence, phase: 'published-uncommitted',
+    executionId: publication.executionId, outputPaths: publication.outputPaths, blobs: publication.blobs,
+  };
   await writeJournal(journalPath, published);
   let completedJournal;
   try {
@@ -370,7 +412,7 @@ async function runExternalAssignment(request, context, assignmentDirectory, jour
   }
   try {
     return await beginPublicationClosure({
-      request, context, assignmentDirectory, journalPath, snapshotResult, processPackage: packet.package, runIdentity,
+      request, context, assignmentDirectory, journalPath, snapshotResult, processPackage, runIdentity,
       completedJournal, recoveredPublication: false,
     });
   } catch (error) {
@@ -419,6 +461,106 @@ function correctionRequiredStop(snapshotResult, assignmentId, correction) {
     detail: 'MDLM rejected the response without publication and retained a correction attempt',
     outcome: 'correction-required', transactionPhase: 'correction-required', correction,
   });
+}
+
+async function authenticateCorrectionBoundary({
+  journal, assignment, status, assignmentDirectory, captured, processPackage, request, context,
+}) {
+  const assignmentId = assignment.id;
+  if (journal.contract !== 'mdlm-demo-transaction-journal@2' || journal.assignmentId !== assignmentId ||
+      assignment.disposition !== 'active' || assignment.selected !== true || !statusHasActiveAssignment(status, assignmentId) ||
+      journal.scenario !== assignment.scenarioReference || !sameProcessPackageIdentity(journal.package, processPackage) ||
+      !sameProcessPackageIdentity(journal.package, assignment.package) || !sameJson(journal.repository, assignment.repository) ||
+      journal.baseCommit !== journal.repository?.head || captured.lifecycleRepository.clean !== true ||
+      !sameRepositoryFingerprint(journal.repository, captured.lifecycleRepository)) {
+    throw new Error('journaled correction does not match the active Assignment, Scenario, package, and clean repository boundary');
+  }
+  const originalResponse = journal.phase === 'correction-required'
+    ? { path: journal.responsePath, digest: journal.responseDigest }
+    : journal.originalResponse;
+  if (!originalResponse || !sameJson(Object.keys(originalResponse).sort(), ['digest', 'path']) ||
+      typeof originalResponse.path !== 'string' || !/^sha256:[0-9a-f]{64}$/.test(originalResponse.digest ?? '')) {
+    throw new Error('journaled malformed response identity is incomplete');
+  }
+  const retained = Array.isArray(assignment.malformedResponses)
+    ? assignment.malformedResponses.find(response => response?.digest === originalResponse.digest)
+    : undefined;
+  const recordedCorrection = correctionFromCommandRecord(
+    journal.submission, assignmentId, request.commands.mdlm, context.repository, request.timeoutMs ?? 30_000,
+  );
+  if (recordedCorrection === null || !sameJson(recordedCorrection, journal.correction) ||
+      !sameJson(retained?.diagnostics, journal.correction?.malformedResponse?.diagnostics)) {
+    throw new Error('journaled correction does not match its authenticated malformed submission and Assignment diagnostics');
+  }
+  const [packetEvidence, malformedEvidence] = await Promise.all([
+    readCanonicalFile(path.join(assignmentDirectory, 'prepared-packet.json'), 'prepared correction packet'),
+    readCanonicalFile(originalResponse.path, 'malformed Assignment response'),
+  ]);
+  const packet = validateScenarioPrepare(parseJsonBytes(packetEvidence.bytes, 'prepared correction packet'), {
+    assignmentId, package: processPackage, repository: assignment.repository,
+  });
+  if (packet.scenario.reference !== journal.scenario || sha256(packetEvidence.bytes) !== journal.packetDigest ||
+      sha256(malformedEvidence.bytes) !== originalResponse.digest) {
+    throw new Error('journaled correction packet or malformed response bytes differ');
+  }
+  const malformedResponse = parseJsonBytes(malformedEvidence.bytes, 'malformed Assignment response');
+  if (malformedResponse.contract !== 'mdlm-assignment-response@1' || malformedResponse.assignment !== assignmentId) {
+    throw new Error('journaled malformed response differs from the active Assignment');
+  }
+  return recordedCorrection;
+}
+
+async function bindCorrectionInput(journal, requested, lifecycleRepository) {
+  const evidence = await readCanonicalFile(requested.responsePath, 'corrected Assignment response');
+  const digest = sha256(evidence.bytes);
+  if (evidence.path !== requested.responsePath || digest !== requested.digest || digest === journal.responseDigest) {
+    throw new Error('corrected Assignment response path or digest differs from its public pin or replays the malformed response');
+  }
+  const response = parseJsonBytes(evidence.bytes, 'corrected Assignment response');
+  if (response.contract !== 'mdlm-assignment-response@1' || response.assignment !== journal.assignmentId) {
+    throw new Error('corrected Assignment response contract or Assignment differs');
+  }
+  const correctionInput = {
+    contract: 'mdlm-demo-correction-input@1', assignmentId: journal.assignmentId, scenario: journal.scenario,
+    package: journal.package, repository: journal.repository, lifecycleRepository, packetDigest: journal.packetDigest,
+    path: evidence.path, digest,
+    bytes: evidence.bytes.length, bytesBase64: evidence.bytes.toString('base64'),
+  };
+  return {
+    bytes: evidence.bytes,
+    journal: {
+      ...journal, phase: 'correction-bound', originalResponse: { path: journal.responsePath, digest: journal.responseDigest },
+      responsePath: evidence.path, responseDigest: digest, correctionInput, correctionBoundAt: new Date().toISOString(),
+    },
+  };
+}
+
+async function authenticateBoundCorrectionInput(journal, requested, lifecycleRepository) {
+  const input = journal.correctionInput;
+  const inputKeys = [
+    'assignmentId', 'bytes', 'bytesBase64', 'contract', 'digest', 'lifecycleRepository', 'package',
+    'packetDigest', 'path', 'repository', 'scenario',
+  ];
+  if (!input || !sameJson(Object.keys(input).sort(), inputKeys) || input.contract !== 'mdlm-demo-correction-input@1' ||
+      input.assignmentId !== journal.assignmentId || input.scenario !== journal.scenario ||
+      !sameProcessPackageIdentity(input.package, journal.package) || !sameJson(input.repository, journal.repository) ||
+      input.lifecycleRepository !== lifecycleRepository || input.packetDigest !== journal.packetDigest ||
+      input.path !== journal.responsePath || input.digest !== journal.responseDigest ||
+      input.path !== requested.responsePath || input.digest !== requested.digest || !Number.isSafeInteger(input.bytes) || input.bytes < 1 ||
+      typeof input.bytesBase64 !== 'string' || input.digest === journal.originalResponse?.digest) {
+    throw new Error('bound correction input differs from its Assignment, Scenario, package, repository, or public pin');
+  }
+  const boundBytes = Buffer.from(input.bytesBase64, 'base64');
+  if (boundBytes.toString('base64') !== input.bytesBase64 || boundBytes.length !== input.bytes || sha256(boundBytes) !== input.digest) {
+    throw new Error('bound correction input bytes differ from their durable digest');
+  }
+  const evidence = await readCanonicalFile(input.path, 'bound corrected Assignment response');
+  if (!evidence.bytes.equals(boundBytes)) throw new Error('bound corrected Assignment response path has drifted');
+  const response = parseJsonBytes(boundBytes, 'bound corrected Assignment response');
+  if (response.contract !== 'mdlm-assignment-response@1' || response.assignment !== journal.assignmentId) {
+    throw new Error('bound corrected Assignment response contract or Assignment differs');
+  }
+  return boundBytes;
 }
 
 async function beginPublicationClosure({
@@ -3122,7 +3264,7 @@ function stopped(reason, detail, snapshotResult, assignmentId, extra = {}) { ret
 function required(value, label) { if (typeof value !== 'string' || value.length === 0) throw new Error(`${label} must be a nonempty string`); return value; }
 function validateRunRequest(value) {
   const allowed = new Set([
-    'adapterInputsPath', 'assignmentId', 'checkpointRecovery', 'commands', 'contract', 'decisionCatalogPath',
+    'adapterInputsPath', 'assignmentId', 'checkpointRecovery', 'commands', 'contract', 'correctionContinuation', 'decisionCatalogPath',
     'evidenceDirectory', 'harness', 'materializedNextRecovery', 'mdlmPiAssignmentTimeoutMs', 'mdlmPiCommandTimeoutMs',
     'operationalFailureRecovery', 'operator', 'orphanedCheckpointRecovery', 'provenance', 'repository', 'signal',
     'stateDirectory', 'timeoutMs',
@@ -3136,6 +3278,18 @@ function validateRunRequest(value) {
     requirePositiveSafeInteger(value[name], name);
     if (value[name] > value.timeoutMs - outerTimeoutSafetyReserveMs) {
       throw new Error(`${name} must leave at least ${outerTimeoutSafetyReserveMs}ms safety reserve below timeoutMs`);
+    }
+  }
+  if (value.correctionContinuation !== undefined) {
+    const continuation = value.correctionContinuation;
+    if (!continuation || typeof continuation !== 'object' || Array.isArray(continuation) ||
+        !sameJson(Object.keys(continuation).sort(), ['digest', 'responsePath'])) {
+      throw new Error('correctionContinuation must contain exactly responsePath and digest');
+    }
+    required(continuation.responsePath, 'correctionContinuation.responsePath');
+    if (!path.isAbsolute(continuation.responsePath)) throw new Error('correctionContinuation.responsePath must be an absolute path');
+    if (!/^sha256:[0-9a-f]{64}$/.test(continuation.digest ?? '')) {
+      throw new Error('correctionContinuation.digest must be sha256:<64 lowercase hex>');
     }
   }
   if (value.checkpointRecovery !== undefined) {

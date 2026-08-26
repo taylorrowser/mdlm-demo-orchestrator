@@ -48,6 +48,7 @@ Every `run` and `resume` first resolves the lifecycle repository and worktree-pr
 | Accepted external publication followed by package-authored materializations | Record one create-once `mdlm next`, publish each exact completed transaction in output order, retire its exact pre-publication lease, then record one final `next` and checkpoint the Assignment at the clean final commit |
 | Accepted external publication followed by preserved `mdlm next` materializations that were committed outside the runner | Require `materializedNextRecovery`, authenticate the accepted old boundary, exact `mdlm-next@1` bytes, ordered transaction commits, and final active Assignment, then advance repository identity once without replaying `next` or its executions |
 | Captured response, submission not started | Submit the captured exact bytes |
+| Authenticated external correction-required journal with an exact `correctionContinuation` pin | On `resume`, bind corrected bytes and Assignment, Scenario, Process Package, and repository identities before one correction submission |
 | Accepted execution with journaled output paths and Git blob identities | Before generic drift checks, finish or recognize the one exact publication commit by HEAD, parent, subject, paths, and blobs |
 | Completed transaction journal | Return `already-completed`; do not submit or commit again |
 | Malformed, exhausted, stale, or abandoned Assignment | Stop as nonrecoverable |
@@ -85,6 +86,8 @@ After authentication, the existing durable reconciliation journal atomically adv
 After verification, the runner writes the durable run-only marker. `resume` stops before prepare or `mdlm-pi` starts and leaves the `@4` identity unchanged. `run` atomically upgrades it to `mdlm-demo-run-identity@5` with 600000 ms command, 840000 ms Assignment, and 900000 ms outer timeouts before one retry. Existing native `@5` marker recovery is unchanged.
 
 Once a journal reaches `submitting`, only exact accepted-execution evidence can settle the transaction. Journal replacement uses a unique temporary file, file `fsync`, parent-directory `fsync`, atomic rename, and a second parent-directory `fsync`.
+
+An external submission that returns an authenticated `mdlm-assignment-disposition@1` correction boundary may continue only through `resume` with `correctionContinuation`. Before invocation, the runner reauthenticates the malformed command bytes, retained diagnostics, prepared packet, active Assignment and Scenario, Process Package, and clean repository boundary. It reads the corrected response through a no-follow descriptor, checks the caller-pinned canonical path and digest, rejects the malformed digest, and durably records the exact corrected bytes and identities. A crash after that bind resumes from those bytes. Missing, changed, mismatched, or symlinked corrected input stops as `correction-input-invalid`; once `correction-submitting` is durable, uncertain recovery never repeats the correction.
 
 After a new external publication, the runner records `mdlm next --json` under create-once command evidence. A nonempty `materializedExecutions` list must name completed execution records whose canonical transaction paths account for the entire dirty worktree. The runner captures their blobs and commits one transaction at a time in output order. Its closure journal recognizes an exact commit completed before a crash and never repeats either `next` command. Missing or partial command evidence is uncertain and stops recovery.
 
@@ -191,6 +194,10 @@ The runner records the origin, authority basis, and digest. It does not label th
   "mdlmPiCommandTimeoutMs": 600000,
   "mdlmPiAssignmentTimeoutMs": 840000,
   "signal": "clean-interrupted-command",
+  "correctionContinuation": {
+    "responsePath": "/absolute/path/to/corrected-assignment-response.json",
+    "digest": "sha256:CORRECTED_RESPONSE_SHA256"
+  },
   "checkpointRecovery": {
     "snapshotDirectory": "/absolute/path/to/preserved/post-run-snapshot",
     "digest": "sha256:POST_RUN_MANIFEST_SHA256_FROM_PRESERVED_RUN_RESULT"
@@ -310,6 +317,8 @@ The runner records the origin, authority basis, and digest. It does not label th
   }
 }
 ```
+
+The `correctionContinuation` object is optional except when resuming an authenticated external `correction-required` journal. It accepts exactly an absolute `responsePath` and a lowercase `sha256:` digest copied from operator-authorized corrected response evidence. The path must remain a canonical regular file with the same exact bytes through every resume. It does not authorize `run`, a changed Assignment, a different Scenario or Process Package, repository drift, or replay of the malformed response.
 
 The `checkpointRecovery` object is optional except for after-the-fact reconciliation of a checkpoint retained by an older runner. It accepts exactly `snapshotDirectory` and `digest`. Preserve the prior run result before upgrading, then copy its `postRunSnapshot.snapshotDirectory` and `postRunSnapshot.digest` values into the recovery request. Do not derive the requested digest from the checkpoint packet, current repository, or mutable private state.
 
