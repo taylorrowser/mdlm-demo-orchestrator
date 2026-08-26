@@ -23,6 +23,7 @@ function assignmentDirectory(request) {
 
 async function fixture({
   uncertainSubmit = false,
+  correctionRequiredSubmit = false,
   scenarioReference = 'register-pilot-target@1',
   piScript = '#!/bin/sh\nexit 0\n',
   executionId = '55555555-5555-4555-8555-555555555555',
@@ -86,7 +87,7 @@ if(a[0]==='doctor') out({ok:true,command:'doctor',package:doctorPackage,baseline
 else if(a[0]==='status') out({contract:'mdlm-status@1',ok:true,command:'status',package:statusPackage,currentOutcome:${attentionRequired ? "{outcome:'attention-required',assignment:{allocation:'active',id:assignment},authorityRequirement:{mode:'attended',authority:'stakeholder',delegationAllowed:false}}" : "{outcome:'assignment',assignment:{allocation:'active',id:assignment}}"},recentTransaction:{available:false}});
 else if(a[0]==='assignment') { const requested=a[2]; if(requested!==assignment) out({contract:'mdlm-assignment-state@1',ok:true,command:'assignment.show',assignment:{id:requested},selected:false,diagnostics:[]}); else out({contract:'mdlm-assignment-state@1',ok:true,command:'assignment.show',assignment:{id:assignment},selected:true,package:assignmentPackage,repository:repo,scenarioReference:scenario,disposition:'active',retryAvailability:{},malformedResponses}); }
 else if(a[0]==='scenario'&&a[1]==='prepare') out({contract:'mdlm-assignment-packet@2',ok:true,command:'scenario.prepare',assignment:{id:assignment},package:packetPackage,repository:repo,scenario:{reference:scenario},responseSchema:{},exactInputs:[]});
-else if(a[0]==='scenario'&&a[1]==='submit') { let chunks=[]; process.stdin.on('data',x=>chunks.push(x)); process.stdin.on('end',()=>{const bytes=Buffer.concat(chunks); fs.appendFileSync(${JSON.stringify(path.join(scratch, 'submit-count'))},'1\\n'); const id=${JSON.stringify(executionId)}; const dir=path.join(root,'.lifecycle/data/.transactions',id); fs.mkdirSync(dir,{recursive:true}); fs.writeFileSync(path.join(dir,'execution.json'),'execution\\n'); fs.writeFileSync(path.join(dir,'target.json'),'target\\n'); if(${uncertainSubmit}) process.exit(9); else out({contract:'mdlm-scenario-execution@4',ok:true,command:'scenario.submit',execution:{contract:'mdlm-scenario-execution@4',id,status:'completed',response:{assignment,digest:'sha256:'+crypto.createHash('sha256').update(bytes).digest('hex')},definition:{scenario},outputs:[{lifecycleDatum:{path:${publicationPath ? JSON.stringify(publicationPath) : "'.lifecycle/data/.transactions/'+id+'/target.json'"}}}]}}); }); }
+else if(a[0]==='scenario'&&a[1]==='submit') { let chunks=[]; process.stdin.on('data',x=>chunks.push(x)); process.stdin.on('end',()=>{const bytes=Buffer.concat(chunks); fs.appendFileSync(${JSON.stringify(path.join(scratch, 'submit-count'))},'1\\n'); const digest='sha256:'+crypto.createHash('sha256').update(bytes).digest('hex'); if(${correctionRequiredSubmit}) { fs.writeFileSync(malformedPath,digest); out({ok:false,command:'scenario.submit',contract:'mdlm-assignment-disposition@1',assignment:{id:assignment},disposition:'correction-required',orchestration:{action:'correct-response',automaticReplacement:false},malformedResponse:{attempt:1,correctionsRemaining:1,diagnostics:[{code:'scenario-output-required-link-missing',path:'outputs.target.links.derived-from',message:'required link missing'}]},diagnostics:[{code:'scenario-output-required-link-missing',path:'outputs.target.links.derived-from',message:'required link missing'}]}); process.exitCode=1; } else { const id=${JSON.stringify(executionId)}; const dir=path.join(root,'.lifecycle/data/.transactions',id); fs.mkdirSync(dir,{recursive:true}); fs.writeFileSync(path.join(dir,'execution.json'),'execution\\n'); fs.writeFileSync(path.join(dir,'target.json'),'target\\n'); if(${uncertainSubmit}) process.exit(9); else out({contract:'mdlm-scenario-execution@4',ok:true,command:'scenario.submit',execution:{contract:'mdlm-scenario-execution@4',id,status:'completed',response:{assignment,digest},definition:{scenario},outputs:[{lifecycleDatum:{path:${publicationPath ? JSON.stringify(publicationPath) : "'.lifecycle/data/.transactions/'+id+'/target.json'"}}}]}}); } }); }
 else if(a[0]==='next') {
   const countPath=${JSON.stringify(nextCountPath)}, count=fs.existsSync(countPath)?Number(fs.readFileSync(countPath,'utf8')):0; fs.writeFileSync(countPath,String(count+1));
   if(${materializedNext}&&count===0){
@@ -1113,6 +1114,25 @@ test('a new run binds explicit timeouts when upgrading a legacy run identity, wh
   assert.equal(upgraded.contract, 'mdlm-demo-run-identity@5');
   assert.equal(upgraded.mdlmPiCommandTimeoutMs, 600_000);
   assert.equal(upgraded.mdlmPiAssignmentTimeoutMs, 840_000);
+});
+
+test('a structured correction-required submission remains recoverable without an uncertain journal', async () => {
+  const value = await fixture({ correctionRequiredSubmit: true });
+  const execution = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
+  assert.equal(execution.status, 0, execution.stderr);
+  const stopped = JSON.parse(execution.stdout);
+  assert.equal(stopped.status, 'stopped');
+  assert.equal(stopped.recoverable, true);
+  assert.equal(stopped.reason, 'malformed-response-correction-required');
+  assert.equal(stopped.correction.malformedResponse.correctionsRemaining, 1);
+  assert.equal(stopped.correction.diagnostics[0].code, 'scenario-output-required-link-missing');
+  assert.equal(JSON.parse(await readFile(path.join(assignmentDirectory(value.request), 'transaction.json'), 'utf8')).phase, 'correction-required');
+
+  const resumed = exec(process.execPath, [cli, 'resume'], root, JSON.stringify({ ...value.request, contract: 'mdlm-demo-resume-request@1' }));
+  assert.equal(resumed.status, 0, resumed.stderr);
+  assert.equal(JSON.parse(resumed.stdout).reason, 'malformed-response-correction-required');
+  assert.equal((await readFile(path.join(value.scratch, 'submit-count'), 'utf8')).trim().split('\n').length, 1);
+  assert.equal(Number(git(['rev-list', '--count', 'HEAD'], value.repository)), 1);
 });
 
 test('an uncertain submission is never repeated on resume', async () => {
