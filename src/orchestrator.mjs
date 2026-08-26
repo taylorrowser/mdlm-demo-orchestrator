@@ -1778,7 +1778,7 @@ async function authenticateAdvancingControllerRecovery({ context, assignmentDire
     context.repository,
     identity.lifecycleRepository.head,
     captured.lifecycleRepository.head,
-    assignmentId,
+    { finalAssignmentId: assignmentId },
   );
   const subject = await runProcess('git', ['show', '-s', '--format=%s', captured.lifecycleRepository.head], {
     cwd: context.repository, timeoutMs: 900_000, env: gitEnvironment(),
@@ -2358,7 +2358,12 @@ async function authenticateOrphanedAssignmentCheckpoint({ request, context, sour
   if (packet.scenario.reference !== checkpoint.scenario || captured.assignment.scenarioReference !== checkpoint.scenario) {
     throw new Error('retained B stop packet Scenario differs from the checkpoint or active Assignment');
   }
-  await authenticateLifecycleTransactionAncestry(context.repository, priorRepository.head, captured.lifecycleRepository.head);
+  await authenticateLifecycleTransactionAncestry(
+    context.repository,
+    priorRepository.head,
+    captured.lifecycleRepository.head,
+    { firstAssignmentId: fromAssignment },
+  );
 
   const evidence = {
     identity: evidenceManifest(identityEvidence),
@@ -2414,7 +2419,7 @@ async function requirePinnedEvidence(pin, label) {
   return evidence;
 }
 
-async function authenticateLifecycleTransactionAncestry(repository, oldHead, newHead, finalAssignmentId) {
+async function authenticateLifecycleTransactionAncestry(repository, oldHead, newHead, expectedAssignment = {}) {
   const runGit = async args => {
     const result = await runProcess('git', args, { cwd: repository, timeoutMs: 900_000, env: gitEnvironment() });
     if (!commandSucceeded(result)) throw new Error(`Git ancestry evidence failed for ${args.join(' ')}`);
@@ -2448,7 +2453,12 @@ async function authenticateLifecycleTransactionAncestry(repository, oldHead, new
         !sameJson(paths, [executionPath, ...outputPaths].sort())) {
       throw new Error('intermediate commit does not correspond to one completed lifecycle transaction');
     }
-    if (commit === newHead && finalAssignmentId !== undefined && execution.response.assignment !== finalAssignmentId) {
+    if (commit === commits[0] && expectedAssignment.firstAssignmentId !== undefined &&
+        execution.response.assignment !== expectedAssignment.firstAssignmentId) {
+      throw new Error('first lifecycle transaction does not belong to the completed Assignment');
+    }
+    if (commit === newHead && expectedAssignment.finalAssignmentId !== undefined &&
+        execution.response.assignment !== expectedAssignment.finalAssignmentId) {
       throw new Error('final lifecycle transaction does not belong to the recovering Assignment');
     }
     parent = commit;
