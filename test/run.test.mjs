@@ -35,6 +35,7 @@ async function fixture({
   packetPackage = assignmentPackage,
   materializedNext = false,
   attentionRequired = false,
+  assignmentSelected = true,
 } = {}) {
   const scratch = await mkdtemp(path.join(os.tmpdir(), 'issue-213-run-'));
   const repository = path.join(scratch, 'repository');
@@ -86,8 +87,8 @@ function repository(){const head=execFileSync('git',['rev-parse','HEAD^{commit}'
 const repo=repository();
 function out(x){process.stdout.write(JSON.stringify(x)+'\\n')}
 if(a[0]==='doctor') out({ok:true,command:'doctor',package:doctorPackage,baselineRepositoryVerification:{verifiedBaselines:0,processDrift:0},index:{rebuilt:false,data:0,path:'.lifecycle/generated/indexes/data.json'},report:{rebuilt:false,data:0,path:'.lifecycle/generated/reports/lifecycle.json'},diagnostics:[]});
-else if(a[0]==='status') out({contract:'mdlm-status@1',ok:true,command:'status',package:statusPackage,currentOutcome:${attentionRequired ? "{outcome:'attention-required',assignment:{allocation:'active',id:assignment},authorityRequirement:{mode:'attended',authority:'stakeholder',delegationAllowed:false}}" : "{outcome:'assignment',assignment:{allocation:'active',id:assignment}}"},recentTransaction:{available:false}});
-else if(a[0]==='assignment') { const requested=a[2]; if(requested!==assignment) out({contract:'mdlm-assignment-state@1',ok:true,command:'assignment.show',assignment:{id:requested},selected:false,diagnostics:[]}); else out({contract:'mdlm-assignment-state@1',ok:true,command:'assignment.show',assignment:{id:assignment},selected:true,package:assignmentPackage,repository:repo,scenarioReference:scenario,disposition:'active',retryAvailability:{},malformedResponses}); }
+else if(a[0]==='status') out({contract:'mdlm-status@1',ok:true,command:'status',package:statusPackage,currentOutcome:${assignmentSelected ? (attentionRequired ? "{outcome:'attention-required',assignment:{allocation:'active',id:assignment},authorityRequirement:{mode:'attended',authority:'stakeholder',delegationAllowed:false}}" : "{outcome:'assignment',assignment:{allocation:'active',id:assignment}}") : "{outcome:'assignment',assignment:{allocation:'not-allocated'}}"},recentTransaction:${assignmentSelected ? "{available:false}" : "{available:true,id:'99999999-9999-4999-8999-999999999999',status:'completed',scenario:'ordinary@1'}"}});
+else if(a[0]==='assignment') { const requested=a[2]; if(requested!==assignment||!${assignmentSelected}) out({contract:'mdlm-assignment-state@1',ok:true,command:'assignment.show',assignment:{id:requested},selected:false,diagnostics:[]}); else out({contract:'mdlm-assignment-state@1',ok:true,command:'assignment.show',assignment:{id:assignment},selected:true,package:assignmentPackage,repository:repo,scenarioReference:scenario,disposition:'active',retryAvailability:{},malformedResponses}); }
 else if(a[0]==='scenario'&&a[1]==='prepare') out({contract:'mdlm-assignment-packet@2',ok:true,command:'scenario.prepare',assignment:{id:assignment},package:packetPackage,repository:repo,scenario:{reference:scenario},responseSchema:{},exactInputs:[]});
 else if(a[0]==='scenario'&&a[1]==='submit') { let chunks=[]; process.stdin.on('data',x=>chunks.push(x)); process.stdin.on('end',()=>{const bytes=Buffer.concat(chunks); fs.appendFileSync(${JSON.stringify(path.join(scratch, 'submit-count'))},'1\\n'); const digest='sha256:'+crypto.createHash('sha256').update(bytes).digest('hex'); if(${correctionRequiredSubmit}) { fs.writeFileSync(malformedPath,digest); out({ok:false,command:'scenario.submit',contract:'mdlm-assignment-disposition@1',assignment:{id:assignment},disposition:'correction-required',orchestration:{action:'correct-response',automaticReplacement:false},malformedResponse:{attempt:1,correctionsRemaining:${correctionsRemaining},diagnostics:correctionDiagnostics},diagnostics:correctionDiagnostics}); process.exitCode=1; } else { const id=${JSON.stringify(executionId)}; const dir=path.join(root,'.lifecycle/data/.transactions',id); fs.mkdirSync(dir,{recursive:true}); fs.writeFileSync(path.join(dir,'execution.json'),'execution\\n'); fs.writeFileSync(path.join(dir,'target.json'),'target\\n'); if(${uncertainSubmit}) process.exit(9); else out({contract:'mdlm-scenario-execution@4',ok:true,command:'scenario.submit',execution:{contract:'mdlm-scenario-execution@4',id,status:'completed',response:{assignment,digest},definition:{scenario},outputs:[{lifecycleDatum:{path:${publicationPath ? JSON.stringify(publicationPath) : "'.lifecycle/data/.transactions/'+id+'/target.json'"}}}]}}); } }); }
 else if(a[0]==='next') {
@@ -1284,6 +1285,70 @@ test('changed executable bytes cannot be blessed by changing configured provenan
   const resumed = exec(process.execPath, [cli, 'resume'], root, JSON.stringify({ ...request, contract: 'mdlm-demo-resume-request@1' }));
   assert.equal(resumed.status, 0, resumed.stderr);
   assert.equal(JSON.parse(resumed.stdout).reason, 'run-identity-drift');
+});
+
+test('resume continues an authentic advancing journal after its completed Assignment is deselected', async () => {
+  const invocationPath = path.join(os.tmpdir(), `mdlm-demo-advancing-${process.pid}-${Date.now()}`);
+  const piScript = `#!/usr/bin/env node\nrequire('node:fs').writeFileSync(${JSON.stringify(invocationPath)}, 'invoked\\n'); require('node:fs').unlinkSync('.git/mdlm-pi/run.json'); console.log('{"status":"lifecycle-complete"}');\n`;
+  const value = await fixture({ scenarioReference: 'ordinary@1', piScript, assignmentSelected: false });
+  const oldHead = git(['rev-parse', 'HEAD'], value.repository);
+  const oldRepository = {
+    head: oldHead,
+    tree: git(['rev-parse', 'HEAD^{tree}'], value.repository),
+    trackedState: `sha256:${createHash('sha256').update(`${oldHead}\0staged\0\0worktree\0`).digest('hex')}`,
+    clean: true,
+    porcelainSha256: `sha256:${createHash('sha256').update('').digest('hex')}`,
+  };
+  const transactionId = '99999999-9999-4999-8999-999999999999';
+  const transactionRoot = path.join(value.repository, '.lifecycle', 'data', '.transactions', transactionId);
+  const outputPath = `.lifecycle/data/.transactions/${transactionId}/result.txt`;
+  await mkdir(transactionRoot, { recursive: true });
+  await writeFile(path.join(transactionRoot, 'result.txt'), 'published\n');
+  await writeFile(path.join(transactionRoot, 'execution.json'), `${JSON.stringify({
+    contract: 'mdlm-scenario-execution@4', id: transactionId, status: 'completed',
+    definition: { scenario: 'ordinary@1' },
+    response: { contract: 'mdlm-assignment-response@1', assignment: value.request.assignmentId },
+    outputs: [{ lifecycleDatum: { path: outputPath } }],
+  })}\n`);
+  git(['add', '.lifecycle'], value.repository);
+  git(['commit', '-m', `mdlm: publish ordinary@1 (${transactionId})`], value.repository);
+  const head = git(['rev-parse', 'HEAD'], value.repository);
+  const trackedState = `sha256:${createHash('sha256').update(`${head}\0staged\0\0worktree\0`).digest('hex')}`;
+  const identity = {
+    contract: 'mdlm-demo-assignment-identity@1', assignmentId: value.request.assignmentId,
+    lifecycleRepository: oldRepository,
+    assignmentRepository: { head: oldHead, trackedState: oldRepository.trackedState },
+  };
+  await mkdir(assignmentDirectory(value.request), { recursive: true });
+  await writeFile(path.join(assignmentDirectory(value.request), 'identity.json'), `${JSON.stringify(identity, null, 2)}\n`);
+  const identityDirectory = path.join(value.repository, '.git', 'mdlm-demo-orchestrator');
+  await mkdir(identityDirectory, { recursive: true });
+  await writeFile(path.join(identityDirectory, 'repository-identity.json'), `${JSON.stringify({
+    contract: 'mdlm-demo-repository-identity@1', lifecycleRepository: oldRepository, lastAssignment: null,
+  }, null, 2)}\n`);
+  await mkdir(path.join(value.repository, '.git', 'mdlm-pi'), { recursive: true });
+  await writeFile(path.join(value.repository, '.git', 'mdlm-pi', 'run.json'), `${JSON.stringify({
+    contract: 'mdlm-pi-run-journal@1',
+    phase: 'advancing',
+    advancement: {
+      package: { id: 'pkg', version: '1', reference: 'pkg@1', digest: `sha256:${'1'.repeat(64)}`, language: 'lang@1' },
+      repository: { head, trackedState },
+      previousTransactionId: transactionId,
+      baseCommit: head,
+      purpose: 'ordinary-allocation',
+      pending: [],
+    },
+  }, null, 2)}\n`);
+  value.request.contract = 'mdlm-demo-resume-request@1';
+  value.request.signal = 'clean-interrupted-command';
+
+  const resumed = exec(process.execPath, [cli, 'resume'], root, JSON.stringify(value.request));
+
+  assert.equal(resumed.status, 0, resumed.stderr);
+  const output = JSON.parse(resumed.stdout);
+  assert.equal(output.status, 'completed', resumed.stdout);
+  assert.equal(output.reason, 'lifecycle-complete', resumed.stdout);
+  assert.equal(await readFile(invocationPath, 'utf8'), 'invoked\n');
 });
 
 test('lost correction session is not fed shell stdin or restarted without controller resume support', async () => {
