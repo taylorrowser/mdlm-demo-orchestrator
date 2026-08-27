@@ -21,6 +21,7 @@ const thinkingLevels = new Set(['off', 'minimal', 'low', 'medium', 'high', 'xhig
 const assignmentCheckpointEvidence = Symbol('assignmentCheckpointEvidence');
 const publicationClosureEvidence = Symbol('publicationClosureEvidence');
 const operationalFailureEvidence = Symbol('operationalFailureEvidence');
+const exhaustedBoundaryEvidence = Symbol('exhaustedBoundaryEvidence');
 const durableResultRepository = Symbol('durableResultRepository');
 const boundDecisionCatalog = Symbol('boundDecisionCatalog');
 const authoritativeDecisionUtf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
@@ -69,6 +70,7 @@ export async function run(request, mode) {
         );
       }
     }
+    output = await finalizeExhaustedBoundary(output, postRunSnapshot);
     output = await finalizeAssignmentCheckpoint(output, postRunSnapshot, assignmentId);
     output = await finalizePublicationClosure(output, postRunSnapshot);
     output = await finalizeOperationalFailure(output, initial, postRunSnapshot, context, assignmentDirectory, request);
@@ -427,10 +429,15 @@ async function submitExternalResponse({
   }
   const exhausted = exhaustedAssignmentSubmission(submission, assignmentId);
   if (exhausted !== null) {
-    await writeJournal(journalPath, {
+    const exhaustedJournal = {
       ...journal, phase: 'assignment-exhausted', submission: commandRecord(submission), assignmentDisposition: exhausted,
-    });
-    return assignmentExhaustedStop(snapshotResult, assignmentId, exhausted);
+    };
+    await writeJournal(journalPath, exhaustedJournal);
+    const output = assignmentExhaustedStop(snapshotResult, assignmentId, exhausted);
+    output[exhaustedBoundaryEvidence] = {
+      journal: exhaustedJournal, assignmentDirectory, processPackage, request, context,
+    };
+    return output;
   }
   const submissionEvidence = isCorrection ? { correctionSubmission: commandRecord(submission) } : { submission: commandRecord(submission) };
   if (!commandSucceeded(submission)) {
@@ -604,24 +611,40 @@ async function authenticateExhaustedBoundary({
   journal, assignment, status, assignmentDirectory, captured, processPackage, request, context,
 }) {
   const assignmentId = assignment.id;
-  if (journal.contract !== 'mdlm-demo-transaction-journal@2' || journal.assignmentId !== assignmentId ||
-      assignment.disposition !== 'exhausted' || assignment.selected !== true || statusHasActiveAssignment(status, assignmentId) ||
-      status.currentOutcome?.outcome !== 'assignment' || status.currentOutcome?.assignment?.allocation !== 'not-allocated' ||
+  if (journal.contract !== 'mdlm-demo-transaction-journal@2' || journal.phase !== 'assignment-exhausted' ||
+      journal.assignmentId !== assignmentId || assignment.disposition !== 'exhausted' || assignment.selected !== true ||
+      statusHasActiveAssignment(status, assignmentId) || status.currentOutcome?.outcome !== 'assignment' ||
+      !sameJson(status.currentOutcome?.assignment, { allocation: 'not-allocated' }) ||
       journal.scenario !== assignment.scenarioReference || !sameProcessPackageIdentity(journal.package, processPackage) ||
-      !sameProcessPackageIdentity(journal.package, assignment.package) || !sameJson(journal.repository, assignment.repository) ||
-      journal.baseCommit !== journal.repository?.head || captured.lifecycleRepository.clean !== true ||
-      !sameRepositoryFingerprint(journal.repository, captured.lifecycleRepository)) {
+      !sameProcessPackageIdentity(journal.package, status.package) || !sameProcessPackageIdentity(journal.package, assignment.package) ||
+      captured.diagnosis?.ok !== true || captured.diagnosis?.baselineRepositoryVerification?.processDrift !== 0 ||
+      !sameProcessPackageIdentity(journal.package, captured.diagnosis?.package) ||
+      !sameJson(journal.repository, assignment.repository) || journal.baseCommit !== journal.repository?.head ||
+      captured.lifecycleRepository.clean !== true || !sameRepositoryFingerprint(journal.repository, captured.lifecycleRepository)) {
     throw new Error('journaled exhaustion does not match the terminal Assignment, package, and clean unpublished repository boundary');
   }
   const disposition = exhaustedFromCommandRecord(
     journal.submission, assignmentId, request.commands.mdlm, context.repository, request.timeoutMs ?? 30_000,
   );
-  const retained = Array.isArray(assignment.malformedResponses)
-    ? assignment.malformedResponses.find(response => response?.digest === journal.responseDigest)
-    : undefined;
-  if (disposition === null || !sameJson(disposition, journal.assignmentDisposition) ||
-      !sameJson(retained?.diagnostics, disposition.malformedResponse.diagnostics)) {
-    throw new Error('journaled exhaustion does not match its authenticated malformed submission and Assignment diagnostics');
+  const malformedResponses = assignment.malformedResponses;
+  const retainedHistoryIsExact = Array.isArray(malformedResponses) && malformedResponses.length === 2 &&
+    malformedResponses.every(response => response && typeof response === 'object' && !Array.isArray(response) &&
+      sameJson(Object.keys(response).sort(), ['diagnostics', 'digest']) && /^sha256:[0-9a-f]{64}$/.test(response.digest) &&
+      Array.isArray(response.diagnostics) && response.diagnostics.length > 0 &&
+      response.diagnostics.every(validAssignmentDispositionDiagnostic)) &&
+    malformedResponses[0].digest !== malformedResponses[1].digest &&
+    malformedResponses[1].digest === journal.responseDigest;
+  const retained = retainedHistoryIsExact ? malformedResponses[1] : undefined;
+  if (disposition === null || !sameJson(disposition, journal.assignmentDisposition)) {
+    throw new Error('journaled exhaustion does not match its authenticated malformed submission');
+  }
+  if (!retainedHistoryIsExact || !sameJson(assignment.retryAvailability, { malformedResponseCorrection: 0 }) ||
+      disposition.malformedResponse.attempt !== malformedResponses.length) {
+    throw new Error('journaled exhaustion does not match its exact retry history and latest malformed response');
+  }
+  if (!sameJson(retained.diagnostics, disposition.malformedResponse.diagnostics) ||
+      !sameJson(assignment.terminalDiagnostics, disposition.malformedResponse.diagnostics)) {
+    throw new Error('journaled exhaustion does not match the latest and terminal Assignment diagnostics');
   }
   const [packetEvidence, malformedEvidence] = await Promise.all([
     readCanonicalFile(path.join(assignmentDirectory, 'prepared-packet.json'), 'prepared exhausted packet'),
@@ -1732,6 +1755,31 @@ async function authenticateReservedStop(stop, shimDirectory, processPackage) {
     return { ok: true, packet };
   } catch (error) {
     return { ok: false, detail: `reserved stop evidence is not authentic: ${error.message}` };
+  }
+}
+
+async function finalizeExhaustedBoundary(output, postSnapshot) {
+  const evidence = output[exhaustedBoundaryEvidence];
+  if (evidence === undefined) return output;
+  delete output[exhaustedBoundaryEvidence];
+  try {
+    if (postSnapshot.status !== 'complete') throw new Error('exhausted Assignment post-run snapshot is incomplete');
+    const captured = JSON.parse(await readFile(path.join(postSnapshot.snapshotDirectory, 'snapshot.json'), 'utf8'));
+    const disposition = await authenticateExhaustedBoundary({
+      ...evidence, assignment: captured.assignment, status: captured.status, captured,
+    });
+    output.assignmentDisposition = disposition;
+    return output;
+  } catch (error) {
+    output.status = 'stopped';
+    output.recoverable = false;
+    output.reason = 'exhausted-boundary-drift';
+    output.detail = error instanceof Error ? error.message : String(error);
+    delete output.outcome;
+    delete output.transactionPhase;
+    delete output.trustedRepositoryAdvance;
+    delete output.assignmentDisposition;
+    return output;
   }
 }
 

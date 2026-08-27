@@ -25,6 +25,7 @@ async function fixture({
   uncertainSubmit = false,
   correctionRequiredSubmit = false,
   exhaustedSubmit = false,
+  exhaustedRepositoryMutation = false,
   correctionsRemaining = 1,
   scenarioReference = 'register-pilot-target@1',
   piScript = '#!/bin/sh\nexit 0\n',
@@ -66,6 +67,7 @@ async function fixture({
   const scenarioStatePath = path.join(scratch, 'scenario-reference');
   const malformedDigestPath = path.join(scratch, 'malformed-digest');
   const exhaustedDigestPath = path.join(scratch, 'exhausted-digest');
+  const exhaustedStatePath = path.join(scratch, 'exhausted-state');
   const nextCountPath = path.join(scratch, 'next-count');
   const staleAssignment = '77777777-7777-4777-8777-777777777777';
   const finalAssignment = '88888888-8888-4888-8888-888888888888';
@@ -86,18 +88,27 @@ fs.appendFileSync(log,JSON.stringify(a)+'\\n');
 const assignment=fs.readFileSync(${JSON.stringify(assignmentStatePath)},'utf8'), scenario=fs.readFileSync(${JSON.stringify(scenarioStatePath)},'utf8');
 const correctionDiagnostics=[{code:'scenario-output-required-link-missing',path:'outputs.target.links.derived-from',message:'required link missing'}];
 const exhaustedDiagnostics=[{code:'scenario-output-required-link-missing',path:'outputs.run.links.produces',message:"Scenario output 'run' must link 'produces' to 'RES-VREXQNEK7X-r00001'"}];
-const malformedPath=${JSON.stringify(malformedDigestPath)}, exhaustedPath=${JSON.stringify(exhaustedDigestPath)};
-const exhausted=fs.existsSync(exhaustedPath), exhaustedSubmitMode=${JSON.stringify(exhaustedSubmitMode)}, malformedResponses=fs.existsSync(malformedPath)?[{digest:fs.readFileSync(malformedPath,'utf8'),diagnostics:correctionDiagnostics}]:[];
-if(exhausted) malformedResponses.push({digest:fs.readFileSync(exhaustedPath,'utf8'),diagnostics:exhaustedDiagnostics});
+const malformedPath=${JSON.stringify(malformedDigestPath)}, exhaustedPath=${JSON.stringify(exhaustedDigestPath)}, exhaustedStatePath=${JSON.stringify(exhaustedStatePath)};
+const exhausted=fs.existsSync(exhaustedPath), exhaustedSubmitMode=${JSON.stringify(exhaustedSubmitMode)};
+const exhaustedState=exhausted&&fs.existsSync(exhaustedStatePath)?fs.readFileSync(exhaustedStatePath,'utf8'):'exact';
+const priorMalformed={digest:fs.existsSync(malformedPath)?fs.readFileSync(malformedPath,'utf8'):'sha256:'+('a'.repeat(64)),diagnostics:correctionDiagnostics};
+const latestMalformed={digest:exhausted?fs.readFileSync(exhaustedPath,'utf8'):'sha256:'+('b'.repeat(64)),diagnostics:exhaustedDiagnostics};
+let malformedResponses=fs.existsSync(malformedPath)?[priorMalformed]:[];
+if(exhausted) {
+  if(exhaustedState==='one-response') malformedResponses=[latestMalformed];
+  else if(exhaustedState==='latest-not-current') malformedResponses=[latestMalformed,priorMalformed];
+  else if(exhaustedState==='duplicate-current') malformedResponses=[{...priorMalformed,digest:latestMalformed.digest},latestMalformed];
+  else malformedResponses.push(latestMalformed);
+}
 const statusPackage=${JSON.stringify(statusPackage)}, assignmentPackage=${JSON.stringify(assignmentPackage)}, doctorPackage=${JSON.stringify(doctorPackage)}, packetPackage=${JSON.stringify(packetPackage)};
 function repository(){const head=execFileSync('git',['rev-parse','HEAD^{commit}'],{encoding:'utf8'}).trim(); const staged=execFileSync('git',['diff','--binary','--no-ext-diff','--cached','HEAD','--'],{encoding:'utf8'}); const worktree=execFileSync('git',['diff','--binary','--no-ext-diff','--'],{encoding:'utf8'}); return {head,trackedState:'sha256:'+crypto.createHash('sha256').update(head+'\\0staged\\0'+staged+'\\0worktree\\0'+worktree).digest('hex')}}
 const repo=repository();
 function out(x){process.stdout.write(JSON.stringify(x)+'\\n')}
-if(a[0]==='doctor') out({ok:true,command:'doctor',package:doctorPackage,baselineRepositoryVerification:{verifiedBaselines:0,processDrift:0},index:{rebuilt:false,data:0,path:'.lifecycle/generated/indexes/data.json'},report:{rebuilt:false,data:0,path:'.lifecycle/generated/reports/lifecycle.json'},diagnostics:[]});
-else if(a[0]==='status') out({contract:'mdlm-status@1',ok:true,command:'status',package:statusPackage,currentOutcome:exhausted?{outcome:'assignment',assignment:{allocation:'not-allocated'}}:${assignmentSelected ? (attentionRequired ? "{outcome:'attention-required',assignment:{allocation:'active',id:assignment},authorityRequirement:{mode:'attended',authority:'stakeholder',delegationAllowed:false}}" : "{outcome:'assignment',assignment:{allocation:'active',id:assignment}}") : "{outcome:'assignment',assignment:{allocation:'not-allocated'}}"},recentTransaction:${assignmentSelected ? "{available:false}" : "{available:true,id:'99999999-9999-4999-8999-999999999999',status:'completed',scenario:'ordinary@1'}"}});
-else if(a[0]==='assignment') { const requested=a[2]; if(requested!==assignment||!${assignmentSelected}) out({contract:'mdlm-assignment-state@1',ok:true,command:'assignment.show',assignment:{id:requested},selected:false,diagnostics:[]}); else out({contract:'mdlm-assignment-state@1',ok:true,command:'assignment.show',assignment:{id:assignment},selected:true,package:assignmentPackage,repository:repo,scenarioReference:scenario,disposition:exhausted?'exhausted':'active',retryAvailability:exhausted?{malformedResponseCorrection:0}:{},malformedResponses}); }
+if(a[0]==='doctor') { if(exhausted&&exhaustedState==='snapshot-incomplete') process.stdout.write('{'); else out({ok:true,command:'doctor',package:doctorPackage,baselineRepositoryVerification:{verifiedBaselines:0,processDrift:0},index:{rebuilt:false,data:0,path:'.lifecycle/generated/indexes/data.json'},report:{rebuilt:false,data:0,path:'.lifecycle/generated/reports/lifecycle.json'},diagnostics:[]}); }
+else if(a[0]==='status') out({contract:'mdlm-status@1',ok:true,command:'status',package:statusPackage,currentOutcome:exhausted&&exhaustedState!=='status-active'?{outcome:'assignment',assignment:{allocation:'not-allocated'}}:${assignmentSelected ? (attentionRequired ? "{outcome:'attention-required',assignment:{allocation:'active',id:assignment},authorityRequirement:{mode:'attended',authority:'stakeholder',delegationAllowed:false}}" : "{outcome:'assignment',assignment:{allocation:'active',id:assignment}}") : "{outcome:'assignment',assignment:{allocation:'not-allocated'}}"},recentTransaction:${assignmentSelected ? "{available:false}" : "{available:true,id:'99999999-9999-4999-8999-999999999999',status:'completed',scenario:'ordinary@1'}"}});
+else if(a[0]==='assignment') { const requested=a[2]; if(requested!==assignment||!${assignmentSelected}) out({contract:'mdlm-assignment-state@1',ok:true,command:'assignment.show',assignment:{id:requested},selected:false,diagnostics:[]}); else out({contract:'mdlm-assignment-state@1',ok:true,command:'assignment.show',assignment:{id:assignment},selected:true,package:assignmentPackage,repository:repo,scenarioReference:scenario,disposition:exhausted&&exhaustedState!=='assignment-active'?'exhausted':'active',retryAvailability:exhausted?{malformedResponseCorrection:exhaustedState==='retry-one'?1:0}:{},malformedResponses,...(exhausted?{terminalDiagnostics:exhaustedState==='terminal-diagnostics-mismatch'?correctionDiagnostics:exhaustedDiagnostics}:{}),diagnostics:[]}); }
 else if(a[0]==='scenario'&&a[1]==='prepare') out({contract:'mdlm-assignment-packet@2',ok:true,command:'scenario.prepare',assignment:{id:assignment},package:packetPackage,repository:repo,scenario:{reference:scenario},responseSchema:{},exactInputs:[]});
-else if(a[0]==='scenario'&&a[1]==='submit') { let chunks=[]; process.stdin.on('data',x=>chunks.push(x)); process.stdin.on('end',()=>{const bytes=Buffer.concat(chunks); fs.appendFileSync(${JSON.stringify(path.join(scratch, 'submit-count'))},'1\\n'); const digest='sha256:'+crypto.createHash('sha256').update(bytes).digest('hex'); if(exhaustedSubmitMode!==null) { fs.writeFileSync(exhaustedPath,digest); const disposition={ok:false,command:'scenario.submit',contract:'mdlm-assignment-disposition@1',assignment:{id:assignment},disposition:'exhausted',orchestration:{action:'stop',automaticReplacement:false},malformedResponse:{attempt:exhaustedSubmitMode==='inconsistent'?1:2,correctionsRemaining:0,diagnostics:exhaustedDiagnostics},diagnostics:exhaustedDiagnostics}; if(exhaustedSubmitMode==='truncated') process.stdout.write(JSON.stringify(disposition).slice(0,-2)); else out(disposition); process.exitCode=exhaustedSubmitMode==='failed'?9:1; } else if(${correctionRequiredSubmit}&&!fs.existsSync(malformedPath)) { fs.writeFileSync(malformedPath,digest); out({ok:false,command:'scenario.submit',contract:'mdlm-assignment-disposition@1',assignment:{id:assignment},disposition:'correction-required',orchestration:{action:'correct-response',automaticReplacement:false},malformedResponse:{attempt:1,correctionsRemaining:${correctionsRemaining},diagnostics:correctionDiagnostics},diagnostics:correctionDiagnostics}); process.exitCode=1; } else { const id=${JSON.stringify(executionId)}; const dir=path.join(root,'.lifecycle/data/.transactions',id); fs.mkdirSync(dir,{recursive:true}); fs.writeFileSync(path.join(dir,'execution.json'),'execution\\n'); fs.writeFileSync(path.join(dir,'target.json'),'target\\n'); if(${uncertainSubmit}) process.exit(9); else out({contract:'mdlm-scenario-execution@4',ok:true,command:'scenario.submit',execution:{contract:'mdlm-scenario-execution@4',id,status:'completed',response:{assignment,digest},definition:{scenario},outputs:[{lifecycleDatum:{path:${publicationPath ? JSON.stringify(publicationPath) : "'.lifecycle/data/.transactions/'+id+'/target.json'"}}}]}}); } }); }
+else if(a[0]==='scenario'&&a[1]==='submit') { let chunks=[]; process.stdin.on('data',x=>chunks.push(x)); process.stdin.on('end',()=>{const bytes=Buffer.concat(chunks); fs.appendFileSync(${JSON.stringify(path.join(scratch, 'submit-count'))},'1\\n'); const digest='sha256:'+crypto.createHash('sha256').update(bytes).digest('hex'); if(exhaustedSubmitMode!==null) { fs.writeFileSync(exhaustedPath,digest); if(${exhaustedRepositoryMutation}) fs.writeFileSync(path.join(root,'unexpected.txt'),'drift\\n'); const disposition={ok:false,command:'scenario.submit',contract:'mdlm-assignment-disposition@1',assignment:{id:assignment},disposition:'exhausted',orchestration:{action:'stop',automaticReplacement:false},malformedResponse:{attempt:exhaustedSubmitMode==='inconsistent'?1:2,correctionsRemaining:0,diagnostics:exhaustedDiagnostics},diagnostics:exhaustedDiagnostics}; if(exhaustedSubmitMode==='truncated') process.stdout.write(JSON.stringify(disposition).slice(0,-2)); else out(disposition); process.exitCode=exhaustedSubmitMode==='failed'?9:1; } else if(${correctionRequiredSubmit}&&!fs.existsSync(malformedPath)) { fs.writeFileSync(malformedPath,digest); out({ok:false,command:'scenario.submit',contract:'mdlm-assignment-disposition@1',assignment:{id:assignment},disposition:'correction-required',orchestration:{action:'correct-response',automaticReplacement:false},malformedResponse:{attempt:1,correctionsRemaining:${correctionsRemaining},diagnostics:correctionDiagnostics},diagnostics:correctionDiagnostics}); process.exitCode=1; } else { const id=${JSON.stringify(executionId)}; const dir=path.join(root,'.lifecycle/data/.transactions',id); fs.mkdirSync(dir,{recursive:true}); fs.writeFileSync(path.join(dir,'execution.json'),'execution\\n'); fs.writeFileSync(path.join(dir,'target.json'),'target\\n'); if(${uncertainSubmit}) process.exit(9); else out({contract:'mdlm-scenario-execution@4',ok:true,command:'scenario.submit',execution:{contract:'mdlm-scenario-execution@4',id,status:'completed',response:{assignment,digest},definition:{scenario},outputs:[{lifecycleDatum:{path:${publicationPath ? JSON.stringify(publicationPath) : "'.lifecycle/data/.transactions/'+id+'/target.json'"}}}]}}); } }); }
 else if(a[0]==='next') {
   const countPath=${JSON.stringify(nextCountPath)}, count=fs.existsSync(countPath)?Number(fs.readFileSync(countPath,'utf8')):0; fs.writeFileSync(countPath,String(count+1));
   if(${materializedNext}&&count===0){
@@ -141,7 +152,7 @@ else {process.stderr.write('unexpected '+JSON.stringify(a));process.exit(8)}
   };
   return {
     scratch, repository, request, mdlm, mdlmPi, tooling, assignment, assignmentStatePath, scenarioStatePath,
-    malformedDigestPath, exhaustedDigestPath, responsePath, executionId, nextCountPath, staleAssignment, finalAssignment, materializedExecution,
+    malformedDigestPath, exhaustedDigestPath, exhaustedStatePath, responsePath, executionId, nextCountPath, staleAssignment, finalAssignment, materializedExecution,
   };
 }
 
@@ -1546,7 +1557,7 @@ test('run-071-shaped exhausted disposition is terminal without publication or re
   const stopped = JSON.parse(execution.stdout);
   assert.equal(stopped.status, 'stopped');
   assert.equal(stopped.recoverable, false);
-  assert.equal(stopped.reason, 'assignment-exhausted');
+  assert.equal(stopped.reason, 'assignment-exhausted', stopped.detail);
   assert.equal(stopped.outcome, 'assignment-exhausted');
   assert.equal(stopped.transactionPhase, 'assignment-exhausted');
   assert.equal(stopped.trustedRepositoryAdvance, false);
@@ -1562,6 +1573,73 @@ test('run-071-shaped exhausted disposition is terminal without publication or re
   assert.equal(JSON.parse(resumed.stdout).reason, 'assignment-exhausted');
   assert.equal((await readFile(path.join(value.scratch, 'submit-count'), 'utf8')).trim().split('\n').length, 1);
   assert.equal(Number(git(['rev-list', '--count', 'HEAD'], value.repository)), 1);
+});
+
+test('exhausted journal crash seams never replay the response', async () => {
+  for (const seam of ['after-temp-sync', 'after-rename']) {
+    const value = await fixture({ exhaustedSubmit: true, scenarioReference: 'execute-verification-run@1' });
+    const crashed = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request), {
+      ...process.env, MDLM_DEMO_TEST_CRASH: `assignment-exhausted:${seam}`,
+    });
+    assert.equal(crashed.status, 86, `${seam}: ${crashed.stderr}`);
+
+    const resumed = exec(process.execPath, [cli, 'resume'], root, JSON.stringify({
+      ...value.request, contract: 'mdlm-demo-resume-request@1',
+    }));
+    assert.equal(resumed.status, 0, `${seam}: ${resumed.stderr}`);
+    assert.equal(
+      JSON.parse(resumed.stdout).reason,
+      seam === 'after-temp-sync' ? 'uncertain-partial-publication' : 'assignment-exhausted',
+      seam,
+    );
+    assert.equal((await readFile(path.join(value.scratch, 'submit-count'), 'utf8')).trim(), '1', seam);
+    assert.equal(Number(git(['rev-list', '--count', 'HEAD'], value.repository)), 1, seam);
+  }
+});
+
+test('live exhaustion fails closed unless its post-run snapshot proves the unchanged terminal boundary', async () => {
+  for (const mutation of ['snapshot-incomplete', 'status-active', 'assignment-active']) {
+    const value = await fixture({ exhaustedSubmit: true, scenarioReference: 'execute-verification-run@1' });
+    await writeFile(value.exhaustedStatePath, mutation);
+    const execution = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
+    assert.equal(execution.status, 0, `${mutation}: ${execution.stderr}`);
+    const stopped = JSON.parse(execution.stdout);
+    assert.equal(stopped.reason, 'exhausted-boundary-drift', mutation);
+    assert.equal(stopped.recoverable, false, mutation);
+    assert.equal(stopped.outcome, undefined, mutation);
+    assert.equal((await readFile(path.join(value.scratch, 'submit-count'), 'utf8')).trim(), '1', mutation);
+    assert.equal(Number(git(['rev-list', '--count', 'HEAD'], value.repository)), 1, mutation);
+  }
+
+  const changed = await fixture({
+    exhaustedSubmit: true, exhaustedRepositoryMutation: true, scenarioReference: 'execute-verification-run@1',
+  });
+  const execution = exec(process.execPath, [cli, 'run'], root, JSON.stringify(changed.request));
+  assert.equal(execution.status, 0, execution.stderr);
+  const stopped = JSON.parse(execution.stdout);
+  assert.equal(stopped.reason, 'exhausted-boundary-drift');
+  assert.equal(stopped.outcome, undefined);
+  assert.equal(Number(git(['rev-list', '--count', 'HEAD'], changed.repository)), 1);
+});
+
+test('resume rejects contradictory exhausted retry history and terminal diagnostics without replay', async () => {
+  for (const mutation of [
+    'retry-one', 'one-response', 'latest-not-current', 'duplicate-current', 'terminal-diagnostics-mismatch',
+  ]) {
+    const value = await fixture({ exhaustedSubmit: true, scenarioReference: 'execute-verification-run@1' });
+    const first = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
+    assert.equal(first.status, 0, `${mutation}: ${first.stderr}`);
+    assert.equal(JSON.parse(first.stdout).reason, 'assignment-exhausted', mutation);
+    await writeFile(value.exhaustedStatePath, mutation);
+
+    const resumed = exec(process.execPath, [cli, 'resume'], root, JSON.stringify({
+      ...value.request, contract: 'mdlm-demo-resume-request@1',
+    }));
+    assert.equal(resumed.status, 0, `${mutation}: ${resumed.stderr}`);
+    assert.equal(JSON.parse(resumed.stdout).reason, 'exhausted-boundary-drift', mutation);
+    assert.equal((await readFile(path.join(value.scratch, 'submit-count'), 'utf8')).trim(), '1', mutation);
+    assert.equal(Number(git(['rev-list', '--count', 'HEAD'], value.repository)), 1, mutation);
+  }
 });
 
 test('inconsistent, truncated, and failed exhausted dispositions remain uncertain and are not replayed', async () => {

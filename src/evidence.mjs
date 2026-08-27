@@ -164,7 +164,9 @@ export async function snapshot(request) {
         package: parsed.assignment.package,
         repository: parsed.assignment.repository,
         scenarioReference: parsed.assignment.scenarioReference,
+        retryAvailability: parsed.assignment.retryAvailability,
         malformedResponses: parsed.assignment.malformedResponses,
+        terminalDiagnostics: parsed.assignment.terminalDiagnostics,
       }
     : null;
   const journal = await captureOptional(request.journalPath);
