@@ -715,6 +715,52 @@ test('preflight rejects Git info attributes before they can select a local clean
   await assert.rejects(readFile(marker), { code: 'ENOENT' });
 });
 
+test('preflight never executes a worktree-scoped clean filter', async t => {
+  const value = await fixture();
+  t.after(() => rm(value.scratch, { recursive: true, force: true }));
+  const marker = path.join(value.scratch, 'worktree-clean-filter-ran');
+  const filter = path.join(value.scratch, 'worktree-clean-filter.sh');
+  await writeFile(path.join(value.source, '.gitattributes'), 'README.md filter=untrusted\n');
+  git(['add', '.gitattributes'], value.source);
+  git(['commit', '-m', 'add attributes'], value.source);
+  value.runRequest.provenance.source.commit = git(['rev-parse', 'HEAD^{commit}'], value.source);
+  value.runRequest.provenance.source.tree = git(['rev-parse', 'HEAD^{tree}'], value.source);
+  await writeFile(filter, `#!/bin/sh\nprintf ran > '${marker}'\ncat\n`);
+  await chmod(filter, 0o755);
+  git(['config', 'extensions.worktreeConfig', 'true'], value.source);
+  git(['config', '--worktree', 'filter.untrusted.clean', filter], value.source);
+  await writeFile(path.join(value.source, 'README.md'), 'dirty! fixture\n');
+  const bytes = await value.writeRunRequest();
+  value.preflightRequest.input.digest = digest(bytes);
+
+  const execution = invoke(value.preflightRequest, value.scratch);
+  assert.equal(execution.status, 1);
+  await assert.rejects(readFile(marker), { code: 'ENOENT' });
+});
+
+test('raw cleanliness remains filter-free when repository controls change after identity reads', async t => {
+  const value = await fixture();
+  t.after(() => rm(value.scratch, { recursive: true, force: true }));
+  const marker = path.join(value.scratch, 'raced-clean-filter-ran');
+  const filter = path.join(value.scratch, 'raced-clean-filter.sh');
+  let raced = false;
+  const provenance = await inspectProvenance(value.runRequest.provenance, 30_000, {
+    afterGitPreIdentity: async ({ label }) => {
+      if (label !== 'source') return;
+      raced = true;
+      await writeFile(filter, `#!/bin/sh\nprintf ran > '${marker}'\ncat\n`);
+      await chmod(filter, 0o755);
+      git(['config', 'extensions.worktreeConfig', 'true'], value.source);
+      git(['config', '--worktree', 'filter.untrusted.clean', filter], value.source);
+      await writeFile(path.join(value.source, '.git', 'info', 'attributes'), 'README.md filter=untrusted\n');
+      await writeFile(path.join(value.source, 'README.md'), 'dirty! fixture\n');
+    },
+  });
+  assert.equal(raced, true);
+  assert.equal(provenance.source.matches, false);
+  await assert.rejects(readFile(marker), { code: 'ENOENT' });
+});
+
 test('preflight authenticates SHA-256 repositories without a SHA-1 attribute source', async t => {
   const value = await fixture({ objectFormat: 'sha256' });
   t.after(() => rm(value.scratch, { recursive: true, force: true }));

@@ -1,5 +1,6 @@
 import { constants } from 'node:fs';
-import { chmod, lstat, mkdir, open, readFile, readdir, realpath, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { chmod, lstat, mkdir, open, readFile, readdir, readlink, realpath, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { readCanonicalFile } from './canonical-file.mjs';
 import { validateDoctor } from './contracts.mjs';
@@ -345,19 +346,14 @@ async function gitIdentity(value, timeoutMs, label, gitBinding, options = {}) {
     const preCommit = await runProcess(gitBinding.program, args(['rev-parse', 'HEAD^{commit}']), processOptions);
     const preTree = await runProcess(gitBinding.program, args(['rev-parse', 'HEAD^{tree}']), processOptions);
     await options.afterGitPreIdentity?.({ label, repository, repositoryHandle });
-    await rejectRepositoryFilters(gitBinding, args, processOptions, label);
-    const status = await runProcess(
-      gitBinding.program,
-      args(['status', '--porcelain=v1', '-z', '--untracked-files=all']),
-      processOptions,
-    );
+    const status = await filterFreeStatus(gitBinding, args, processOptions, repository, label);
     const postCommit = await runProcess(gitBinding.program, args(['rev-parse', 'HEAD^{commit}']), processOptions);
     const postTree = await runProcess(gitBinding.program, args(['rev-parse', 'HEAD^{tree}']), processOptions);
     const observedCommit = commandSucceeded(preCommit) ? preCommit.stdout.toString('utf8').trim() : null;
     const observedTree = commandSucceeded(preTree) ? preTree.stdout.toString('utf8').trim() : null;
     const postObservedCommit = commandSucceeded(postCommit) ? postCommit.stdout.toString('utf8').trim() : null;
     const postObservedTree = commandSucceeded(postTree) ? postTree.stdout.toString('utf8').trim() : null;
-    const clean = commandSucceeded(status) ? status.stdout.length === 0 : null;
+    const clean = status.clean;
     const descriptorAfter = await repositoryHandle.stat({ bigint: true });
     let pathAfter;
     try {
@@ -384,7 +380,7 @@ async function gitIdentity(value, timeoutMs, label, gitBinding, options = {}) {
       stable,
       matches: observedCommit === expectedCommit && observedTree === expectedTree && clean === true && stable,
       commands: {
-        preCommit: commandRecord(preCommit), preTree: commandRecord(preTree), status: commandRecord(status),
+        preCommit: commandRecord(preCommit), preTree: commandRecord(preTree), status: commandRecord(status.command),
         postCommit: commandRecord(postCommit), postTree: commandRecord(postTree),
       },
     };
@@ -410,35 +406,107 @@ async function gitIdentity(value, timeoutMs, label, gitBinding, options = {}) {
   }
 }
 
-async function rejectRepositoryFilters(gitBinding, args, processOptions, label) {
-  const filters = await runProcess(
+async function filterFreeStatus(gitBinding, args, processOptions, repository, label) {
+  const head = await runProcess(gitBinding.program, args(['ls-tree', '-rz', '--full-tree', 'HEAD']), processOptions);
+  const index = await runProcess(gitBinding.program, args(['ls-files', '--stage', '-z']), processOptions);
+  const untracked = await runProcess(
     gitBinding.program,
-    args(['config', '--local', '--includes', '--null', '--name-only', '--get-regexp', '^filter\\..*\\.(clean|process)$']),
+    args(['ls-files', '--others', '--exclude-standard', '-z']),
     processOptions,
   );
-  const noConfiguredFilter = filters.exitStatus === 1 && filters.signal === null && filters.spawnError === null &&
-    filters.timedOut === false && filters.outputLimitExceeded === false &&
-    filters.stdout.length === 0 && filters.stderr.length === 0;
-  if (commandSucceeded(filters) && filters.stdout.length > 0) {
-    throw new Error(`provenance.${label}.repository configures a clean or process filter`);
+  for (const [name, result] of [['HEAD tree', head], ['index', index], ['untracked files', untracked]]) {
+    if (!commandSucceeded(result)) throw new Error(`provenance.${label}.repository ${name} could not be authenticated`);
   }
-  if (!noConfiguredFilter) throw new Error(`provenance.${label}.repository filter configuration could not be authenticated`);
+  const headEntries = parseTreeEntries(head.stdout, label);
+  const indexEntries = parseIndexEntries(index.stdout, label);
+  let clean = untracked.stdout.length === 0 && headEntries.size === indexEntries.size;
+  for (const [name, entry] of indexEntries) {
+    const expected = headEntries.get(name);
+    if (entry.stage !== '0' || expected?.mode !== entry.mode || expected?.oid !== entry.oid) clean = false;
+    if (!await worktreeEntryMatches(repository, name, entry, label)) clean = false;
+  }
+  return { clean, command: untracked };
+}
 
-  const attributes = await runProcess(
-    gitBinding.program,
-    args(['rev-parse', '--path-format=absolute', '--git-path', 'info/attributes']),
-    processOptions,
-  );
-  if (!commandSucceeded(attributes)) throw new Error(`provenance.${label}.repository info attributes path could not be authenticated`);
-  const attributesPath = attributes.stdout.toString('utf8').trim();
-  if (!path.isAbsolute(attributesPath) || attributesPath.includes('\0')) {
-    throw new Error(`provenance.${label}.repository info attributes path is invalid`);
+function parseTreeEntries(bytes, label) {
+  return parseNulRecords(bytes, `provenance.${label}.repository HEAD tree`, record => {
+    const match = /^(\d{6}) (?:blob|commit) ([0-9a-f]{40}|[0-9a-f]{64})\t(.+)$/s.exec(record);
+    if (match === null) throw new Error(`provenance.${label}.repository HEAD tree has invalid output`);
+    return { name: match[3], mode: match[1], oid: match[2] };
+  });
+}
+
+function parseIndexEntries(bytes, label) {
+  return parseNulRecords(bytes, `provenance.${label}.repository index`, record => {
+    const match = /^(\d{6}) ([0-9a-f]{40}|[0-9a-f]{64}) ([0-3])\t(.+)$/s.exec(record);
+    if (match === null) throw new Error(`provenance.${label}.repository index has invalid output`);
+    return { name: match[4], mode: match[1], oid: match[2], stage: match[3] };
+  });
+}
+
+function parseNulRecords(bytes, label, parse) {
+  if (bytes.length > 16 * 1024 * 1024) throw new Error(`${label} exceeds 16777216-byte limit`);
+  const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  const records = text.length === 0 ? [] : text.split('\0');
+  if (records.at(-1) === '') records.pop();
+  const entries = new Map();
+  for (const record of records) {
+    const entry = parse(record);
+    if (entries.has(entry.name)) throw new Error(`${label} contains duplicate paths`);
+    entries.set(entry.name, entry);
   }
+  return entries;
+}
+
+async function worktreeEntryMatches(repository, relative, entry, label) {
+  if (relative.includes('\0') || path.isAbsolute(relative) || path.normalize(relative) !== relative || relative.startsWith(`..${path.sep}`)) {
+    throw new Error(`provenance.${label}.repository index path is unsafe`);
+  }
+  const file = path.join(repository, relative);
+  if (entry.mode === '120000') return symlinkBlobMatches(file, repository, entry, label);
+  if (entry.mode !== '100644' && entry.mode !== '100755') return false;
+  let handle;
   try {
-    await lstat(attributesPath);
-    throw new Error(`provenance.${label}.repository has info/attributes`);
+    handle = await open(file, constants.O_RDONLY | constants.O_NOFOLLOW);
+    const opened = await handle.stat({ bigint: true });
+    if (!opened.isFile() || await realpath(`/proc/self/fd/${handle.fd}`) !== file) return false;
+    const actualMode = (Number(opened.mode) & 0o111) === 0 ? '100644' : '100755';
+    if (actualMode !== entry.mode) return false;
+    const algorithm = entry.oid.length === 64 ? 'sha256' : 'sha1';
+    const hash = createHash(algorithm).update(`blob ${opened.size}\0`);
+    const buffer = Buffer.allocUnsafe(64 * 1024);
+    let bytes = 0n;
+    for (;;) {
+      const { bytesRead } = await handle.read(buffer, 0, buffer.length, null);
+      if (bytesRead === 0) break;
+      bytes += BigInt(bytesRead);
+      hash.update(buffer.subarray(0, bytesRead));
+    }
+    const after = await handle.stat({ bigint: true });
+    const current = await lstat(file, { bigint: true });
+    return bytes === opened.size && sameIdentity(opened, after) && sameIdentity(opened, current) && hash.digest('hex') === entry.oid;
   } catch (error) {
-    if (error.code !== 'ENOENT') throw error;
+    if (error.code === 'ENOENT' || error.code === 'ELOOP') return false;
+    throw error;
+  } finally {
+    await handle?.close();
+  }
+}
+
+async function symlinkBlobMatches(file, repository, entry, label) {
+  try {
+    const parent = path.dirname(file);
+    if (await realpath(parent) !== parent) return false;
+    const before = await lstat(file, { bigint: true });
+    if (!before.isSymbolicLink()) return false;
+    const target = await readlink(file, { encoding: 'buffer' });
+    const after = await lstat(file, { bigint: true });
+    if (!sameIdentity(before, after)) throw new Error(`provenance.${label}.repository symlink changed while read`);
+    const algorithm = entry.oid.length === 64 ? 'sha256' : 'sha1';
+    return createHash(algorithm).update(`blob ${target.length}\0`).update(target).digest('hex') === entry.oid;
+  } catch (error) {
+    if (error.code === 'ENOENT') return false;
+    throw error;
   }
 }
 

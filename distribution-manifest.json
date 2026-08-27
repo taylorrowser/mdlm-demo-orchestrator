@@ -75,8 +75,8 @@
     },
     {
       "path": "src/evidence.mjs",
-      "bytes": 35401,
-      "sha256": "f67fbf8341ed06b4d2f42a69276137339ac5188852a32d0201a0ba50bd47c723"
+      "bytes": 38805,
+      "sha256": "570f8ecdd8620fa681621faefbbf299eb3a22d45810041bf9a87571d21191013"
     },
     {
       "path": "src/orchestrator.mjs",
