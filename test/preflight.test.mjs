@@ -761,6 +761,119 @@ test('raw cleanliness remains filter-free when repository controls change after 
   await assert.rejects(readFile(marker), { code: 'ENOENT' });
 });
 
+test('raw cleanliness rejects a nested-directory swap and restore during public provenance inspection', async t => {
+  const value = await fixture();
+  t.after(() => rm(value.scratch, { recursive: true, force: true }));
+  const nested = path.join(value.source, 'nested');
+  const displaced = path.join(value.source, 'nested-displaced');
+  await mkdir(nested);
+  await writeFile(path.join(nested, 'tracked.txt'), 'clean\n');
+  git(['add', 'nested/tracked.txt'], value.source);
+  git(['commit', '-m', 'add nested file'], value.source);
+  value.runRequest.provenance.source.commit = git(['rev-parse', 'HEAD^{commit}'], value.source);
+  value.runRequest.provenance.source.tree = git(['rev-parse', 'HEAD^{tree}'], value.source);
+  await writeFile(path.join(nested, 'tracked.txt'), 'dirty\n');
+  let swapped = false;
+  let restored = false;
+
+  const provenance = await inspectProvenance(value.runRequest.provenance, 30_000, {
+    afterGitPreIdentity: async ({ label }) => {
+      if (label !== 'source') return;
+      swapped = true;
+      await rename(nested, displaced);
+      await mkdir(nested);
+      await writeFile(path.join(nested, 'tracked.txt'), 'clean\n');
+    },
+    afterWorktreeHashing: async ({ label }) => {
+      if (label !== 'source') return;
+      await rm(nested, { recursive: true });
+      await rename(displaced, nested);
+      restored = true;
+    },
+  });
+  if (!restored) {
+    await rm(nested, { recursive: true });
+    await rename(displaced, nested);
+  }
+  assert.equal(swapped, true);
+  assert.equal(restored, true);
+  assert.equal(provenance.source.matches, false);
+});
+
+test('raw cleanliness reauthenticates index and untracked observations after hashing', async t => {
+  for (const [name, race] of [
+    ['index', async value => {
+      await writeFile(path.join(value.source, 'README.md'), 'staged during inspection\n');
+      git(['add', 'README.md'], value.source);
+    }],
+    ['untracked set', async value => {
+      await writeFile(path.join(value.source, 'untracked-during-inspection'), 'new\n');
+    }],
+  ]) {
+    await t.test(name, async () => {
+      const value = await fixture();
+      try {
+        let raced = false;
+        const provenance = await inspectProvenance(value.runRequest.provenance, 30_000, {
+          afterWorktreeHashing: async ({ label }) => {
+            if (label !== 'source') return;
+            raced = true;
+            await race(value);
+          },
+        });
+        assert.equal(raced, true);
+        assert.equal(provenance.source.matches, false);
+      } finally {
+        await rm(value.scratch, { recursive: true, force: true });
+      }
+    });
+  }
+});
+
+test('raw cleanliness enforces per-file and aggregate tracked-byte limits', async t => {
+  const value = await fixture();
+  t.after(() => rm(value.scratch, { recursive: true, force: true }));
+  let provenance = await inspectProvenance(value.runRequest.provenance, 30_000, {
+    worktreeLimits: { fileBytes: 1 },
+  });
+  assert.equal(provenance.source.matches, false);
+  assert.match(provenance.source.error, /tracked file .* exceeds 1-byte limit/);
+
+  provenance = await inspectProvenance(value.runRequest.provenance, 30_000, {
+    worktreeLimits: { totalBytes: 1 },
+  });
+  assert.equal(provenance.source.matches, false);
+  assert.match(provenance.source.error, /tracked files exceed 1-byte aggregate limit/);
+
+  const readme = path.join(value.source, 'README.md');
+  const initialBytes = (await readFile(readme)).length;
+  let grew = false;
+  provenance = await inspectProvenance(value.runRequest.provenance, 30_000, {
+    worktreeLimits: { fileBytes: initialBytes + 8 },
+    afterWorktreeFileStat: async ({ label, relative }) => {
+      if (label !== 'source' || relative !== 'README.md') return;
+      grew = true;
+      await writeFile(readme, 'x'.repeat(64), { flag: 'a' });
+    },
+  });
+  assert.equal(grew, true);
+  assert.equal(provenance.source.matches, false);
+  assert.match(provenance.source.error, new RegExp(`tracked file 'README\\.md' exceeds ${initialBytes + 8}-byte limit`));
+});
+
+test('public preflight rejects a tracked file above the raw-cleanliness byte limit', async t => {
+  const value = await fixture();
+  t.after(() => rm(value.scratch, { recursive: true, force: true }));
+  await truncate(path.join(value.source, 'README.md'), 16_777_217);
+
+  const execution = invoke(value.preflightRequest, value.scratch);
+  assert.equal(execution.status, 1);
+  assert.match(
+    resultOf(execution).checks.find(check => check.name === 'provenance.source').error,
+    /tracked file 'README\.md' exceeds 16777216-byte limit/,
+  );
+});
+
 test('preflight authenticates SHA-256 repositories without a SHA-1 attribute source', async t => {
   const value = await fixture({ objectFormat: 'sha256' });
   t.after(() => rm(value.scratch, { recursive: true, force: true }));

@@ -263,6 +263,8 @@ export const provenanceLimits = Object.freeze({
   toolBytes: 16_777_216,
   lockBytes: 4_194_304,
   manifestBytes: 4_194_304,
+  worktreeFileBytes: 16_777_216,
+  worktreeTotalBytes: 268_435_456,
 });
 
 export async function inspectProvenance(provenance, timeoutMs, options = {}) {
@@ -346,7 +348,7 @@ async function gitIdentity(value, timeoutMs, label, gitBinding, options = {}) {
     const preCommit = await runProcess(gitBinding.program, args(['rev-parse', 'HEAD^{commit}']), processOptions);
     const preTree = await runProcess(gitBinding.program, args(['rev-parse', 'HEAD^{tree}']), processOptions);
     await options.afterGitPreIdentity?.({ label, repository, repositoryHandle });
-    const status = await filterFreeStatus(gitBinding, args, processOptions, repository, label);
+    const status = await filterFreeStatus(gitBinding, args, processOptions, repositoryHandle, label, options);
     const postCommit = await runProcess(gitBinding.program, args(['rev-parse', 'HEAD^{commit}']), processOptions);
     const postTree = await runProcess(gitBinding.program, args(['rev-parse', 'HEAD^{tree}']), processOptions);
     const observedCommit = commandSucceeded(preCommit) ? preCommit.stdout.toString('utf8').trim() : null;
@@ -406,7 +408,7 @@ async function gitIdentity(value, timeoutMs, label, gitBinding, options = {}) {
   }
 }
 
-async function filterFreeStatus(gitBinding, args, processOptions, repository, label) {
+async function filterFreeStatus(gitBinding, args, processOptions, repositoryHandle, label, options) {
   const head = await runProcess(gitBinding.program, args(['ls-tree', '-rz', '--full-tree', 'HEAD']), processOptions);
   const index = await runProcess(gitBinding.program, args(['ls-files', '--stage', '-z']), processOptions);
   const untracked = await runProcess(
@@ -419,13 +421,43 @@ async function filterFreeStatus(gitBinding, args, processOptions, repository, la
   }
   const headEntries = parseTreeEntries(head.stdout, label);
   const indexEntries = parseIndexEntries(index.stdout, label);
+  const limits = boundedWorktreeLimits(options.worktreeLimits);
+  const state = { bytes: 0, directories: new Map(), leaves: new Map() };
   let clean = untracked.stdout.length === 0 && headEntries.size === indexEntries.size;
   for (const [name, entry] of indexEntries) {
     const expected = headEntries.get(name);
     if (entry.stage !== '0' || expected?.mode !== entry.mode || expected?.oid !== entry.oid) clean = false;
-    if (!await worktreeEntryMatches(repository, name, entry, label)) clean = false;
+    if (!await worktreeEntryMatches(repositoryHandle, name, entry, label, state, limits, options)) clean = false;
   }
+  await options.afterWorktreeHashing?.({ label });
+  await verifyWorktreeIdentities(repositoryHandle, state, label);
+  const postIndex = await runProcess(gitBinding.program, args(['ls-files', '--stage', '-z']), processOptions);
+  const postUntracked = await runProcess(
+    gitBinding.program,
+    args(['ls-files', '--others', '--exclude-standard', '-z']),
+    processOptions,
+  );
+  for (const [name, result] of [['post-hash index', postIndex], ['post-hash untracked files', postUntracked]]) {
+    if (!commandSucceeded(result)) throw new Error(`provenance.${label}.repository ${name} could not be authenticated`);
+  }
+  if (!index.stdout.equals(postIndex.stdout) || !untracked.stdout.equals(postUntracked.stdout)) clean = false;
   return { clean, command: untracked };
+}
+
+function boundedWorktreeLimits(overrides = {}) {
+  const configured = {
+    fileBytes: overrides.fileBytes ?? provenanceLimits.worktreeFileBytes,
+    totalBytes: overrides.totalBytes ?? provenanceLimits.worktreeTotalBytes,
+  };
+  for (const [name, value] of Object.entries(configured)) {
+    if (!Number.isSafeInteger(value) || value < 0) {
+      throw new Error(`tracked worktree ${name} limit must be a nonnegative safe integer`);
+    }
+  }
+  return {
+    fileBytes: Math.min(configured.fileBytes, provenanceLimits.worktreeFileBytes),
+    totalBytes: Math.min(configured.totalBytes, provenanceLimits.worktreeTotalBytes),
+  };
 }
 
 function parseTreeEntries(bytes, label) {
@@ -458,28 +490,47 @@ function parseNulRecords(bytes, label, parse) {
   return entries;
 }
 
-async function worktreeEntryMatches(repository, relative, entry, label) {
-  if (relative.includes('\0') || path.isAbsolute(relative) || path.normalize(relative) !== relative || relative.startsWith(`..${path.sep}`)) {
+async function worktreeEntryMatches(repositoryHandle, relative, entry, label, state, limits, options) {
+  if (relative.includes('\0') || path.isAbsolute(relative) || relative.split('/').some(name => name === '' || name === '.' || name === '..')) {
     throw new Error(`provenance.${label}.repository index path is unsafe`);
   }
-  const file = path.join(repository, relative);
-  if (entry.mode === '120000') return symlinkBlobMatches(file, repository, entry, label);
-  if (entry.mode !== '100644' && entry.mode !== '100755') return false;
+  const components = relative.split('/');
+  const name = components.pop();
+  const chain = await openWorktreeDirectoryChain(repositoryHandle, components, state.directories, label, options);
+  const parent = chain.at(-1) ?? { handle: repositoryHandle };
+  const file = `/proc/self/fd/${parent.handle.fd}/${name}`;
   let handle;
   try {
+    if (entry.mode === '120000') return await symlinkBlobMatches(file, relative, entry, label, state, limits);
+    if (entry.mode !== '100644' && entry.mode !== '100755') return false;
     handle = await open(file, constants.O_RDONLY | constants.O_NOFOLLOW);
     const opened = await handle.stat({ bigint: true });
-    if (!opened.isFile() || await realpath(`/proc/self/fd/${handle.fd}`) !== file) return false;
+    const before = await lstat(file, { bigint: true });
+    if (!opened.isFile() || !sameIdentity(opened, before)) return false;
+    rememberWorktreeIdentity(state.leaves, relative, opened, label, 'entry');
     const actualMode = (Number(opened.mode) & 0o111) === 0 ? '100644' : '100755';
     if (actualMode !== entry.mode) return false;
+    if (opened.size > BigInt(limits.fileBytes)) {
+      throw new Error(`provenance.${label}.repository tracked file '${relative}' exceeds ${limits.fileBytes}-byte limit`);
+    }
+    await options.afterWorktreeFileStat?.({ label, relative, handle, information: opened });
     const algorithm = entry.oid.length === 64 ? 'sha256' : 'sha1';
     const hash = createHash(algorithm).update(`blob ${opened.size}\0`);
-    const buffer = Buffer.allocUnsafe(64 * 1024);
     let bytes = 0n;
     for (;;) {
+      const fileRemaining = limits.fileBytes + 1 - Number(bytes);
+      const aggregateRemaining = limits.totalBytes + 1 - state.bytes;
+      const buffer = Buffer.allocUnsafe(Math.min(64 * 1024, fileRemaining, aggregateRemaining));
       const { bytesRead } = await handle.read(buffer, 0, buffer.length, null);
       if (bytesRead === 0) break;
       bytes += BigInt(bytesRead);
+      state.bytes += bytesRead;
+      if (bytes > BigInt(limits.fileBytes)) {
+        throw new Error(`provenance.${label}.repository tracked file '${relative}' exceeds ${limits.fileBytes}-byte limit`);
+      }
+      if (state.bytes > limits.totalBytes) {
+        throw new Error(`provenance.${label}.repository tracked files exceed ${limits.totalBytes}-byte aggregate limit`);
+      }
       hash.update(buffer.subarray(0, bytesRead));
     }
     const after = await handle.stat({ bigint: true });
@@ -490,16 +541,103 @@ async function worktreeEntryMatches(repository, relative, entry, label) {
     throw error;
   } finally {
     await handle?.close();
+    await closeWorktreeDirectoryChain(chain, label);
   }
 }
 
-async function symlinkBlobMatches(file, repository, entry, label) {
+async function openWorktreeDirectoryChain(repositoryHandle, components, identities, label, options = {}) {
+  const chain = [];
+  let relative = '';
+  let parent = { handle: repositoryHandle };
   try {
-    const parent = path.dirname(file);
-    if (await realpath(parent) !== parent) return false;
+    for (const name of components) {
+      const childRelative = relative === '' ? name : `${relative}/${name}`;
+      const anchoredPath = `/proc/self/fd/${parent.handle.fd}/${name}`;
+      const before = await lstat(anchoredPath, { bigint: true });
+      let handle;
+      try {
+        handle = await open(anchoredPath, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
+        const opened = await handle.stat({ bigint: true });
+        if (!before.isDirectory() || before.isSymbolicLink() || !sameIdentity(before, opened)) {
+          throw new Error(`provenance.${label}.repository directory '${childRelative}' changed while opened`);
+        }
+        const child = { handle, information: opened, parent, name, relative: childRelative };
+        chain.push(child);
+        handle = undefined;
+        rememberWorktreeIdentity(identities, childRelative, opened, label, 'directory');
+        await options.afterWorktreeDirectoryOpen?.({ label, relative: childRelative, handle: child.handle });
+        relative = childRelative;
+        parent = child;
+      } finally {
+        await handle?.close();
+      }
+    }
+    return chain;
+  } catch (error) {
+    await closeWorktreeDirectoryChain(chain, label, false);
+    throw error;
+  }
+}
+
+async function closeWorktreeDirectoryChain(chain, label, verify = true) {
+  let failure;
+  for (const directory of [...chain].reverse()) {
+    try {
+      if (verify) {
+        const descriptor = await directory.handle.stat({ bigint: true });
+        const current = await lstat(`/proc/self/fd/${directory.parent.handle.fd}/${directory.name}`, { bigint: true });
+        if (!current.isDirectory() || current.isSymbolicLink() ||
+            !sameIdentity(directory.information, descriptor) || !sameIdentity(directory.information, current)) {
+          throw new Error(`provenance.${label}.repository directory '${directory.relative}' changed while inspected`);
+        }
+      }
+    } catch (error) {
+      failure ??= error;
+    } finally {
+      await directory.handle.close().catch(error => { failure ??= error; });
+    }
+  }
+  if (failure !== undefined) throw failure;
+}
+
+function rememberWorktreeIdentity(identities, relative, information, label, kind) {
+  const expected = identities.get(relative);
+  if (expected !== undefined && !sameIdentity(expected, information)) {
+    throw new Error(`provenance.${label}.repository ${kind} '${relative}' changed while inspected`);
+  }
+  identities.set(relative, information);
+}
+
+async function verifyWorktreeIdentities(repositoryHandle, state, label) {
+  for (const [relative, expected] of state.leaves) {
+    const components = relative.split('/');
+    const name = components.pop();
+    const chain = await openWorktreeDirectoryChain(repositoryHandle, components, state.directories, label);
+    const parent = chain.at(-1) ?? { handle: repositoryHandle };
+    try {
+      const current = await lstat(`/proc/self/fd/${parent.handle.fd}/${name}`, { bigint: true });
+      if (!sameIdentity(expected, current)) {
+        throw new Error(`provenance.${label}.repository entry '${relative}' changed while inspected`);
+      }
+    } finally {
+      await closeWorktreeDirectoryChain(chain, label);
+    }
+  }
+}
+
+async function symlinkBlobMatches(file, relative, entry, label, state, limits) {
+  try {
     const before = await lstat(file, { bigint: true });
     if (!before.isSymbolicLink()) return false;
+    rememberWorktreeIdentity(state.leaves, relative, before, label, 'entry');
     const target = await readlink(file, { encoding: 'buffer' });
+    if (target.length > limits.fileBytes) {
+      throw new Error(`provenance.${label}.repository tracked file '${relative}' exceeds ${limits.fileBytes}-byte limit`);
+    }
+    state.bytes += target.length;
+    if (state.bytes > limits.totalBytes) {
+      throw new Error(`provenance.${label}.repository tracked files exceed ${limits.totalBytes}-byte aggregate limit`);
+    }
     const after = await lstat(file, { bigint: true });
     if (!sameIdentity(before, after)) throw new Error(`provenance.${label}.repository symlink changed while read`);
     const algorithm = entry.oid.length === 64 ? 'sha256' : 'sha1';

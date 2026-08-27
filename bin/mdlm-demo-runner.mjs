@@ -6,7 +6,7 @@ import { registerHooks } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-const expectedManifestSha256 = "2e8f9a85417f117076f9ca389eae1caa9fa3d2685ea0778ac3a54d5b825348d4";
+const expectedManifestSha256 = "dcf87eab4fe9a04690b7277d20af50fc330a43ff9bc967f55f3fdaedb06d261d";
 const launcherPath = "bin/mdlm-demo-runner.mjs";
 const entrypoint = "src/cli.mjs";
 const entryExport = "executeCli";
