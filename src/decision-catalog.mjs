@@ -1,4 +1,5 @@
 import { open } from 'node:fs/promises';
+import { readCanonicalFile } from './canonical-file.mjs';
 import { sha256 } from './util.mjs';
 
 const catalogContract = 'mdlm-demo-decision-catalog@1';
@@ -136,7 +137,12 @@ export async function readFileWithinLimit(file, maxBytes, label) {
 }
 
 async function readCatalog(file) {
-  const bytes = await readFileWithinLimit(file, decisionCatalogLimits.catalogBytes, 'decision catalog');
+  const { bytes } = await readCanonicalFile(
+    file,
+    'decision catalog',
+    undefined,
+    { maxBytes: decisionCatalogLimits.catalogBytes },
+  );
   return { bytes, catalog: JSON.parse(decodeUtf8(bytes, 'decision catalog')) };
 }
 

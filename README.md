@@ -2,9 +2,10 @@
 
 This public repository contains the issue #213 recovery runner. It does not yet contain a successful public demonstration and has not run a real lifecycle repository.
 
-The runner uses seven JSON commands:
+The runner uses eight JSON commands:
 
 ```text
+mdlm-demo-runner preflight [--input FILE]
 mdlm-demo-runner snapshot [--input FILE]
 mdlm-demo-runner classify [--input FILE]
 mdlm-demo-runner decision-catalog-build [--input FILE]
@@ -14,7 +15,7 @@ mdlm-demo-runner resume [--input FILE]
 mdlm-demo-runner reconcile [--input FILE]
 ```
 
-Without `--input`, each command reads one JSON value from standard input. It writes one JSON result to standard output. Errors go to standard error and return exit status 1. `mdlm-demo-runner --help` and `<command> --help` return the machine-readable command catalog without reading standard input.
+Without `--input`, each command reads one JSON value from standard input. It writes one JSON result to standard output. Errors go to standard error and return exit status 1. `preflight` is the exception for failures: it writes one `mdlm-demo-preflight-result@1` with `status: "FAIL"` to standard output, writes no standard error, and returns exit status 1. `mdlm-demo-runner --help` and `<command> --help` return the machine-readable command catalog without reading standard input.
 
 ## Runner package and release integration
 
@@ -42,7 +43,24 @@ Install only the authenticated tarball. The tooling root must not exist before t
 After applying read-only permissions, make the source checkout unavailable and invoke the installed executable under a filesystem policy limited to the tooling root. `mdlm-demo-runner --help` and every `<command> --help` must emit the exact same `mdlm-demo-help@1` JSON line on standard output, emit nothing on standard error, exit zero, and leave the installed tree unchanged.
 
 The combined identity `89230a0747ac5a701ba3929f5ec0345701ae387f` + `ffd5e70c545449850900ec8ceaae68c18aaf17b0` remains failed artifact-closure evidence. Its launcher bytes were present without `src/cli.mjs`. A later qualification must use a new runner commit and a new combined one-shot identity. It must not rerun or relabel the failed identity.
+## Request preflight
 
+`preflight` accepts exactly this request from standard input or `--input FILE`:
+
+```json
+{
+  "contract": "mdlm-demo-preflight-request@1",
+  "input": {
+    "path": "/absolute/path/to/run-request.json",
+    "digest": "sha256:RUN_REQUEST_SHA256"
+  },
+  "argv": ["mdlm-demo-runner", "run", "--input", "/absolute/path/to/run-request.json"]
+}
+```
+
+The command reads the run or resume request through a no-follow descriptor, checks its byte limit and digest, validates the exact helper argv and request contract, and compares duplicate command and qualification-harness pins. It validates any decision catalog and checks the supplied source, package, tooling, executable, and qualification-harness provenance. Request files, paths, and pins must agree exactly. Standard-input and `--input` invocations apply the same checks.
+
+The command is read-only. It writes only its single result to standard output and does not create evidence. A `PASS` authenticates the supplied bytes against the supplied pins only. It does not select authoritative pins and does not authorize an Assignment, publication, lifecycle transition, or qualification.
 ## Approved seams
 
 Tests use the approved public seams.

@@ -5385,7 +5385,7 @@ function validateReconcileRequest(value) {
     for (const name of ['record', 'stdout', 'stderr']) validatePinnedFile(triplet[name], `evidence.commands[${index}].${name}`);
   }
 }
-function validateRunRequest(value) {
+export function validateRunRequest(value) {
   const allowed = new Set([
     'adapterInputsPath', 'assignmentId', 'checkpointRecovery', 'commands', 'contract', 'correctionContinuation', 'decisionCatalogPath',
     'evidenceDirectory', 'harness', 'materializedNextRecovery', 'mdlmPiAssignmentTimeoutMs', 'mdlmPiCommandTimeoutMs',
@@ -5516,7 +5516,7 @@ function requireSha256(value, label) {
 function requirePositiveSafeInteger(value, label) {
   if (!Number.isSafeInteger(value) || value < 1) throw new Error(`${label} must be a positive safe integer`);
 }
-function validateOperator(value) {
+export function validateOperator(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('operator must be an object');
   if (!sameJson(Object.keys(value).sort(), ['model', 'provider', 'thinking'])) throw new Error('operator must contain exactly provider, model, and thinking');
   for (const name of ['provider', 'model']) {

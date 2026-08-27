@@ -256,7 +256,7 @@ function commandFailures(invocations) {
   return failures;
 }
 
-async function inspectProvenance(provenance, timeoutMs) {
+export async function inspectProvenance(provenance, timeoutMs) {
   const source = await gitIdentity(provenance?.source, timeoutMs, 'source');
   const qualificationHarness = await gitIdentity(provenance?.qualificationHarness, timeoutMs, 'qualificationHarness');
   qualificationHarness.manifest = await expectedFileRecord(
@@ -296,7 +296,7 @@ async function gitIdentity(value, timeoutMs, label) {
   } catch (error) {
     return { repository: value?.repository ?? null, expectedCommit: value?.commit ?? null, expectedTree: value?.tree ?? null, observedCommit: null, observedTree: null, clean: null, matches: false, error: error.message, commands: {} };
   }
-  const options = { cwd: repository, timeoutMs, env: gitEnvironment() };
+  const options = { cwd: repository, timeoutMs, env: gitEnvironment({ GIT_OPTIONAL_LOCKS: '0' }) };
   const commit = await runProcess('git', ['rev-parse', 'HEAD^{commit}'], options);
   const tree = await runProcess('git', ['rev-parse', 'HEAD^{tree}'], options);
   const status = await runProcess('git', ['status', '--porcelain=v1', '-z', '--untracked-files=all'], options);
