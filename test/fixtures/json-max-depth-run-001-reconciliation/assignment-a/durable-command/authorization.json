@@ -1,0 +1,78 @@
+{
+  "contract": "mdlm-demo-command-authorization@1",
+  "purpose": "assignment-worker",
+  "createdAt": "2026-08-27T15:57:26.320Z",
+  "command": {
+    "argv": [
+      "/home/ubuntu/git/mdlm-successor-demos/.tooling-89230a0747ac5a701ba3929f5ec0345701ae387f-ffd5e70c545449850900ec8ceaae68c18aaf17b0/node_modules/mdlm-pi/dist/cli.js",
+      "run",
+      "/home/ubuntu/git/mdlm-successor-demos/operations/json-max-depth-ops-002/repository",
+      "--mdlm",
+      "/home/ubuntu/git/mdlm-release-worktrees/runner-ffd5e70c545449850900ec8ceaae68c18aaf17b0/bin/mdlm-demo-mdlm-shim.mjs",
+      "--provider",
+      "openai-codex",
+      "--model",
+      "gpt-5.6-sol",
+      "--thinking",
+      "high"
+    ],
+    "cwd": "/home/ubuntu/git/mdlm-successor-demos/operations/json-max-depth-ops-002/repository",
+    "timeoutMs": 900000,
+    "input": {
+      "present": false,
+      "bytes": 0,
+      "digest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "environment": {
+      "names": [
+        "GIT_TERMINAL_PROMPT",
+        "HOME",
+        "LANG",
+        "LC_ALL",
+        "MDLM_DEMO_SHIM_CONFIG",
+        "MDLM_PI_ASSIGNMENT_TIMEOUT_MS",
+        "MDLM_PI_COMMAND_TIMEOUT_MS",
+        "PATH"
+      ],
+      "digest": "sha256:6c9ad3e0c43727d373be2320a2fd0fb1c9e70e8b1c5d3dfefedd2c34e81188b6"
+    }
+  },
+  "context": {
+    "assignment": {
+      "id": "7086ad7d-93c6-4c0a-be11-6189377fd536",
+      "disposition": "active",
+      "selected": true,
+      "package": {
+        "reference": "mdlm-bootstrap@0.74.0",
+        "digest": "sha256:e77a022a2cb2d6e7d78bccba753b5d117d4384dce5621d31a397a861edf8878f",
+        "language": "mdlm-expression@1"
+      },
+      "repository": {
+        "head": "96e3dc18aee3a7dc1fe752eb63bd7af528a6307e",
+        "trackedState": "sha256:cd336eb4082ebc7b07f5c0eb052f81ad28c0770f9c2a2d67ad1f5b3145c092eb"
+      },
+      "scenarioReference": "establish-initial-wayfinding-map@2",
+      "retryAvailability": {
+        "malformedResponseCorrection": 1
+      },
+      "malformedResponses": []
+    },
+    "decisionEvidence": null,
+    "decisionInputBase64": null,
+    "initialSnapshot": {
+      "contract": "mdlm-demo-snapshot-created@1",
+      "status": "complete",
+      "snapshotDirectory": "/home/ubuntu/git/mdlm-successor-demos/operations/json-max-depth-ops-002/evidence/run-001-snapshots/snapshot-000001",
+      "digest": "sha256:5e164767d5ee9685f7cfdd9b7b0bf5e81cf07069bf7781d10a4c617e06cb3f5d"
+    },
+    "privateEvidenceBefore": {
+      "safe": true,
+      "detail": "no transaction, private publication, mdlm-pi journal, or checkpoint evidence"
+    },
+    "shimDirectory": "/home/ubuntu/git/mdlm-successor-demos/operations/json-max-depth-ops-002/private-state/assignments/7086ad7d-93c6-4c0a-be11-6189377fd536-b40783d09378/shim"
+  },
+  "compatibilityEvidence": {
+    "index": 2,
+    "prefix": "/home/ubuntu/git/mdlm-successor-demos/operations/json-max-depth-ops-002/private-state/assignments/7086ad7d-93c6-4c0a-be11-6189377fd536-b40783d09378/command-evidence/command-000002"
+  }
+}

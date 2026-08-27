@@ -80,8 +80,8 @@
     },
     {
       "path": "src/orchestrator.mjs",
-      "bytes": 312542,
-      "sha256": "a765ec99552dbe7f3db99b5b556188c7c89ae6122bb6a432a5a35a92f21cdb91"
+      "bytes": 332949,
+      "sha256": "b3cff5246bae9ad16075198ee502c7e4b36f8bd2b75b9d96a00c5562d5c9b86a"
     },
     {
       "path": "src/process-package.mjs",

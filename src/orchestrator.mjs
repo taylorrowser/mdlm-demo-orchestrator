@@ -92,7 +92,7 @@ export async function reconcile(request) {
   await requireCanonicalDirectory(context.repository);
   const release = await acquireRepositoryLock(context, 'checkpoint-reconciliation');
   try {
-    const authenticated = await authenticateTimedOutCheckpointReconciliation(request, context);
+    const authenticated = await authenticateStandaloneCheckpointReconciliation(request, context);
     const { journalPath, journalDirectory, journalDirectoryIdentity, existingJournal } = authenticated;
     const priorPhase = existingJournal?.phase ?? null;
     if (existingJournal === null) {
@@ -123,7 +123,7 @@ export async function reconcile(request) {
   }
 }
 
-async function authenticateTimedOutCheckpointReconciliation(request, context) {
+async function authenticateStandaloneCheckpointReconciliation(request, context) {
   const evidence = request.evidence;
   const requestEvidence = await requirePinnedEvidence(evidence.request, 'original run request');
   let originalRequest;
@@ -134,24 +134,32 @@ async function authenticateTimedOutCheckpointReconciliation(request, context) {
   validateOperator(originalRequest.operator);
   if (originalRequest.timeoutMs !== request.timeoutMs) throw new Error('reconciliation timeout differs from the original run request');
   const targetBinding = reconcileTargetBinding(request, originalRequest);
-  if (targetBinding.relocated) {
-    const expectedRequestPath = relocatedRunEvidencePath(targetBinding, originalRequest, 'request.json');
-    if (path.resolve(evidence.request.path) !== expectedRequestPath) {
-      throw new Error('original request pin does not match the authenticated relocation');
-    }
+  const recoveryShape = standaloneCheckpointRecoveryShape(originalRequest, targetBinding.relocated);
+  if (targetBinding.relocated && path.resolve(evidence.request.path) !== targetBinding.translate(recoveryShape.requestPath)) {
+    throw new Error('original request pin does not match the authenticated relocation');
   }
   const fromAssignment = originalRequest.assignmentId;
   const sourceDirectory = path.join(path.resolve(request.stateDirectory), 'assignments', assignmentKey(fromAssignment));
   await requireCanonicalDirectory(path.resolve(request.stateDirectory));
   await requireCanonicalDirectory(path.join(path.resolve(request.stateDirectory), 'assignments'));
   await requireCanonicalDirectory(sourceDirectory);
-
+  const sourceTransactionPath = path.join(sourceDirectory, 'transaction.json');
+  const sourceReplacementPaths = durableJsonReplacementPaths(sourceTransactionPath);
   const sourceEntries = (await readdir(sourceDirectory)).sort();
+  const requiredSourceEntries = ['command-evidence', 'durable-command', 'identity.json', 'shim'];
+  const permittedSourceEntries = new Set([
+    ...requiredSourceEntries,
+    'transaction.json',
+    path.basename(sourceReplacementPaths.intent),
+    path.basename(sourceReplacementPaths.temporary),
+  ]);
+  if (!requiredSourceEntries.every(name => sourceEntries.includes(name)) ||
+      sourceEntries.some(name => !permittedSourceEntries.has(name))) {
+    throw new Error('source Assignment evidence is missing, extra, or ambiguous');
+  }
   const sourceTransactionPresent = sourceEntries.includes('transaction.json');
-  const expectedSourceEntries = sourceTransactionPresent
-    ? ['command-evidence', 'durable-command', 'identity.json', 'shim', 'transaction.json']
-    : ['command-evidence', 'durable-command', 'identity.json', 'shim'];
-  if (!sameJson(sourceEntries, expectedSourceEntries)) throw new Error('source Assignment evidence is missing, extra, or ambiguous');
+  const sourceReplacementPresent = sourceEntries.includes(path.basename(sourceReplacementPaths.intent)) ||
+    sourceEntries.includes(path.basename(sourceReplacementPaths.temporary));
   const commandDirectory = path.join(sourceDirectory, 'command-evidence');
   const durableDirectory = path.join(sourceDirectory, 'durable-command');
   const shimDirectory = path.join(sourceDirectory, 'shim');
@@ -201,7 +209,9 @@ async function authenticateTimedOutCheckpointReconciliation(request, context) {
   let initialRepositoryIdentity;
   try { initialRepositoryIdentity = JSON.parse(repositoryIdentityEvidence.bytes.toString('utf8')); }
   catch { throw new Error('initial repository identity is not valid JSON'); }
-  const outerCommandEvidence = await authenticateOuterControllerEvidence(evidence.outerCommand, targetBinding, originalRequest);
+  const outerCommandEvidence = await authenticateOuterControllerEvidence(
+    evidence.outerCommand, targetBinding, recoveryShape, originalRequest, request.timeoutMs,
+  );
   const initialVerified = await verifySnapshot(evidence.initialSnapshot.directory, evidence.initialSnapshot.digest, false);
   const postVerified = await verifySnapshot(evidence.postSnapshot.directory, evidence.postSnapshot.digest, true);
   const initial = initialVerified.snapshot;
@@ -318,23 +328,57 @@ async function authenticateTimedOutCheckpointReconciliation(request, context) {
   ];
   if (typeof authorizedShim !== 'string' || !path.isAbsolute(authorizedShim) || path.basename(authorizedShim) !== path.basename(mdlmShim) ||
       !sameJson(second.record.argv, expectedWorker) || path.resolve(second.record.cwd) !== path.resolve(originalRequest.repository) ||
-      second.record.timeoutMs !== originalRequest.timeoutMs || second.record.timedOut !== true || second.record.exitStatus !== null ||
-      second.record.signal !== 'SIGKILL' || second.record.spawnError !== null || second.record.outputLimitExceeded !== false) {
-    throw new Error('durable worker command is not the exact timed-out SIGKILL attempt');
+      second.record.timeoutMs !== originalRequest.timeoutMs || second.record.spawnError !== null ||
+      second.record.outputLimitExceeded !== false) {
+    throw new Error('durable worker command differs from the authorized checkpoint attempt');
   }
-  const typedFailure = JSON.parse(second.stderr.toString('utf8'));
-  if (!typedFailure || !sameJson(Object.keys(typedFailure).sort(), ['details', 'error', 'status']) ||
-      typedFailure.status !== 'operational-failure' || typedFailure.error !== 'MDLM could not prepare the Assignment' ||
-      !sameJson(typedFailure.details, {
-        contract: 'mdlm-demo-reserved-stop@1', type: 'assignment-checkpoint', phase: 'before-worker',
-        assignment: toAssignment, scenario: checkpoint.scenario,
-        packetPath: path.join(originalSourceDirectory, 'shim', 'stops', `${toAssignment}.json`),
-        completedAssignment: fromAssignment,
-      })) throw new Error('durable worker stderr is not the exact typed A-to-B checkpoint stop');
+  let nonTimeoutSourceCommit = null;
+  if (recoveryShape.kind === 'timed-out') {
+    if (second.record.timedOut !== true || second.record.exitStatus !== null || second.record.signal !== 'SIGKILL') {
+      throw new Error('durable worker command is not the exact timed-out SIGKILL attempt');
+    }
+    const typedFailure = JSON.parse(second.stderr.toString('utf8'));
+    if (!typedFailure || !sameJson(Object.keys(typedFailure).sort(), ['details', 'error', 'status']) ||
+        typedFailure.status !== 'operational-failure' || typedFailure.error !== 'MDLM could not prepare the Assignment' ||
+        !sameJson(typedFailure.details, {
+          contract: 'mdlm-demo-reserved-stop@1', type: 'assignment-checkpoint', phase: 'before-worker',
+          assignment: toAssignment, scenario: checkpoint.scenario,
+          packetPath: path.join(originalSourceDirectory, 'shim', 'stops', `${toAssignment}.json`),
+          completedAssignment: fromAssignment,
+        })) throw new Error('durable worker stderr is not the exact typed A-to-B checkpoint stop');
+  } else {
+    if (second.record.timedOut !== false || second.record.exitStatus !== 1 || second.record.signal !== null) {
+      throw new Error('durable worker command is not the exact non-timeout exit-1 checkpoint attempt');
+    }
+    const operationalFailure = JSON.parse(second.stderr.toString('utf8'));
+    if (!sameJson(operationalFailure, {
+      contract: 'mdlm-pi-operational-failure@1', status: 'operational-failure',
+      error: { code: 'MDLM_CLIENT_ERROR', message: 'MDLM could not prepare the Assignment' },
+      telemetry: {
+        stopReason: null, providerError: null, retriesConsumed: null, provider: null,
+        model: null, completeAssignmentObserved: null,
+      },
+    })) throw new Error('durable worker stderr is not the exact non-timeout MDLM prepare failure');
+    const stdoutLines = second.stdout.toString('utf8').trimEnd().split('\n');
+    const sourceCommit = /^Committed ([0-9a-f]{40}): (.+)$/.exec(stdoutLines[1] ?? '');
+    nonTimeoutSourceCommit = sourceCommit?.[1] ?? null;
+    if (!sameJson(stdoutLines, [
+      `Assignment ${fromAssignment}: ${initial.assignment.scenarioReference}`,
+      `Committed ${nonTimeoutSourceCommit}: ${initial.assignment.scenarioReference}`,
+      `Committed ${post.lifecycleRepository.head}: create-review-context@1`,
+    ]) || nonTimeoutSourceCommit === post.lifecycleRepository.head) {
+      throw new Error('durable worker stdout does not prove the exact source and materialization publications');
+    }
+  }
 
   const authorizationEvidence = await requirePinnedEvidence(evidence.authorization, 'durable authorization');
   const authorization = JSON.parse(authorizationEvidence.bytes.toString('utf8'));
   requireStoredDurableAuthorization(authorization, originalSourceDirectory);
+  const validAuthorizationInput = recoveryShape.kind === 'timed-out'
+    ? authorization.command.input?.present === true &&
+      authorization.command.input.digest === sha256(Buffer.from(authorization.context.decisionInputBase64 ?? '', 'base64'))
+    : authorization.context.decisionInputBase64 === null && authorization.context.decisionEvidence === null &&
+      sameJson(authorization.command.input, { present: false, bytes: 0, digest: sha256(Buffer.alloc(0)) });
   if (authorization?.contract !== 'mdlm-demo-command-authorization@1' || authorization.purpose !== 'assignment-worker' ||
       !sameJson(authorization.command.argv, expectedWorker) || authorization.command.cwd !== originalRequest.repository ||
       authorization.command.timeoutMs !== originalRequest.timeoutMs || authorization.context?.assignment?.id !== fromAssignment ||
@@ -348,8 +392,7 @@ async function authenticateTimedOutCheckpointReconciliation(request, context) {
       authorization.context.shimDirectory !== path.join(originalSourceDirectory, 'shim') ||
       authorization.compatibilityEvidence?.index !== 2 ||
       authorization.compatibilityEvidence?.prefix !== path.join(originalSourceDirectory, 'command-evidence', 'command-000002') ||
-      authorization.command.input?.present !== true ||
-      authorization.command.input.digest !== sha256(Buffer.from(authorization.context.decisionInputBase64 ?? '', 'base64'))) {
+      !validAuthorizationInput) {
     throw new Error('durable authorization differs from the original request, snapshot, or Assignment A');
   }
   const resultEvidence = await requirePinnedEvidence(evidence.result, 'durable result');
@@ -365,6 +408,8 @@ async function authenticateTimedOutCheckpointReconciliation(request, context) {
     throw new Error('durable result differs from its authorization, exact command triplet, or post-run repository');
   }
 
+  requireOriginalProvenanceBinding(initial.provenance, originalRequest, 'initial');
+  requireOriginalProvenanceBinding(post.provenance, originalRequest, 'post-run');
   const initialRunIdentity = observedRunIdentity(initial.provenance, processPackage, originalRequest.operator, originalRequest);
   const postRunIdentity = observedRunIdentity(post.provenance, processPackage, originalRequest.operator, originalRequest);
   const retainedRunIdentity = await optionalCanonicalJson(path.join(context.identityDirectory, 'run-identity.json'));
@@ -377,9 +422,14 @@ async function authenticateTimedOutCheckpointReconciliation(request, context) {
   }
   const bDirectory = path.join(path.resolve(request.stateDirectory), 'assignments', assignmentKey(toAssignment));
   if (await optionalLstat(bDirectory) !== null) throw new Error('Assignment B already has private attempt evidence');
-  await authenticateLifecycleTransactionAncestry(context.repository, initial.lifecycleRepository.head, post.lifecycleRepository.head, {
-    firstAssignmentId: fromAssignment, commitCount: 4,
-  });
+  await authenticateLifecycleTransactionAncestry(context.repository, initial.lifecycleRepository.head, post.lifecycleRepository.head,
+    recoveryShape.kind === 'timed-out'
+      ? { firstAssignmentId: fromAssignment, commitCount: 4 }
+      : {
+          firstAssignmentId: fromAssignment, commitCount: 2, finalScenario: 'create-review-context@1',
+          finalAssignmentExcludes: [fromAssignment, toAssignment],
+          commits: [nonTimeoutSourceCommit, post.lifecycleRepository.head],
+        });
 
   const manifests = {
     request: evidenceManifest(requestEvidence),
@@ -401,23 +451,29 @@ async function authenticateTimedOutCheckpointReconciliation(request, context) {
     sourceScenario: initial.assignment.scenarioReference, package: processPackage,
     targetBinding: targetBinding.manifest,
     outerControllerCompletion: { completed: true, exitStatus: 1, internalRunnerResult: 'absent' },
-    timedOutCheckpointRecovery: manifests, evidence: manifests,
+    ...(recoveryShape.kind === 'timed-out'
+      ? { timedOutCheckpointRecovery: manifests }
+      : { nonTimeoutMaterializedCheckpointRecovery: manifests }),
+    evidence: manifests,
   };
   const journalName = `${assignmentKey(fromAssignment)}-to-${assignmentKey(toAssignment)}.json`;
-  const journalInspection = await inspectStandaloneReconciliationDirectory(context.identityDirectory, journalName);
+  const journalInspection = await inspectStandaloneReconciliationDirectory(context.identityDirectory, journalName, record);
   const existingJournal = journalInspection.existing;
   if (existingJournal !== null &&
       (!['authenticated', 'boundary-advanced', 'completed'].includes(existingJournal.phase) ||
        !sameJson({ ...existingJournal, phase: 'authenticated' }, record))) {
-    throw new Error('checkpoint reconciliation journal differs from the authenticated timed-out command evidence');
+    throw new Error('checkpoint reconciliation journal differs from the authenticated command evidence');
   }
-  if (sourceTransactionPresent) {
+  const completedSource = completedCheckpointTransaction(record, journalInspection.journalPath);
+  const completedSourceBytes = canonicalJsonBytes(completedSource);
+  if (sourceTransactionPresent || sourceReplacementPresent) {
     if (existingJournal === null) {
       throw new Error('source Assignment transaction has no prior authenticated reconciliation journal');
     }
     if (existingJournal.phase === 'authenticated') {
       throw new Error('source Assignment transaction is ahead of its authenticated reconciliation journal');
     }
+    await recoverDurableJsonReplacement(sourceTransactionPath, completedSourceBytes);
     await validateExistingCheckpointTransaction(sourceDirectory, record, journalInspection.journalPath);
   } else if (existingJournal?.phase === 'completed') {
     throw new Error('completed reconciliation journal has no matching source Assignment transaction');
@@ -3227,6 +3283,60 @@ function selectedDecision(binding, assignmentId) {
   return { wording: selected.wording, evidence: { origin: selected.origin, authorityBasis: selected.authorityBasis, digest: selected.digest } };
 }
 
+function requireOriginalProvenanceBinding(provenance, request, label) {
+  const configured = {
+    source: {
+      repository: provenance.source?.repository,
+      commit: provenance.source?.expectedCommit,
+      tree: provenance.source?.expectedTree,
+    },
+    package: { artifact: provenance.package?.path, digest: provenance.package?.expectedDigest },
+    piPackage: { artifact: provenance.piPackage?.path, digest: provenance.piPackage?.expectedDigest },
+    tooling: {
+      root: provenance.tooling?.root,
+      digest: provenance.tooling?.expectedDigest,
+      lock: { path: provenance.tooling?.lock?.path, digest: provenance.tooling?.lock?.expectedDigest },
+    },
+    tools: {
+      mdlm: { path: provenance.tools?.mdlm?.path, digest: provenance.tools?.mdlm?.expectedDigest },
+      mdlmPi: { path: provenance.tools?.mdlmPi?.path, digest: provenance.tools?.mdlmPi?.expectedDigest },
+    },
+    qualificationHarness: {
+      repository: provenance.qualificationHarness?.repository,
+      commit: provenance.qualificationHarness?.expectedCommit,
+      tree: provenance.qualificationHarness?.expectedTree,
+      repositoryLocator: provenance.qualificationHarness?.repositoryLocator,
+      manifest: {
+        path: provenance.qualificationHarness?.manifest?.path,
+        digest: provenance.qualificationHarness?.manifest?.expectedDigest,
+      },
+    },
+  };
+  const configuredHarness = configured.qualificationHarness;
+  const measuredFiles = [
+    provenance.package, provenance.piPackage, provenance.tooling?.lock,
+    provenance.tools?.mdlm, provenance.tools?.mdlmPi, provenance.qualificationHarness?.manifest,
+  ];
+  if (provenance.valid !== true || !sameJson(request.provenance, configured) ||
+      !sameJson(request.commands, { mdlm: configured.tools.mdlm.path, mdlmPi: configured.tools.mdlmPi.path }) ||
+      (request.harness !== undefined && !sameJson(request.harness, {
+        directory: configuredHarness.repository,
+        commit: configuredHarness.commit,
+        tree: configuredHarness.tree,
+        repositoryLocator: configuredHarness.repositoryLocator,
+      })) ||
+      provenance.source?.clean !== true || provenance.source?.matches !== true ||
+      provenance.source.observedCommit !== configured.source.commit || provenance.source.observedTree !== configured.source.tree ||
+      provenance.tooling?.matches !== true || provenance.tooling?.containedTools !== true ||
+      provenance.tooling.digest !== configured.tooling.digest ||
+      provenance.qualificationHarness?.clean !== true || provenance.qualificationHarness?.matches !== true ||
+      provenance.qualificationHarness.observedCommit !== configuredHarness.commit ||
+      provenance.qualificationHarness.observedTree !== configuredHarness.tree ||
+      measuredFiles.some(value => value?.matches !== true || value.digest !== value.expectedDigest)) {
+    throw new Error(`${label} snapshot provenance does not authenticate the original configured paths and expected pins`);
+  }
+}
+
 function observedRunIdentity(provenance, processPackage, operator, request) {
   const gitIdentity = value => ({ repository: value.repository, commit: value.observedCommit, tree: value.observedTree });
   const file = value => ({ realpath: value.realpath, digest: value.digest, bytes: value.bytes });
@@ -3677,16 +3787,21 @@ async function reconcilePriorAssignmentCheckpoint({ request, context, assignment
     if (existing === null && sameJson(global.lifecycleRepository, captured.lifecycleRepository)) {
       return { ok: true, result: null };
     }
-    if (existing?.document.timedOutCheckpointRecovery !== undefined) {
+    const standaloneRecovery = existing?.document.timedOutCheckpointRecovery !== undefined
+      ? 'timedOutCheckpointRecovery'
+      : existing?.document.nonTimeoutMaterializedCheckpointRecovery !== undefined
+        ? 'nonTimeoutMaterializedCheckpointRecovery'
+        : null;
+    if (standaloneRecovery !== null) {
       const retained = existing.document;
       if (retained.phase !== 'completed' || !sameJson(global.lifecycleRepository, captured.lifecycleRepository) ||
           !sameJson(retained.completedRepository, captured.lifecycleRepository) || retained.toAssignment !== assignmentId ||
           !sameProcessPackageIdentity(retained.package, processPackage)) {
-        throw new Error('standalone timed-out checkpoint reconciliation is incomplete or differs from current Assignment B');
+        throw new Error('standalone checkpoint reconciliation is incomplete or differs from current Assignment B');
       }
       const sourceDirectory = retained.sourceAssignmentDirectory;
-      if (typeof sourceDirectory !== 'string') throw new Error('standalone timed-out checkpoint reconciliation has no source Assignment directory');
-      await authenticateCompletedTimedOutReconciliation(retained);
+      if (typeof sourceDirectory !== 'string') throw new Error('standalone checkpoint reconciliation has no source Assignment directory');
+      await authenticateCompletedStandaloneReconciliation(retained, standaloneRecovery);
       await validateExistingCheckpointTransaction(sourceDirectory, retained, existing.path);
       return {
         ok: true,
@@ -3752,11 +3867,12 @@ async function reconcilePriorAssignmentCheckpoint({ request, context, assignment
   }
 }
 
-async function authenticateCompletedTimedOutReconciliation(journal) {
-  if (!sameJson(journal.evidence, journal.timedOutCheckpointRecovery)) {
-    throw new Error('standalone timed-out checkpoint reconciliation evidence differs');
+async function authenticateCompletedStandaloneReconciliation(journal, recoveryField) {
+  if (!['timedOutCheckpointRecovery', 'nonTimeoutMaterializedCheckpointRecovery'].includes(recoveryField) ||
+      !sameJson(journal.evidence, journal[recoveryField])) {
+    throw new Error('standalone checkpoint reconciliation evidence differs');
   }
-  const manifests = journal.timedOutCheckpointRecovery;
+  const manifests = journal[recoveryField];
   const authenticateManifest = async (manifest, label) => {
     if (!manifest || typeof manifest.path !== 'string' || !Number.isSafeInteger(manifest.bytes) ||
         !/^sha256:[0-9a-f]{64}$/.test(manifest.digest ?? '')) {
@@ -4062,6 +4178,9 @@ async function authenticateLifecycleTransactionAncestry(repository, oldHead, new
   if (expectedAssignment.commitCount !== undefined && commits.length !== expectedAssignment.commitCount) {
     throw new Error(`lifecycle transaction ancestry contains ${commits.length} commits instead of exactly ${expectedAssignment.commitCount}`);
   }
+  if (expectedAssignment.commits !== undefined && !sameJson(commits, expectedAssignment.commits)) {
+    throw new Error('lifecycle transaction ancestry differs from the durable command publications');
+  }
   let parent = oldHead;
   for (const commit of commits) {
     const identity = (await runGit(['rev-list', '--parents', '-n', '1', commit])).toString('utf8').trim().split(' ');
@@ -4099,6 +4218,12 @@ async function authenticateLifecycleTransactionAncestry(repository, oldHead, new
     if (commit === newHead && expectedAssignment.finalAssignmentId !== undefined &&
         execution.response.assignment !== expectedAssignment.finalAssignmentId) {
       throw new Error('final lifecycle transaction does not belong to the recovering Assignment');
+    }
+    if (commit === newHead && expectedAssignment.finalScenario !== undefined && scenario !== expectedAssignment.finalScenario) {
+      throw new Error('final lifecycle transaction is not the exact package materialization Scenario');
+    }
+    if (commit === newHead && expectedAssignment.finalAssignmentExcludes?.includes(execution.response.assignment)) {
+      throw new Error('final package materialization transaction attempted Assignment A or B');
     }
     parent = commit;
   }
@@ -4404,21 +4529,59 @@ function reconcileTargetBinding(request, originalRequest) {
   };
 }
 
-async function authenticateOuterControllerEvidence(pins, targetBinding, originalRequest) {
-  if (targetBinding.relocated) {
-    const match = /^run-([0-9]+)-snapshot$/.exec(path.basename(originalRequest.evidenceDirectory));
-    if (match === null) throw new Error('relocated reconciliation evidence directory does not identify its original run');
-    const prefix = match[1];
-    for (const name of ['stdout', 'stderr', 'exit']) {
-      const expected = relocatedRunEvidencePath(targetBinding, originalRequest, `run.${name}`, prefix);
+function standaloneCheckpointRecoveryShape(originalRequest, relocated) {
+  const evidenceDirectory = path.resolve(originalRequest.evidenceDirectory);
+  const parent = path.dirname(evidenceDirectory);
+  const timedOut = /^run-([0-9]+)-snapshot$/.exec(path.basename(evidenceDirectory));
+  if (timedOut !== null) {
+    return {
+      kind: 'timed-out',
+      requestPath: path.join(parent, `${timedOut[1]}-request.json`),
+      outerPaths: Object.fromEntries(['stdout', 'stderr', 'exit'].map(name => [name, path.join(parent, `${timedOut[1]}-run.${name}`)])),
+    };
+  }
+  const nonTimeout = /^run-([0-9]+)-snapshots$/.exec(path.basename(evidenceDirectory));
+  if (nonTimeout !== null && nonTimeout[1] === '001' && originalRequest.signal === 'fresh-assignment') {
+    return {
+      kind: 'non-timeout-materialized',
+      requestPath: path.join(parent, '004-run-001-request.json'),
+      outerPaths: {
+        ...Object.fromEntries(['stdout', 'stderr', 'exit'].map(name => [name, path.join(parent, `012-run-001.runner.${name}`)])),
+        record: path.join(parent, '012-run-001.runner.command.json'),
+      },
+      outerRecordDigest: 'sha256:7f60baf8dc4dcfcbad9dac1b8e03dbb54b043ad9a4fb8032182f580b7392f025',
+    };
+  }
+  if (!relocated) return { kind: 'timed-out', requestPath: null, outerPaths: null };
+  throw new Error('reconciliation evidence directory and signal do not identify a supported recovery shape');
+}
+
+async function authenticateOuterControllerEvidence(pins, targetBinding, recoveryShape, originalRequest, timeoutMs) {
+  const names = recoveryShape.kind === 'non-timeout-materialized'
+    ? ['record', 'stdout', 'stderr', 'exit']
+    : ['stdout', 'stderr', 'exit'];
+  if (!sameJson(Object.keys(pins).sort(), [...names].sort())) {
+    throw new Error(`outer command evidence for ${recoveryShape.kind} recovery has missing or extra records`);
+  }
+  if (recoveryShape.outerPaths !== null) {
+    for (const name of names) {
+      const expected = targetBinding.translate(recoveryShape.outerPaths[name]);
       if (path.resolve(pins[name].path) !== expected) {
-        throw new Error(`outer ${name} pin does not match the authenticated relocation`);
+        throw new Error(`outer ${name} pin does not match the authenticated target binding`);
       }
     }
   }
-  const authenticated = Object.fromEntries(await Promise.all(['stdout', 'stderr', 'exit'].map(async name => [
+  const authenticated = Object.fromEntries(await Promise.all(names.map(async name => [
     name, await requirePinnedEvidence(pins[name], `outer controller ${name}`),
   ])));
+  if (recoveryShape.kind === 'non-timeout-materialized') {
+    if (authenticated.record.digest !== recoveryShape.outerRecordDigest) {
+      throw new Error('outer command record differs from the fixed run-001 compatibility record');
+    }
+    await authenticateOuterCommandRecord(
+      JSON.parse(authenticated.record.bytes.toString('utf8')), recoveryShape, originalRequest, timeoutMs,
+    );
+  }
   if (authenticated.stdout.bytes.length !== 0) {
     throw new Error('outer controller stdout contains an internal runner result');
   }
@@ -4429,11 +4592,76 @@ async function authenticateOuterControllerEvidence(pins, targetBinding, original
   return authenticated;
 }
 
-function relocatedRunEvidencePath(targetBinding, originalRequest, suffix, prefix = null) {
-  const match = /^run-([0-9]+)-snapshot$/.exec(path.basename(originalRequest.evidenceDirectory));
-  const run = prefix ?? match?.[1];
-  if (run === undefined) throw new Error('relocated reconciliation evidence directory does not identify its original run');
-  return targetBinding.translate(path.join(path.dirname(originalRequest.evidenceDirectory), `${run}-${suffix}`));
+async function authenticateOuterCommandRecord(record, recoveryShape, originalRequest, timeoutMs) {
+  const legacyRunnerIdentity = {
+    commit: 'ffd5e70c545449850900ec8ceaae68c18aaf17b0',
+    tree: '5d018ceadb2fafefcb464e1ceb5418f2d0d80c3e',
+    launcherDigest: 'sha256:f1eb8d6f296af4850fac82266a5740ff1a4b2fdd7198904d6bb2712125637820',
+    closureDigest: 'sha256:7b9cea3e0b15e21fc17cee64ef55ec53fc4c300719420017258182532ab2c7da',
+  };
+  const runner = record?.runner;
+  const runtime = record?.runtime;
+  const launcherPath = runner && path.join(runner.repository, runner.launcher?.path ?? '');
+  const expectedArgv = ['node', launcherPath, 'run', '--input', recoveryShape.requestPath];
+  if (record?.contract !== 'mdlm-demo-outer-command@1' ||
+      !sameJson(Object.keys(record).sort(), ['argv', 'contract', 'cwd', 'runner', 'runtime']) ||
+      !sameJson(record.argv, expectedArgv) || record.cwd !== '/home/ubuntu/git/mdlm' ||
+      runtime?.name !== 'node' || typeof runtime.version !== 'string' ||
+      !runner || runner.commit !== legacyRunnerIdentity.commit || runner.tree !== legacyRunnerIdentity.tree ||
+      runner.clean !== true || runner.porcelainSha256 !== sha256(Buffer.alloc(0)) ||
+      runner.launcher?.path !== 'bin/mdlm-demo-runner.mjs' ||
+      runner.launcher.digest !== legacyRunnerIdentity.launcherDigest ||
+      runner.dependencyClosure?.digest !== legacyRunnerIdentity.closureDigest ||
+      originalRequest.repository !== '/home/ubuntu/git/mdlm-successor-demos/operations/json-max-depth-ops-002/repository') {
+    throw new Error('outer command record does not bind the exact run-001 argv, cwd, runtime, and runner launcher');
+  }
+
+  const runtimeFile = await readCanonicalEvidenceFile(runtime.executable?.path ?? '');
+  if (runtimeFile.bytes.length !== runtime.executable.bytes || sha256(runtimeFile.bytes) !== runtime.executable.digest) {
+    throw new Error('outer command runtime executable differs from its authenticated identity');
+  }
+  const version = await runProcess(runtime.executable.path, ['--version'], {
+    cwd: record.cwd, timeoutMs: Math.min(timeoutMs, 30_000), env: controlledEnvironment(),
+  });
+  if (!commandSucceeded(version) || version.stdout.toString('utf8').trim() !== runtime.version || version.stderr.length !== 0) {
+    throw new Error('outer command runtime version differs from its authenticated identity');
+  }
+
+  await requireCanonicalDirectory(runner.repository);
+  const gitOptions = { cwd: runner.repository, timeoutMs, env: gitEnvironment() };
+  const [commit, tree, status] = await Promise.all([
+    runProcess('git', ['rev-parse', 'HEAD^{commit}'], gitOptions),
+    runProcess('git', ['rev-parse', 'HEAD^{tree}'], gitOptions),
+    runProcess('git', ['status', '--porcelain=v1', '-z', '--untracked-files=all'], gitOptions),
+  ]);
+  if (![commit, tree, status].every(commandSucceeded) ||
+      commit.stdout.toString('utf8').trim() !== runner.commit || tree.stdout.toString('utf8').trim() !== runner.tree ||
+      status.stdout.length !== 0 || sha256(status.stdout) !== runner.porcelainSha256) {
+    throw new Error('outer command runner Git commit, tree, or clean worktree differs');
+  }
+  await authenticateLegacyRunnerClosureRecord(runner.repository, runner.launcher, runner.dependencyClosure);
+}
+
+// Run 001 predates distribution@2; its exact clean Git identity is authoritative and this record is compatibility evidence.
+async function authenticateLegacyRunnerClosureRecord(repository, launcher, closure) {
+  const entries = closure?.entries;
+  if (closure?.contract !== 'mdlm-demo-runner-source-closure@1' || !Array.isArray(entries) || entries.length === 0 ||
+      sha256(Buffer.from(JSON.stringify(entries))) !== closure.digest || !sameJson(entries[0], launcher)) {
+    throw new Error('outer command legacy runner closure record is malformed');
+  }
+  const paths = new Set();
+  for (const entry of entries) {
+    if (!entry || !sameJson(Object.keys(entry).sort(), ['bytes', 'digest', 'path']) ||
+        typeof entry.path !== 'string' || path.posix.normalize(entry.path) !== entry.path || path.posix.isAbsolute(entry.path) ||
+        entry.path === '..' || entry.path.startsWith('../') || paths.has(entry.path)) {
+      throw new Error('outer command legacy runner closure contains an invalid or duplicate path');
+    }
+    const evidence = await readCanonicalEvidenceFile(path.join(repository, entry.path));
+    if (evidence.bytes.length !== entry.bytes || sha256(evidence.bytes) !== entry.digest) {
+      throw new Error(`outer command legacy runner dependency differs: ${entry.path}`);
+    }
+    paths.add(entry.path);
+  }
 }
 
 async function requireCanonicalPathAbsent(file, trustedRoot, label) {
@@ -4457,7 +4685,7 @@ async function requireCanonicalPathAbsent(file, trustedRoot, label) {
   }
 }
 
-async function inspectStandaloneReconciliationDirectory(identityDirectory, journalName) {
+async function inspectStandaloneReconciliationDirectory(identityDirectory, journalName, authenticatedRecord) {
   await requireCanonicalDirectory(identityDirectory);
   const directory = path.join(identityDirectory, 'checkpoint-reconciliations');
   let created = false;
@@ -4467,11 +4695,32 @@ async function inspectStandaloneReconciliationDirectory(identityDirectory, journ
   await requireCanonicalDirectory(directory);
   const information = await lstat(directory, { bigint: true });
   const identity = { directory, dev: information.dev, ino: information.ino };
+  const journalPath = path.join(directory, journalName);
+  const journalCandidates = Object.fromEntries(['authenticated', 'boundary-advanced', 'completed']
+    .map(phase => [phase, canonicalJsonBytes({ ...authenticatedRecord, phase })]));
+  const originalJournal = await optionalCanonicalJson(journalPath);
+  let originalPhase = null;
+  if (originalJournal !== null) {
+    originalPhase = originalJournal.phase;
+    if (journalCandidates[originalPhase] === undefined ||
+        !canonicalJsonBytes(originalJournal).equals(journalCandidates[originalPhase])) {
+      throw new Error('checkpoint reconciliation journal differs from the authenticated command evidence');
+    }
+  }
+  const permittedPendingPhases = originalPhase === null
+    ? ['authenticated']
+    : originalPhase === 'authenticated'
+      ? ['authenticated', 'boundary-advanced']
+      : originalPhase === 'boundary-advanced'
+        ? ['boundary-advanced', 'completed']
+        : ['completed'];
+  const permittedPendingBytes = permittedPendingPhases.map(phase => journalCandidates[phase]);
+  const pendingExpectedBytes = await matchPendingDurableJsonReplacement(journalPath, permittedPendingBytes);
+  await recoverDurableJsonReplacement(journalPath, pendingExpectedBytes ?? permittedPendingBytes[0]);
   const entries = await readdir(directory, { withFileTypes: true });
   if (entries.length > 1 || (entries.length === 1 && entries[0].name !== journalName)) {
     throw new Error('checkpoint reconciliation directory contains prior, extra, or ambiguous journals');
   }
-  const journalPath = path.join(directory, journalName);
   let existing = null;
   if (entries.length === 1) {
     if (!entries[0].isFile() || entries[0].isSymbolicLink()) {
@@ -4509,6 +4758,8 @@ function reconciliationEvidence(value) {
     ...(value.checkpointRecovery === undefined ? {} : { checkpointRecovery: value.checkpointRecovery }),
     ...(value.orphanedCheckpointRecovery === undefined ? {} : { orphanedCheckpointRecovery: value.orphanedCheckpointRecovery }),
     ...(value.timedOutCheckpointRecovery === undefined ? {} : { timedOutCheckpointRecovery: value.timedOutCheckpointRecovery }),
+    ...(value.nonTimeoutMaterializedCheckpointRecovery === undefined
+      ? {} : { nonTimeoutMaterializedCheckpointRecovery: value.nonTimeoutMaterializedCheckpointRecovery }),
     evidence: value.evidence,
   };
 }
@@ -4533,6 +4784,8 @@ function completedCheckpointTransaction(journal, journalPath) {
     ...(journal.checkpointRecovery === undefined ? {} : { checkpointRecovery: journal.checkpointRecovery }),
     ...(journal.orphanedCheckpointRecovery === undefined ? {} : { orphanedCheckpointRecovery: journal.orphanedCheckpointRecovery }),
     ...(journal.timedOutCheckpointRecovery === undefined ? {} : { timedOutCheckpointRecovery: journal.timedOutCheckpointRecovery }),
+    ...(journal.nonTimeoutMaterializedCheckpointRecovery === undefined
+      ? {} : { nonTimeoutMaterializedCheckpointRecovery: journal.nonTimeoutMaterializedCheckpointRecovery }),
   };
 }
 
@@ -4926,23 +5179,127 @@ async function durableWriteJson(file, value, phase) {
   await mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
   await durableReplaceJson(file, value, phase);
 }
+function canonicalJsonBytes(value) {
+  return Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
+}
 async function durableReplaceJson(file, value, phase) {
-  const temporary = path.join(path.dirname(file), `.${path.basename(file)}.${process.pid}.${randomUUID()}.tmp`);
-  const handle = await open(temporary, 'wx', 0o600);
-  try {
-    await handle.writeFile(`${JSON.stringify(value, null, 2)}\n`, 'utf8');
-    await handle.sync();
-    maybeInjectedCrash(phase, 'after-temp-sync');
-  } finally { await handle.close(); }
-  try {
-    await syncDirectory(path.dirname(file));
-    await rename(temporary, file);
-    await syncDirectory(path.dirname(file));
-    maybeInjectedCrash(phase, 'after-rename');
-  } catch (error) {
-    await rm(temporary, { force: true });
-    throw error;
+  const bytes = canonicalJsonBytes(value);
+  if (await recoverDurableJsonReplacement(file, bytes)) return;
+  const { intent, temporary } = durableJsonReplacementPaths(file);
+  const intentBytes = Buffer.from(`${JSON.stringify({
+    contract: 'mdlm-demo-durable-json-replacement@1',
+    target: path.resolve(file),
+    temporary,
+    bytes: bytes.length,
+    digest: sha256(bytes),
+    bytesBase64: bytes.toString('base64'),
+  }, null, 2)}\n`);
+  await writeSyncedExclusive(intent, intentBytes);
+  await syncDirectory(path.dirname(file));
+  await writeSyncedExclusive(temporary, bytes);
+  await syncDirectory(path.dirname(file));
+  maybeInjectedCrash(phase, 'after-temp-sync');
+  await rename(temporary, file);
+  await syncDirectory(path.dirname(file));
+  maybeInjectedCrash(phase, 'after-rename');
+  await rm(intent);
+  await syncDirectory(path.dirname(file));
+}
+
+function durableJsonReplacementPaths(file) {
+  const resolved = path.resolve(file);
+  const prefix = path.join(path.dirname(resolved), `.${path.basename(resolved)}.durable-replacement`);
+  return { intent: `${prefix}.json`, temporary: `${prefix}.tmp` };
+}
+
+async function writeSyncedExclusive(file, bytes) {
+  const handle = await open(file, 'wx', 0o600);
+  try { await handle.writeFile(bytes); await handle.sync(); }
+  finally { await handle.close(); }
+}
+
+async function matchPendingDurableJsonReplacement(file, candidates) {
+  const { intent } = durableJsonReplacementPaths(file);
+  const intentInformation = await optionalLstat(intent);
+  if (intentInformation === null) return null;
+  if (!intentInformation.isFile() || intentInformation.isSymbolicLink()) {
+    throw new Error('durable JSON replacement pending intent is not a regular file');
   }
+  let pending;
+  try { pending = JSON.parse((await readCanonicalEvidenceFile(intent)).bytes.toString('utf8')); }
+  catch (error) { throw new Error(`durable JSON replacement pending intent is invalid: ${error.message}`); }
+  if (typeof pending?.bytesBase64 !== 'string') {
+    throw new Error('durable JSON replacement pending intent does not contain replacement bytes');
+  }
+  const pendingBytes = Buffer.from(pending.bytesBase64, 'base64');
+  const expected = candidates.find(candidate => candidate.equals(pendingBytes));
+  if (expected === undefined) {
+    throw new Error('durable JSON replacement pending intent bytes differ from every authenticated replacement');
+  }
+  return expected;
+}
+
+async function recoverDurableJsonReplacement(file, expectedBytes) {
+  if (!Buffer.isBuffer(expectedBytes)) throw new Error('durable JSON replacement recovery requires authenticated expected bytes');
+  const resolved = path.resolve(file);
+  const directory = path.dirname(resolved);
+  const basename = path.basename(resolved);
+  const { intent, temporary } = durableJsonReplacementPaths(resolved);
+  const supported = new Set([path.basename(intent), path.basename(temporary)]);
+  const unexpected = (await readdir(directory)).filter(name =>
+    name.startsWith(`.${basename}.`) && !supported.has(name));
+  if (unexpected.length !== 0) throw new Error(`durable JSON replacement has unexpected temporary evidence: ${unexpected.join(', ')}`);
+
+  const intentInformation = await optionalLstat(intent);
+  const temporaryInformation = await optionalLstat(temporary);
+  if (intentInformation === null) {
+    if (temporaryInformation !== null) throw new Error('durable JSON replacement temporary bytes have no authenticated pending intent');
+    return false;
+  }
+  if (!intentInformation.isFile() || intentInformation.isSymbolicLink()) {
+    throw new Error('durable JSON replacement pending intent is not a regular file');
+  }
+  let pending;
+  try { pending = JSON.parse((await readCanonicalEvidenceFile(intent)).bytes.toString('utf8')); }
+  catch (error) { throw new Error(`durable JSON replacement pending intent is invalid: ${error.message}`); }
+  if (!pending || !sameJson(Object.keys(pending).sort(), [
+    'bytes', 'bytesBase64', 'contract', 'digest', 'target', 'temporary',
+  ]) || pending.contract !== 'mdlm-demo-durable-json-replacement@1' || pending.target !== resolved ||
+      pending.temporary !== temporary || !Number.isSafeInteger(pending.bytes) || pending.bytes < 0 ||
+      !/^sha256:[0-9a-f]{64}$/.test(pending.digest ?? '') || typeof pending.bytesBase64 !== 'string') {
+    throw new Error('durable JSON replacement pending intent does not bind the exact target and temporary bytes');
+  }
+  const bytes = Buffer.from(pending.bytesBase64, 'base64');
+  if (bytes.toString('base64') !== pending.bytesBase64 || bytes.length !== pending.bytes || sha256(bytes) !== pending.digest ||
+      !bytes.equals(expectedBytes)) {
+    throw new Error('durable JSON replacement pending intent bytes differ from the requested replacement');
+  }
+
+  if (temporaryInformation !== null) {
+    if (!temporaryInformation.isFile() || temporaryInformation.isSymbolicLink() ||
+        !(await readCanonicalEvidenceFile(temporary)).bytes.equals(bytes)) {
+      throw new Error('durable JSON replacement temporary bytes differ from the authenticated pending intent');
+    }
+  } else {
+    const targetInformation = await optionalLstat(resolved);
+    if (targetInformation !== null) {
+      if (!targetInformation.isFile() || targetInformation.isSymbolicLink()) {
+        throw new Error('durable JSON replacement target is not a regular file');
+      }
+      if ((await readCanonicalEvidenceFile(resolved)).bytes.equals(bytes)) {
+        await rm(intent);
+        await syncDirectory(directory);
+        return true;
+      }
+    }
+    await writeSyncedExclusive(temporary, bytes);
+    await syncDirectory(directory);
+  }
+  await rename(temporary, resolved);
+  await syncDirectory(directory);
+  await rm(intent);
+  await syncDirectory(directory);
+  return true;
 }
 function maybeInjectedCrash(phase, seam) {
   if (phase && process.env.MDLM_DEMO_TEST_CRASH === `${phase}:${seam}`) process.exit(86);
@@ -4998,11 +5355,13 @@ function validateReconcileRequest(value) {
   for (const name of ['request', 'repositoryIdentity', 'authorization', 'result', 'identity', 'shimConfig', 'processedAssignment', 'assignmentCheckpoint', 'stopPacket']) {
     validatePinnedFile(evidence[name], `evidence.${name}`);
   }
+  const outerCommandKeys = Object.keys(evidence.outerCommand ?? {}).sort();
   if (!evidence.outerCommand || typeof evidence.outerCommand !== 'object' || Array.isArray(evidence.outerCommand) ||
-      !sameJson(Object.keys(evidence.outerCommand).sort(), ['exit', 'stderr', 'stdout'])) {
-    throw new Error('evidence.outerCommand must contain exactly stdout, stderr, and exit');
+      (!sameJson(outerCommandKeys, ['exit', 'stderr', 'stdout']) &&
+       !sameJson(outerCommandKeys, ['exit', 'record', 'stderr', 'stdout']))) {
+    throw new Error('evidence.outerCommand must contain stdout, stderr, and exit, with at most one command record');
   }
-  for (const name of ['stdout', 'stderr', 'exit']) {
+  for (const name of outerCommandKeys) {
     validatePinnedFile(evidence.outerCommand[name], `evidence.outerCommand.${name}`);
   }
   for (const name of ['initialSnapshot', 'postSnapshot']) {
