@@ -92,23 +92,11 @@ export async function reconcile(request) {
   const release = await acquireRepositoryLock(context, 'checkpoint-reconciliation');
   try {
     const authenticated = await authenticateTimedOutCheckpointReconciliation(request, context);
-    const reconciliationDirectory = path.join(context.identityDirectory, 'checkpoint-reconciliations');
-    const journalName = `${assignmentKey(authenticated.fromAssignment)}-to-${assignmentKey(authenticated.toAssignment)}.json`;
-    const journalPath = path.join(reconciliationDirectory, journalName);
-    const existing = await optionalCanonicalJson(journalPath);
-    let priorPhase = null;
-    if (existing === null) {
-      await mkdir(reconciliationDirectory, { recursive: true, mode: 0o700 });
-      await syncDirectory(context.identityDirectory);
-      await writeJournal(journalPath, authenticated.record);
-    } else {
-      priorPhase = existing.phase;
-      if (!['authenticated', 'boundary-advanced', 'completed'].includes(priorPhase) ||
-          !sameJson({ ...existing, phase: 'authenticated' }, authenticated.record)) {
-        throw new Error('checkpoint reconciliation journal differs from the authenticated timed-out command evidence');
-      }
+    const { journalPath, journalDirectory, journalDirectoryIdentity, existingJournal } = authenticated;
+    const priorPhase = existingJournal?.phase ?? null;
+    if (existingJournal === null) {
+      await writeTrustedReconciliationJournal(journalPath, authenticated.record, journalDirectoryIdentity);
     }
-    await validateExistingCheckpointTransaction(authenticated.sourceDirectory, authenticated.record, journalPath);
     const globalPath = path.join(context.identityDirectory, 'repository-identity.json');
     const global = await optionalCanonicalJson(globalPath);
     if (global === null) throw new Error('trusted repository identity is absent');
@@ -118,6 +106,8 @@ export async function reconcile(request) {
       globalPath,
       global,
       sourceDirectory: authenticated.sourceDirectory,
+      trustedJournalDirectory: journalDirectory,
+      trustedJournalDirectoryIdentity: journalDirectoryIdentity,
     });
     return {
       contract: 'mdlm-demo-reconcile-result@1',
@@ -142,6 +132,13 @@ async function authenticateTimedOutCheckpointReconciliation(request, context) {
   validateRunRequest(originalRequest);
   validateOperator(originalRequest.operator);
   if (originalRequest.timeoutMs !== request.timeoutMs) throw new Error('reconciliation timeout differs from the original run request');
+  const targetBinding = reconcileTargetBinding(request, originalRequest);
+  if (targetBinding.relocated) {
+    const expectedRequestPath = relocatedRunEvidencePath(targetBinding, originalRequest, 'request.json');
+    if (path.resolve(evidence.request.path) !== expectedRequestPath) {
+      throw new Error('original request pin does not match the authenticated relocation');
+    }
+  }
   const fromAssignment = originalRequest.assignmentId;
   const sourceDirectory = path.join(path.resolve(request.stateDirectory), 'assignments', assignmentKey(fromAssignment));
   await requireCanonicalDirectory(path.resolve(request.stateDirectory));
@@ -149,7 +146,8 @@ async function authenticateTimedOutCheckpointReconciliation(request, context) {
   await requireCanonicalDirectory(sourceDirectory);
 
   const sourceEntries = (await readdir(sourceDirectory)).sort();
-  const expectedSourceEntries = sourceEntries.includes('transaction.json')
+  const sourceTransactionPresent = sourceEntries.includes('transaction.json');
+  const expectedSourceEntries = sourceTransactionPresent
     ? ['command-evidence', 'durable-command', 'identity.json', 'shim', 'transaction.json']
     : ['command-evidence', 'durable-command', 'identity.json', 'shim'];
   if (!sameJson(sourceEntries, expectedSourceEntries)) throw new Error('source Assignment evidence is missing, extra, or ambiguous');
@@ -158,6 +156,7 @@ async function authenticateTimedOutCheckpointReconciliation(request, context) {
   const shimDirectory = path.join(sourceDirectory, 'shim');
   const stopsDirectory = path.join(shimDirectory, 'stops');
   for (const directory of [commandDirectory, durableDirectory, shimDirectory, stopsDirectory]) await requireCanonicalDirectory(directory);
+  await requireCanonicalPathAbsent(path.join(context.gitDirectory, 'mdlm-pi', 'run.json'), context.gitDirectory, 'current mdlm-pi journal');
   if (!sameJson((await readdir(commandDirectory)).sort(), [
     'command-000001.json', 'command-000001.stderr', 'command-000001.stdout',
     'command-000002.json', 'command-000002.stderr', 'command-000002.stdout',
@@ -187,6 +186,13 @@ async function authenticateTimedOutCheckpointReconciliation(request, context) {
     }
   }
 
+  const expectedInitialSnapshot = targetBinding.translate(path.join(originalRequest.evidenceDirectory, 'snapshot-000001'));
+  const expectedPostSnapshot = targetBinding.translate(path.join(originalRequest.evidenceDirectory, 'snapshot-000002'));
+  if (path.resolve(evidence.initialSnapshot.directory) !== expectedInitialSnapshot ||
+      path.resolve(evidence.postSnapshot.directory) !== expectedPostSnapshot) {
+    throw new Error('snapshot targets do not match the original run request and authenticated relocation');
+  }
+  const outerCommandEvidence = await authenticateOuterControllerEvidence(evidence.outerCommand, targetBinding, originalRequest);
   const initialVerified = await verifySnapshot(evidence.initialSnapshot.directory, evidence.initialSnapshot.digest, false);
   const postVerified = await verifySnapshot(evidence.postSnapshot.directory, evidence.postSnapshot.digest, true);
   const initial = initialVerified.snapshot;
@@ -335,23 +341,6 @@ async function authenticateTimedOutCheckpointReconciliation(request, context) {
   if (!sameJson(initialRunIdentity, postRunIdentity) || !sameJson(initialRunIdentity, retainedRunIdentity)) {
     throw new Error('operator, package, tool, source, or harness identity changed across reconciliation boundaries');
   }
-  const globalPath = path.join(context.identityDirectory, 'repository-identity.json');
-  const global = await optionalCanonicalJson(globalPath);
-  const reconciliationPath = path.join(
-    context.identityDirectory, 'checkpoint-reconciliations',
-    `${assignmentKey(fromAssignment)}-to-${assignmentKey(toAssignment)}.json`,
-  );
-  const pendingReconciliation = await optionalCanonicalJson(reconciliationPath);
-  const trustedInitial = global?.contract === 'mdlm-demo-repository-identity@1' &&
-    sameJson(global.lifecycleRepository, initial.lifecycleRepository);
-  const trustedAdvance = global?.contract === 'mdlm-demo-repository-identity@1' &&
-    sameJson(global.lifecycleRepository, post.lifecycleRepository) &&
-    sameJson(global.lastAssignment, { id: fromAssignment, outcome: 'accepted-publication', completed: true }) &&
-    pendingReconciliation?.contract === 'mdlm-demo-checkpoint-reconciliation@1' &&
-    pendingReconciliation.fromAssignment === fromAssignment && pendingReconciliation.toAssignment === toAssignment;
-  if (!trustedInitial && !trustedAdvance) {
-    throw new Error('trusted repository identity differs from Assignment A initial or journaled advanced boundary');
-  }
   const current = await currentLifecycleRepository(context, request.timeoutMs);
   if (!sameJson(current, post.lifecycleRepository) || !sameJson(current, durableResult.repository)) {
     throw new Error('current repository differs from the exact pinned Assignment B boundary');
@@ -366,21 +355,58 @@ async function authenticateTimedOutCheckpointReconciliation(request, context) {
     request: evidenceManifest(requestEvidence),
     initialSnapshot: { directory: initialVerified.snapshotDirectory, digest: initialVerified.digest, manifest: initialVerified.manifest },
     postSnapshot: { directory: postVerified.snapshotDirectory, digest: postVerified.digest, manifest: postVerified.manifest },
+    outerCommand: Object.fromEntries(Object.entries(outerCommandEvidence).map(([name, value]) => [name, evidenceManifest(value)])),
     authorization: evidenceManifest(authorizationEvidence), result: evidenceManifest(resultEvidence),
     commands: [first, second].map(stored => stored.evidence.map(evidenceManifest)),
     identity: evidenceManifest(identityEvidence), config: evidenceManifest(configEvidence),
     processedAssignment: evidenceManifest(processedEvidence), assignmentCheckpoint: evidenceManifest(checkpointEvidence),
     packet: evidenceManifest(packetEvidence),
   };
+  const record = {
+    contract: 'mdlm-demo-checkpoint-reconciliation@1', phase: 'authenticated', fromAssignment, toAssignment,
+    sourceAssignmentDirectory: sourceDirectory, priorRepository: initial.lifecycleRepository,
+    completedRepository: post.lifecycleRepository, scenario: packet.scenario.reference,
+    sourceScenario: initial.assignment.scenarioReference, package: processPackage,
+    targetBinding: targetBinding.manifest,
+    outerControllerCompletion: { completed: true, exitStatus: 1, internalRunnerResult: 'absent' },
+    timedOutCheckpointRecovery: manifests, evidence: manifests,
+  };
+  const journalName = `${assignmentKey(fromAssignment)}-to-${assignmentKey(toAssignment)}.json`;
+  const journalInspection = await inspectStandaloneReconciliationDirectory(context.identityDirectory, journalName);
+  const existingJournal = journalInspection.existing;
+  if (existingJournal !== null &&
+      (!['authenticated', 'boundary-advanced', 'completed'].includes(existingJournal.phase) ||
+       !sameJson({ ...existingJournal, phase: 'authenticated' }, record))) {
+    throw new Error('checkpoint reconciliation journal differs from the authenticated timed-out command evidence');
+  }
+  if (sourceTransactionPresent) {
+    if (existingJournal === null) {
+      throw new Error('source Assignment transaction has no prior authenticated reconciliation journal');
+    }
+    if (existingJournal.phase === 'authenticated') {
+      throw new Error('source Assignment transaction is ahead of its authenticated reconciliation journal');
+    }
+    await validateExistingCheckpointTransaction(sourceDirectory, record, journalInspection.journalPath);
+  } else if (existingJournal?.phase === 'completed') {
+    throw new Error('completed reconciliation journal has no matching source Assignment transaction');
+  }
+
+  const globalPath = path.join(context.identityDirectory, 'repository-identity.json');
+  const global = await optionalCanonicalJson(globalPath);
+  const trustedInitial = global?.contract === 'mdlm-demo-repository-identity@1' &&
+    sameJson(global.lifecycleRepository, initial.lifecycleRepository);
+  const trustedAdvance = existingJournal !== null && global?.contract === 'mdlm-demo-repository-identity@1' &&
+    sameJson(global.lifecycleRepository, post.lifecycleRepository) &&
+    sameJson(global.lastAssignment, { id: fromAssignment, outcome: 'accepted-publication', completed: true });
+  if (!trustedInitial && !trustedAdvance) {
+    throw new Error('trusted repository identity differs from Assignment A initial or exactly journaled advanced boundary');
+  }
   return {
-    fromAssignment, toAssignment, sourceDirectory,
-    record: {
-      contract: 'mdlm-demo-checkpoint-reconciliation@1', phase: 'authenticated', fromAssignment, toAssignment,
-      sourceAssignmentDirectory: sourceDirectory, priorRepository: initial.lifecycleRepository,
-      completedRepository: post.lifecycleRepository, scenario: packet.scenario.reference,
-      sourceScenario: initial.assignment.scenarioReference, package: processPackage,
-      timedOutCheckpointRecovery: manifests, evidence: manifests,
-    },
+    fromAssignment, toAssignment, sourceDirectory, record,
+    journalPath: journalInspection.journalPath,
+    journalDirectory: journalInspection.directory,
+    journalDirectoryIdentity: journalInspection.identity,
+    existingJournal,
   };
 }
 
@@ -3492,6 +3518,12 @@ async function authenticateCompletedTimedOutReconciliation(journal) {
       await authenticateManifest(manifest, `command ${commandIndex + 1} evidence ${partIndex + 1}`);
     }
   }
+  if (!manifests.outerCommand || !sameJson(Object.keys(manifests.outerCommand).sort(), ['exit', 'stderr', 'stdout'])) {
+    throw new Error('completed reconciliation outer controller manifests are malformed');
+  }
+  for (const name of ['stdout', 'stderr', 'exit']) {
+    await authenticateManifest(manifests.outerCommand[name], `outer controller ${name}`);
+  }
   for (const [name, postRun] of [['initialSnapshot', false], ['postSnapshot', true]]) {
     const snapshotPin = manifests[name];
     const verified = await verifySnapshot(snapshotPin?.directory, snapshotPin?.digest, postRun);
@@ -4055,6 +4087,148 @@ async function requireCanonicalDirectory(directory) {
   }
 }
 
+function reconcileTargetBinding(request, originalRequest) {
+  const originalRepository = path.resolve(originalRequest.repository);
+  const originalState = path.resolve(originalRequest.stateDirectory);
+  const targetRepository = path.resolve(request.repository);
+  const targetState = path.resolve(request.stateDirectory);
+  const exact = originalRepository === targetRepository && originalState === targetState;
+  if (exact) {
+    if (request.relocation !== undefined) throw new Error('exact reconciliation targets must not declare a relocation');
+    return {
+      relocated: false,
+      translate: value => path.resolve(value),
+      manifest: {
+        contract: 'mdlm-demo-reconcile-target-binding@1', mode: 'exact',
+        repository: { original: originalRepository, target: targetRepository },
+        stateDirectory: { original: originalState, target: targetState },
+        evidenceDirectory: {
+          original: path.resolve(originalRequest.evidenceDirectory),
+          target: path.resolve(originalRequest.evidenceDirectory),
+        },
+      },
+    };
+  }
+
+  const relocation = request.relocation;
+  if (!relocation) throw new Error('reconciliation targets differ from the original request without an authenticated relocation');
+  const originalRoot = path.resolve(relocation.originalRoot);
+  const targetRoot = path.resolve(relocation.targetRoot);
+  if (path.dirname(originalRepository) !== originalRoot || path.dirname(originalState) !== originalRoot) {
+    throw new Error('relocation originalRoot does not bind the original repository and state directory');
+  }
+  const translate = value => {
+    const original = path.resolve(value);
+    const relative = path.relative(originalRoot, original);
+    if (relative === '' || relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+      throw new Error(`relocation cannot translate path outside originalRoot: ${original}`);
+    }
+    return path.resolve(targetRoot, relative);
+  };
+  if (targetRepository !== translate(originalRepository) || targetState !== translate(originalState)) {
+    throw new Error('repository and stateDirectory must share the exact authenticated relocation root');
+  }
+  return {
+    relocated: true, translate,
+    manifest: {
+      contract: 'mdlm-demo-reconcile-target-binding@1', mode: 'relocated',
+      relocation: { contract: relocation.contract, originalRoot, targetRoot },
+      repository: { original: originalRepository, target: targetRepository },
+      stateDirectory: { original: originalState, target: targetState },
+      evidenceDirectory: {
+        original: path.resolve(originalRequest.evidenceDirectory),
+        target: translate(originalRequest.evidenceDirectory),
+      },
+    },
+  };
+}
+
+async function authenticateOuterControllerEvidence(pins, targetBinding, originalRequest) {
+  if (targetBinding.relocated) {
+    const match = /^run-([0-9]+)-snapshot$/.exec(path.basename(originalRequest.evidenceDirectory));
+    if (match === null) throw new Error('relocated reconciliation evidence directory does not identify its original run');
+    const prefix = match[1];
+    for (const name of ['stdout', 'stderr', 'exit']) {
+      const expected = relocatedRunEvidencePath(targetBinding, originalRequest, `run.${name}`, prefix);
+      if (path.resolve(pins[name].path) !== expected) {
+        throw new Error(`outer ${name} pin does not match the authenticated relocation`);
+      }
+    }
+  }
+  const authenticated = Object.fromEntries(await Promise.all(['stdout', 'stderr', 'exit'].map(async name => [
+    name, await requirePinnedEvidence(pins[name], `outer controller ${name}`),
+  ])));
+  if (authenticated.stdout.bytes.length !== 0) {
+    throw new Error('outer controller stdout contains an internal runner result');
+  }
+  const expectedError = Buffer.from('{"contract":"mdlm-demo-error@1","error":"untrusted durable command consumption snapshot differs from its authorized repository boundary"}\n');
+  if (!authenticated.stderr.bytes.equals(expectedError) || !authenticated.exit.bytes.equals(Buffer.from('1\n'))) {
+    throw new Error('outer controller stderr, exit status, or completion evidence differs from the preserved failed command');
+  }
+  return authenticated;
+}
+
+function relocatedRunEvidencePath(targetBinding, originalRequest, suffix, prefix = null) {
+  const match = /^run-([0-9]+)-snapshot$/.exec(path.basename(originalRequest.evidenceDirectory));
+  const run = prefix ?? match?.[1];
+  if (run === undefined) throw new Error('relocated reconciliation evidence directory does not identify its original run');
+  return targetBinding.translate(path.join(path.dirname(originalRequest.evidenceDirectory), `${run}-${suffix}`));
+}
+
+async function requireCanonicalPathAbsent(file, trustedRoot, label) {
+  const root = path.resolve(trustedRoot);
+  const expected = path.resolve(file);
+  const relative = path.relative(root, expected);
+  if (relative === '' || relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    throw new Error(`${label} is outside its trusted root`);
+  }
+  await requireCanonicalDirectory(root);
+  let current = root;
+  const parts = relative.split(path.sep);
+  for (const [index, part] of parts.entries()) {
+    current = path.join(current, part);
+    let information;
+    try { information = await lstat(current); }
+    catch (error) { if (error.code === 'ENOENT') return; throw error; }
+    if (information.isSymbolicLink()) throw new Error(`${label} has a symbolic-link path component`);
+    if (index === parts.length - 1) throw new Error(`${label} is present`);
+    if (!information.isDirectory()) throw new Error(`${label} has a non-directory path component`);
+  }
+}
+
+async function inspectStandaloneReconciliationDirectory(identityDirectory, journalName) {
+  await requireCanonicalDirectory(identityDirectory);
+  const directory = path.join(identityDirectory, 'checkpoint-reconciliations');
+  let created = false;
+  try { await mkdir(directory, { mode: 0o700 }); created = true; }
+  catch (error) { if (error.code !== 'EEXIST') throw error; }
+  if (created) await syncDirectory(identityDirectory);
+  await requireCanonicalDirectory(directory);
+  const information = await lstat(directory, { bigint: true });
+  const identity = { directory, dev: information.dev, ino: information.ino };
+  const entries = await readdir(directory, { withFileTypes: true });
+  if (entries.length > 1 || (entries.length === 1 && entries[0].name !== journalName)) {
+    throw new Error('checkpoint reconciliation directory contains prior, extra, or ambiguous journals');
+  }
+  const journalPath = path.join(directory, journalName);
+  let existing = null;
+  if (entries.length === 1) {
+    if (!entries[0].isFile() || entries[0].isSymbolicLink()) {
+      throw new Error('checkpoint reconciliation journal is not a regular file');
+    }
+    existing = JSON.parse((await readCanonicalEvidenceFile(journalPath)).bytes.toString('utf8'));
+  }
+  return { directory, identity, journalPath, existing };
+}
+
+async function assertTrustedDirectory(identity) {
+  const information = await lstat(identity.directory, { bigint: true });
+  if (!information.isDirectory() || information.isSymbolicLink() || information.dev !== identity.dev || information.ino !== identity.ino ||
+      await realpath(identity.directory) !== identity.directory) {
+    throw new Error('checkpoint reconciliation directory changed after authentication');
+  }
+}
+
 function evidenceManifest(evidence) {
   return { path: evidence.path, bytes: evidence.bytes.length, digest: sha256(evidence.bytes) };
 }
@@ -4100,7 +4274,13 @@ function completedCheckpointTransaction(journal, journalPath) {
   };
 }
 
-async function completeCheckpointReconciliation({ journalPath, journal, globalPath, global, sourceDirectory }) {
+async function completeCheckpointReconciliation({
+  journalPath, journal, globalPath, global, sourceDirectory,
+  trustedJournalDirectory = null, trustedJournalDirectoryIdentity = null,
+}) {
+  const persistJournal = trustedJournalDirectory === null
+    ? value => writeJournal(journalPath, value)
+    : value => writeTrustedReconciliationJournal(journalPath, value, trustedJournalDirectoryIdentity);
   const advancedIdentity = {
     contract: 'mdlm-demo-repository-identity@1',
     lifecycleRepository: journal.completedRepository,
@@ -4123,7 +4303,7 @@ async function completeCheckpointReconciliation({ journalPath, journal, globalPa
   }
   if (journal.phase === 'authenticated') {
     journal = { ...journal, phase: 'boundary-advanced' };
-    await writeJournal(journalPath, journal);
+    await persistJournal(journal);
   }
 
   const transactionPath = path.join(sourceDirectory, 'transaction.json');
@@ -4133,7 +4313,7 @@ async function completeCheckpointReconciliation({ journalPath, journal, globalPa
   else if (!sameJson(existingTransaction, completedSource)) throw new Error('source Assignment transaction differs from the checkpoint reconciliation');
   if (journal.phase !== 'completed') {
     journal = { ...journal, phase: 'completed' };
-    await writeJournal(journalPath, journal);
+    await persistJournal(journal);
   }
   return journal;
 }
@@ -4469,8 +4649,19 @@ async function nextSnapshotDirectory(evidenceDirectory) {
 }
 
 async function writeJournal(file, value) { await durableWriteJson(file, value, value.phase); }
+async function writeTrustedReconciliationJournal(file, value, directoryIdentity) {
+  if (path.dirname(file) !== directoryIdentity.directory) {
+    throw new Error('checkpoint reconciliation journal escaped its trusted directory');
+  }
+  await assertTrustedDirectory(directoryIdentity);
+  await durableReplaceJson(file, value, value.phase);
+  await assertTrustedDirectory(directoryIdentity);
+}
 async function durableWriteJson(file, value, phase) {
   await mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
+  await durableReplaceJson(file, value, phase);
+}
+async function durableReplaceJson(file, value, phase) {
   const temporary = path.join(path.dirname(file), `.${path.basename(file)}.${process.pid}.${randomUUID()}.tmp`);
   const handle = await open(temporary, 'wx', 0o600);
   try {
@@ -4505,9 +4696,12 @@ function result(status, snapshotResult, extra) { return { contract: 'mdlm-demo-r
 function stopped(reason, detail, snapshotResult, assignmentId, extra = {}) { return result('stopped', snapshotResult, { assignmentId, recoverable: false, reason, detail, ...extra }); }
 function required(value, label) { if (typeof value !== 'string' || value.length === 0) throw new Error(`${label} must be a nonempty string`); return value; }
 function validateReconcileRequest(value) {
+  const requestKeys = value?.relocation === undefined
+    ? ['contract', 'evidence', 'repository', 'stateDirectory', 'timeoutMs']
+    : ['contract', 'evidence', 'relocation', 'repository', 'stateDirectory', 'timeoutMs'];
   if (!value || typeof value !== 'object' || Array.isArray(value) ||
-      !sameJson(Object.keys(value).sort(), ['contract', 'evidence', 'repository', 'stateDirectory', 'timeoutMs'])) {
-    throw new Error('reconcile request must contain exactly contract, repository, stateDirectory, timeoutMs, and evidence');
+      !sameJson(Object.keys(value).sort(), requestKeys.sort())) {
+    throw new Error('reconcile request contains unsupported or missing fields');
   }
   for (const name of ['repository', 'stateDirectory']) {
     required(value[name], name);
@@ -4515,8 +4709,20 @@ function validateReconcileRequest(value) {
   }
   requirePositiveSafeInteger(value.timeoutMs, 'timeoutMs');
   if (value.timeoutMs > 900_000) throw new Error('timeoutMs must not exceed 900000');
+  if (value.relocation !== undefined) {
+    const relocation = value.relocation;
+    if (!relocation || typeof relocation !== 'object' || Array.isArray(relocation) ||
+        !sameJson(Object.keys(relocation).sort(), ['contract', 'originalRoot', 'targetRoot']) ||
+        relocation.contract !== 'mdlm-demo-reconcile-relocation@1') {
+      throw new Error('relocation must contain exactly contract, originalRoot, and targetRoot');
+    }
+    for (const name of ['originalRoot', 'targetRoot']) {
+      required(relocation[name], `relocation.${name}`);
+      if (!path.isAbsolute(relocation[name])) throw new Error(`relocation.${name} must be an absolute path`);
+    }
+  }
   const keys = [
-    'assignmentCheckpoint', 'authorization', 'commands', 'identity', 'initialSnapshot', 'postSnapshot',
+    'assignmentCheckpoint', 'authorization', 'commands', 'identity', 'initialSnapshot', 'outerCommand', 'postSnapshot',
     'processedAssignment', 'request', 'result', 'shimConfig', 'stopPacket',
   ].sort();
   const evidence = value.evidence;
@@ -4526,6 +4732,13 @@ function validateReconcileRequest(value) {
   }
   for (const name of ['request', 'authorization', 'result', 'identity', 'shimConfig', 'processedAssignment', 'assignmentCheckpoint', 'stopPacket']) {
     validatePinnedFile(evidence[name], `evidence.${name}`);
+  }
+  if (!evidence.outerCommand || typeof evidence.outerCommand !== 'object' || Array.isArray(evidence.outerCommand) ||
+      !sameJson(Object.keys(evidence.outerCommand).sort(), ['exit', 'stderr', 'stdout'])) {
+    throw new Error('evidence.outerCommand must contain exactly stdout, stderr, and exit');
+  }
+  for (const name of ['stdout', 'stderr', 'exit']) {
+    validatePinnedFile(evidence.outerCommand[name], `evidence.outerCommand.${name}`);
   }
   for (const name of ['initialSnapshot', 'postSnapshot']) {
     const pin = evidence[name];

@@ -98,10 +98,18 @@ async function run046Fixture() {
   const sourceDirectory = path.join(stateDirectory, 'assignments', assignmentKey(assignmentA));
   await mkdir(path.dirname(sourceDirectory), { recursive: true });
   await cp(path.join(fixture, 'assignment-a'), sourceDirectory, { recursive: true, preserveTimestamps: true });
-  const evidenceDirectory = path.join(scratch, 'evidence');
+  const evidenceRoot = path.join(scratch, 'evidence');
+  const evidenceDirectory = path.join(evidenceRoot, 'run-046-snapshot');
+  await mkdir(evidenceRoot);
   await cp(path.join(fixture, 'snapshots'), evidenceDirectory, { recursive: true, preserveTimestamps: true });
-  const requestPath = path.join(scratch, 'request.json');
+  const requestPath = path.join(evidenceRoot, '046-request.json');
   await cp(path.join(fixture, 'request.json'), requestPath);
+  const outerCommand = {};
+  for (const stream of ['stdout', 'stderr', 'exit']) {
+    const target = path.join(evidenceRoot, `046-run.${stream}`);
+    await cp(path.join(fixture, 'outer-command', `046-run.${stream}`), target);
+    outerCommand[stream] = await pin(target);
+  }
 
   const commandDirectory = path.join(sourceDirectory, 'command-evidence');
   const durableDirectory = path.join(sourceDirectory, 'durable-command');
@@ -111,6 +119,11 @@ async function run046Fixture() {
     repository,
     stateDirectory,
     timeoutMs: 900_000,
+    relocation: {
+      contract: 'mdlm-demo-reconcile-relocation@1',
+      originalRoot: '/home/ubuntu/git/mdlm-successor-demos/operations/iso-date-weekday-ops-001',
+      targetRoot: scratch,
+    },
     evidence: {
       request: await pin(requestPath),
       initialSnapshot: {
@@ -121,6 +134,7 @@ async function run046Fixture() {
         directory: path.join(evidenceDirectory, 'snapshot-000002'),
         digest: 'sha256:fb2b444708607e1afbb9149e3a4c58c48bd568871c4e21bb747152e3b3c1cd34',
       },
+      outerCommand,
       authorization: await pin(path.join(durableDirectory, 'authorization.json')),
       result: await pin(path.join(durableDirectory, 'result.json')),
       commands: await Promise.all(['000001', '000002'].map(async index => ({
@@ -323,6 +337,11 @@ else { process.stderr.write('unexpected '+JSON.stringify(args)); process.exitCod
   }, null, 2)}\n`);
   await writeFile(path.join(value.identityDirectory, 'run-identity.json'), `${JSON.stringify(runIdentityFromSnapshot(initial, originalRequest), null, 2)}\n`);
 
+  const outerDirectory = path.join(value.scratch, 'synthetic-outer-command');
+  await mkdir(outerDirectory);
+  await writeFile(path.join(outerDirectory, 'run.stdout'), '');
+  await writeFile(path.join(outerDirectory, 'run.stderr'), '{"contract":"mdlm-demo-error@1","error":"untrusted durable command consumption snapshot differs from its authorized repository boundary"}\n');
+  await writeFile(path.join(outerDirectory, 'run.exit'), '1\n');
   const reconcileRequest = {
     contract: 'mdlm-demo-reconcile-request@1', repository: value.repository,
     stateDirectory: value.stateDirectory, timeoutMs: 900_000,
@@ -330,6 +349,11 @@ else { process.stderr.write('unexpected '+JSON.stringify(args)); process.exitCod
       request: await pin(originalRequestPath),
       initialSnapshot: { directory: initialDirectory, digest: initialResult.digest },
       postSnapshot: { directory: postDirectory, digest: postResult.digest },
+      outerCommand: {
+        stdout: await pin(path.join(outerDirectory, 'run.stdout')),
+        stderr: await pin(path.join(outerDirectory, 'run.stderr')),
+        exit: await pin(path.join(outerDirectory, 'run.exit')),
+      },
       authorization: await pin(authorizationPath), result: await pin(resultPath),
       commands: await Promise.all(['000001', '000002'].map(async index => ({
         record: await pin(path.join(commandDirectory, `command-${index}.json`)),
@@ -357,6 +381,9 @@ test('run 046 fixture preserves the authenticated ISO evidence bytes and commit 
     ['assignment-a/durable-command/result.json', 'sha256:a0086741f99cac2d16afa7038ecbf15934517d090efcabae19f44b68cde39da2'],
     ['assignment-a/shim/config.json', 'sha256:9789425cd2dd6e3e0db9b8b0c8f158c0c391ea7ae74bb4e2d98f6e71731df13e'],
     [`assignment-a/shim/stops/${assignmentB}.json`, 'sha256:4ccc47bb2ae7b3caac5fc989d3ff72c48f10bf5de2647c300a8dd84c1ea0da06'],
+    ['outer-command/046-run.stdout', 'sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'],
+    ['outer-command/046-run.stderr', 'sha256:2ab3869bb7fd1dadcbdea7ad89fd2b3f68eec2124d85370931b557c1bf7787e2'],
+    ['outer-command/046-run.exit', 'sha256:4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865'],
   ]);
   for (const [relative, expectedDigest] of expected) {
     assert.equal(await digest(path.join(fixture, relative)), expectedDigest, relative);
@@ -464,6 +491,14 @@ test('reconcile rejects drift, tamper, missing or extra evidence, symlinks, and 
     ['result tamper', async value => {
       await writeFile(value.request.evidence.result.path, Buffer.concat([await readFile(value.request.evidence.result.path), Buffer.from('\n')]));
     }],
+    ['outer completion evidence tamper', async value => {
+      await writeFile(value.request.evidence.outerCommand.exit.path, '0\n');
+    }],
+    ['outer runner result exists', async value => {
+      const result = '{"contract":"mdlm-demo-run-result@2","status":"completed"}\n';
+      await writeFile(value.request.evidence.outerCommand.stdout.path, result);
+      value.request.evidence.outerCommand.stdout.digest = await digest(value.request.evidence.outerCommand.stdout.path);
+    }],
     ['missing command bytes', value => rm(value.request.evidence.commands[1].stderr.path)],
     ['extra command evidence', async value => {
       await writeFile(path.join(value.sourceDirectory, 'command-evidence', 'command-000003.stdout'), 'unrelated\n');
@@ -476,6 +511,40 @@ test('reconcile rejects drift, tamper, missing or extra evidence, symlinks, and 
     }],
     ['prior durable consumption', async value => {
       await writeFile(path.join(value.sourceDirectory, 'durable-command', 'consumption.json'), '{}\n');
+    }],
+    ['current Pi journal', async value => {
+      const directory = path.join(value.repository, '.git', 'mdlm-pi');
+      await mkdir(directory, { recursive: true });
+      await writeFile(path.join(directory, 'run.json'), '{}\n');
+    }],
+    ['run identity drift', async value => {
+      const identityPath = path.join(value.identityDirectory, 'run-identity.json');
+      const identity = JSON.parse(await readFile(identityPath));
+      identity.operator.model = 'drifted-model';
+      await writeFile(identityPath, `${JSON.stringify(identity, null, 2)}\n`);
+    }],
+    ['prior reconciliation journal', async value => {
+      const directory = path.join(value.identityDirectory, 'checkpoint-reconciliations');
+      await mkdir(directory);
+      await writeFile(path.join(directory, 'prior.json'), '{}\n');
+    }],
+    ['symlinked reconciliation journal directory', async value => {
+      const outside = path.join(value.scratch, 'outside-reconciliations');
+      await mkdir(outside);
+      value.outsideReconciliations = outside;
+      await symlink(outside, path.join(value.identityDirectory, 'checkpoint-reconciliations'));
+    }],
+    ['non-directory reconciliation journal destination', async value => {
+      await writeFile(path.join(value.identityDirectory, 'checkpoint-reconciliations'), 'not a directory\n');
+    }],
+    ['missing authenticated relocation', value => {
+      delete value.request.relocation;
+    }],
+    ['split unrelated relocated state target', async value => {
+      const splitState = path.join(value.scratch, 'split', 'private-state');
+      await mkdir(path.dirname(splitState));
+      await cp(value.stateDirectory, splitState, { recursive: true });
+      value.request.stateDirectory = splitState;
     }],
     ['symlinked command evidence', async value => {
       const target = value.request.evidence.commands[0].stdout.path;
@@ -509,5 +578,39 @@ test('reconcile rejects drift, tamper, missing or extra evidence, symlinks, and 
     assert.match(execution.stderr, /mdlm-demo-error@1/, name);
     assert.deepEqual(await readFile(path.join(value.identityDirectory, 'repository-identity.json')), before, name);
     assert.equal(await stat(path.join(value.sourceDirectory, 'transaction.json')).then(() => true, () => false), false, name);
+    if (value.outsideReconciliations) assert.deepEqual(await readdir(value.outsideReconciliations), [], name);
   }
+});
+
+test('authenticated intent is durable before any trusted boundary or transaction mutation', async () => {
+  const value = await run046Fixture();
+  const initialIdentity = await readFile(path.join(value.identityDirectory, 'repository-identity.json'));
+  const crashed = exec(process.execPath, [cli, 'reconcile'], root, JSON.stringify(value.request), {
+    ...process.env, MDLM_DEMO_TEST_CRASH: 'authenticated:after-rename',
+  });
+
+  assert.equal(crashed.status, 86, crashed.stderr);
+  assert.deepEqual(await readFile(path.join(value.identityDirectory, 'repository-identity.json')), initialIdentity);
+  assert.equal(await stat(path.join(value.sourceDirectory, 'transaction.json')).then(() => true, () => false), false);
+  const journals = await readdir(path.join(value.identityDirectory, 'checkpoint-reconciliations'));
+  assert.equal(journals.length, 1);
+  assert.equal(JSON.parse(await readFile(path.join(value.identityDirectory, 'checkpoint-reconciliations', journals[0]))).phase, 'authenticated');
+});
+
+test('first reconciliation rejects a matching source transaction without its prior intent journal', async () => {
+  const value = await run046Fixture();
+  const initialIdentity = await readFile(path.join(value.identityDirectory, 'repository-identity.json'));
+  const crashed = exec(process.execPath, [cli, 'reconcile'], root, JSON.stringify(value.request), {
+    ...process.env, MDLM_DEMO_TEST_CRASH: 'checkpoint-reconciliation-assignment:after-rename',
+  });
+  assert.equal(crashed.status, 86, crashed.stderr);
+  assert.equal(await stat(path.join(value.sourceDirectory, 'transaction.json')).then(() => true, () => false), true);
+  await writeFile(path.join(value.identityDirectory, 'repository-identity.json'), initialIdentity);
+  await rm(path.join(value.identityDirectory, 'checkpoint-reconciliations'), { recursive: true });
+
+  const execution = exec(process.execPath, [cli, 'reconcile'], root, JSON.stringify(value.request));
+
+  assert.equal(execution.status, 1, execution.stderr);
+  assert.match(execution.stderr, /transaction.*journal|journal.*transaction/i);
+  assert.deepEqual(await readFile(path.join(value.identityDirectory, 'repository-identity.json')), initialIdentity);
 });
