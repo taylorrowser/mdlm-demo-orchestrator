@@ -102,6 +102,8 @@ async function run046Fixture() {
   const evidenceDirectory = path.join(evidenceRoot, 'run-046-snapshot');
   await mkdir(evidenceRoot);
   await cp(path.join(fixture, 'snapshots'), evidenceDirectory, { recursive: true, preserveTimestamps: true });
+  const repositoryIdentityEvidencePath = path.join(evidenceDirectory, 'repository-identity.json');
+  await cp(path.join(fixture, 'repository-identity.json'), repositoryIdentityEvidencePath);
   const requestPath = path.join(evidenceRoot, '046-request.json');
   await cp(path.join(fixture, 'request.json'), requestPath);
   const outerCommand = {};
@@ -126,6 +128,7 @@ async function run046Fixture() {
     },
     evidence: {
       request: await pin(requestPath),
+      repositoryIdentity: await pin(repositoryIdentityEvidencePath),
       initialSnapshot: {
         directory: path.join(evidenceDirectory, 'snapshot-000001'),
         digest: 'sha256:070664b7de0946eecf01e9a8ff57d225f443e6bf1343145bff4fcb86bcd14fc1',
@@ -332,9 +335,12 @@ else { process.stderr.write('unexpected '+JSON.stringify(args)); process.exitCod
     authorization: { path: authorizationPath, digest: await digest(authorizationPath) },
     process: second, repository: post.lifecycleRepository,
   }, null, 2)}\n`);
-  await writeFile(path.join(value.identityDirectory, 'repository-identity.json'), `${JSON.stringify({
+  const repositoryIdentityPath = path.join(value.identityDirectory, 'repository-identity.json');
+  await writeFile(repositoryIdentityPath, `${JSON.stringify({
     contract: 'mdlm-demo-repository-identity@1', lifecycleRepository: initial.lifecycleRepository, lastAssignment: null,
   }, null, 2)}\n`);
+  const repositoryIdentityEvidencePath = path.join(pinnedSnapshots, 'repository-identity.json');
+  await cp(repositoryIdentityPath, repositoryIdentityEvidencePath);
   await writeFile(path.join(value.identityDirectory, 'run-identity.json'), `${JSON.stringify(runIdentityFromSnapshot(initial, originalRequest), null, 2)}\n`);
 
   const outerDirectory = path.join(value.scratch, 'synthetic-outer-command');
@@ -347,6 +353,7 @@ else { process.stderr.write('unexpected '+JSON.stringify(args)); process.exitCod
     stateDirectory: value.stateDirectory, timeoutMs: 900_000,
     evidence: {
       request: await pin(originalRequestPath),
+      repositoryIdentity: await pin(repositoryIdentityEvidencePath),
       initialSnapshot: { directory: initialDirectory, digest: initialResult.digest },
       postSnapshot: { directory: postDirectory, digest: postResult.digest },
       outerCommand: {
@@ -377,6 +384,7 @@ else { process.stderr.write('unexpected '+JSON.stringify(args)); process.exitCod
 test('run 046 fixture preserves the authenticated ISO evidence bytes and commit graph', async () => {
   const expected = new Map([
     ['request.json', 'sha256:5374ead4802bd7d2dd6b3d4a6d6bde8f8504451ed62166b48b760102c2116405'],
+    ['repository-identity.json', 'sha256:08dff2e494e8ffeb13ebd4e3ffc6f2a75ddd9e38c11a0c84f8b79569789bd3bf'],
     ['assignment-a/durable-command/authorization.json', 'sha256:7546838ba3b1d60942133d1cbef67c406da47bcddf6c2571884503399e3041c7'],
     ['assignment-a/durable-command/result.json', 'sha256:a0086741f99cac2d16afa7038ecbf15934517d090efcabae19f44b68cde39da2'],
     ['assignment-a/shim/config.json', 'sha256:9789425cd2dd6e3e0db9b8b0c8f158c0c391ea7ae74bb4e2d98f6e71731df13e'],
@@ -388,6 +396,9 @@ test('run 046 fixture preserves the authenticated ISO evidence bytes and commit 
   for (const [relative, expectedDigest] of expected) {
     assert.equal(await digest(path.join(fixture, relative)), expectedDigest, relative);
   }
+  assert.deepEqual(JSON.parse(await readFile(path.join(fixture, 'repository-identity.json'))).lastAssignment, {
+    id: '6fcde296-06a7-4465-b602-51e33d5b885e', outcome: 'accepted-publication', completed: true,
+  });
   assert.equal(await digest(path.join(fixture, 'snapshots/snapshot-000001/manifest.json')), 'sha256:070664b7de0946eecf01e9a8ff57d225f443e6bf1343145bff4fcb86bcd14fc1');
   assert.equal(await digest(path.join(fixture, 'snapshots/snapshot-000002/manifest.json')), 'sha256:fb2b444708607e1afbb9149e3a4c58c48bd568871c4e21bb747152e3b3c1cd34');
   const bundle = exec('git', ['bundle', 'verify', path.join(fixture, 'repository.bundle')], root);
@@ -432,6 +443,56 @@ test('public reconcile consumes timed-out A without starting A or B', async () =
   const repeated = exec(process.execPath, [cli, 'reconcile'], root, JSON.stringify(value.request));
   assert.equal(repeated.status, 0, repeated.stderr);
   assert.equal(JSON.parse(repeated.stdout).status, 'already-reconciled');
+});
+
+test('first reconciliation rejects initial identity tamper or prior A or B consumption before mutation', async () => {
+  const replacePinnedIdentity = mutate => async value => {
+    const identityPath = path.join(value.identityDirectory, 'repository-identity.json');
+    const identity = JSON.parse(await readFile(identityPath));
+    mutate(identity);
+    const bytes = `${JSON.stringify(identity, null, 2)}\n`;
+    await writeFile(identityPath, bytes);
+    await writeFile(value.request.evidence.repositoryIdentity.path, bytes);
+    value.request.evidence.repositoryIdentity.digest = await digest(value.request.evidence.repositoryIdentity.path);
+  };
+  const replaceLastAssignment = lastAssignment => replacePinnedIdentity(identity => {
+    identity.lastAssignment = lastAssignment;
+  });
+  const cases = [
+    ['pinned initial identity bytes', async value => {
+      await writeFile(value.request.evidence.repositoryIdentity.path, Buffer.concat([
+        await readFile(value.request.evidence.repositoryIdentity.path), Buffer.from('\n'),
+      ]));
+    }],
+    ['trusted initial identity shape', replacePinnedIdentity(identity => {
+      identity.unexpected = true;
+    })],
+    ['A accepted publication', replaceLastAssignment({ id: assignmentA, outcome: 'accepted-publication', completed: true })],
+    ['B accepted publication', replaceLastAssignment({ id: assignmentB, outcome: 'accepted-publication', completed: true })],
+    ['B lifecycle completion', replaceLastAssignment({ id: assignmentB, outcome: 'lifecycle-complete', completed: true })],
+    ['B stopped outcome', replaceLastAssignment({ id: assignmentB, outcome: 'operational-failure', completed: true })],
+  ];
+  for (const [name, mutate] of cases) {
+    const value = await run046Fixture();
+    await mutate(value);
+    const identityPath = path.join(value.identityDirectory, 'repository-identity.json');
+    const before = await readFile(identityPath);
+
+    const execution = exec(process.execPath, [cli, 'reconcile'], root, JSON.stringify(value.request));
+
+    assert.equal(execution.status, 1, `${name}: ${execution.stdout}\n${execution.stderr}`);
+    assert.match(execution.stderr, /mdlm-demo-error@1/, name);
+    assert.deepEqual(await readFile(identityPath), before, name);
+    assert.equal(await stat(path.join(value.sourceDirectory, 'transaction.json')).then(() => true, () => false), false, name);
+    assert.deepEqual(
+      await readdir(path.join(value.identityDirectory, 'checkpoint-reconciliations')).catch(error => {
+        if (error.code === 'ENOENT') return [];
+        throw error;
+      }),
+      [],
+      name,
+    );
+  }
 });
 
 test('successful public reconcile requires a separate ordinary public B run', async () => {
