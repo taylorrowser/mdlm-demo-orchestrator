@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { adaptAssignment } from './adapter.mjs';
 import { readCanonicalFile } from './canonical-file.mjs';
 import { validateScenarioPrepare } from './contracts.mjs';
+import { bindDecisionCatalogFile } from './decision-catalog.mjs';
 import { snapshot, verifySnapshot } from './evidence.mjs';
 import { normalizeProcessPackage, sameProcessPackageIdentity } from './process-package.mjs';
 import {
@@ -21,6 +22,8 @@ const assignmentCheckpointEvidence = Symbol('assignmentCheckpointEvidence');
 const publicationClosureEvidence = Symbol('publicationClosureEvidence');
 const operationalFailureEvidence = Symbol('operationalFailureEvidence');
 const durableResultRepository = Symbol('durableResultRepository');
+const boundDecisionCatalog = Symbol('boundDecisionCatalog');
+const authoritativeDecisionUtf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
 const outerTimeoutSafetyReserveMs = 60_000;
 
 export async function run(request, mode) {
@@ -28,6 +31,8 @@ export async function run(request, mode) {
   validateRunRequest(request);
   validateOperator(request.operator);
   const assignmentId = required(request.assignmentId, 'assignmentId');
+  request = { ...request, [boundDecisionCatalog]: await bindDecisionCatalogFile(request.decisionCatalogPath) };
+  await waitAtDecisionCatalogPreflightBarrier(request[boundDecisionCatalog]);
   const context = await repositoryContext(required(request.repository, 'repository'), request.timeoutMs);
   const release = await acquireRepositoryLock(context, assignmentId);
   try {
@@ -856,7 +861,7 @@ async function runPiAssignment(request, context, assignmentDirectory, assignment
   const attended = outcome.outcome === 'attention-required' &&
     outcome.assignment?.allocation === 'active' && outcome.assignment.id === assignmentId &&
     outcome.authorityRequirement?.mode === 'attended';
-  const decision = attended ? await selectedDecision(request.decisionCatalogPath, assignmentId) : null;
+  const decision = attended ? selectedDecision(request[boundDecisionCatalog], assignmentId) : null;
   if (attended && decision === null) return stopped('operator-decision-unavailable', 'no valid operator-selected decision matches the attended Assignment', snapshotResult, assignmentId);
   const shimDirectory = path.join(assignmentDirectory, 'shim');
   const shimConfigPath = path.join(shimDirectory, 'config.json');
@@ -2432,15 +2437,23 @@ async function inspectCorrectionContext(context, assignment, resultDocument) {
   };
 }
 
-async function selectedDecision(file, assignmentId) {
-  if (typeof file !== 'string') return null;
-  const catalog = JSON.parse(await readFile(file, 'utf8'));
+function selectedDecision(binding, assignmentId) {
+  if (binding === null) return null;
+  if (!binding || binding.contract !== 'mdlm-demo-bound-decision-catalog@1' ||
+      !Number.isSafeInteger(binding.bytes) || binding.bytes < 0 || typeof binding.bytesBase64 !== 'string' ||
+      !/^sha256:[0-9a-f]{64}$/.test(binding.digest ?? '')) {
+    throw new Error('invalid bound decision catalog');
+  }
+  const bytes = Buffer.from(binding.bytesBase64, 'base64');
+  if (bytes.length !== binding.bytes || sha256(bytes) !== binding.digest) throw new Error('bound decision catalog bytes differ');
+  const catalog = JSON.parse(authoritativeDecisionUtf8.decode(bytes));
   if (catalog.contract !== 'mdlm-demo-decision-catalog@1') throw new Error('invalid decision catalog contract');
   const selected = catalog.decisions?.find(value => value.assignment === assignmentId);
   if (!selected) return null;
   if (selected.origin !== 'operator-selected' || typeof selected.authorityBasis !== 'string' || selected.authorityBasis.length === 0 || typeof selected.wording !== 'string') {
     throw new Error('decision must record operator-selected origin, authority basis, and wording');
   }
+  if (!selected.wording.isWellFormed()) throw new Error('decision wording contains an unpaired UTF-16 surrogate');
   const digest = sha256(Buffer.from(selected.wording));
   if (selected.digest !== digest) throw new Error('operator decision wording digest differs');
   return { wording: selected.wording, evidence: { origin: selected.origin, authorityBasis: selected.authorityBasis, digest: selected.digest } };
@@ -3864,6 +3877,17 @@ function validLockOwner(owner) {
     typeof owner.repository === 'string' && owner.repository.length > 0 && typeof owner.acquiredAt === 'string' &&
     (process.platform !== 'linux' || typeof owner.processStart === 'string');
 }
+async function waitAtDecisionCatalogPreflightBarrier(binding) {
+  const barrier = process.env.MDLM_DEMO_TEST_DECISION_CATALOG_BARRIER;
+  if (typeof barrier !== 'string' || barrier.length === 0) return;
+  await writeFile(path.join(barrier, 'ready'), `${JSON.stringify({ digest: binding?.digest ?? null })}\n`, { flag: 'wx', mode: 0o600 });
+  for (;;) {
+    try { await lstat(path.join(barrier, 'release')); return; }
+    catch (error) { if (error.code !== 'ENOENT') throw error; }
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+}
+
 async function waitAtLockAcquisitionBarrier(token) {
   const barrier = process.env.MDLM_DEMO_TEST_LOCK_BARRIER;
   if (typeof barrier !== 'string' || barrier.length === 0) return;

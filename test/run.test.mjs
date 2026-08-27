@@ -3127,6 +3127,136 @@ test('canonical lifecycle repository lock excludes an independent state director
   assert.equal(JSON.parse(stdout).status, 'completed');
 });
 
+test('decision catalog digest mismatch is rejected before durable run consumption', async () => {
+  const workerMarker = path.join(os.tmpdir(), `issue-17-worker-${process.pid}-${Date.now()}`);
+  const value = await fixture({
+    scenarioReference: 'resolve-question@2',
+    attentionRequired: true,
+    piScript: `#!/bin/sh\n: > ${workerMarker}\nprintf '%s\\n' '{"status":"lifecycle-complete"}'\n`,
+  });
+  const wording = 'Exact attended decision wording.';
+  const sourceBytes = Buffer.from(`${wording}\n`);
+  const decisionCatalogPath = path.join(value.scratch, 'decisions.json');
+  await writeFile(decisionCatalogPath, JSON.stringify({
+    contract: 'mdlm-demo-decision-catalog@1',
+    decisions: [{
+      assignment: value.assignment,
+      wording,
+      origin: 'operator-selected',
+      authorityBasis: 'Standing authorization permits this attended decision.',
+      digest: `sha256:${createHash('sha256').update(sourceBytes).digest('hex')}`,
+    }],
+  }));
+  value.request.decisionCatalogPath = decisionCatalogPath;
+
+  const execution = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
+
+  assert.equal(execution.status, 1);
+  assert.match(JSON.parse(execution.stderr).error, /operator decision wording digest differs/);
+  await assert.rejects(stat(value.request.stateDirectory), error => error.code === 'ENOENT');
+  await assert.rejects(stat(value.request.evidenceDirectory), error => error.code === 'ENOENT');
+  await assert.rejects(stat(path.join(value.repository, '.git', 'mdlm-demo-orchestrator')), error => error.code === 'ENOENT');
+  await assert.rejects(stat(workerMarker), error => error.code === 'ENOENT');
+  await assert.rejects(stat(path.join(value.scratch, 'calls.log')), error => error.code === 'ENOENT');
+});
+
+test('unpaired decision wording is rejected before durable run consumption', async () => {
+  const workerMarker = path.join(os.tmpdir(), `issue-17-surrogate-worker-${process.pid}-${Date.now()}`);
+  const value = await fixture({
+    scenarioReference: 'resolve-question@2',
+    attentionRequired: true,
+    piScript: `#!/bin/sh\n: > ${workerMarker}\nprintf '%s\\n' '{"status":"lifecycle-complete"}'\n`,
+  });
+  const wording = 'invalid \uD800 wording';
+  const decisionCatalogPath = path.join(value.scratch, 'surrogate-decisions.json');
+  await writeFile(decisionCatalogPath, JSON.stringify({
+    contract: 'mdlm-demo-decision-catalog@1',
+    decisions: [{
+      assignment: value.assignment,
+      wording,
+      origin: 'operator-selected',
+      authorityBasis: 'Standing authorization permits this attended decision.',
+      digest: `sha256:${createHash('sha256').update(Buffer.from(wording, 'utf8')).digest('hex')}`,
+    }],
+  }));
+  value.request.decisionCatalogPath = decisionCatalogPath;
+
+  const execution = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
+
+  assert.equal(execution.status, 1);
+  assert.match(JSON.parse(execution.stderr).error, /unpaired UTF-16 surrogate/);
+  await assert.rejects(stat(value.request.stateDirectory), error => error.code === 'ENOENT');
+  await assert.rejects(stat(value.request.evidenceDirectory), error => error.code === 'ENOENT');
+  await assert.rejects(stat(workerMarker), error => error.code === 'ENOENT');
+  await assert.rejects(stat(path.join(value.scratch, 'calls.log')), error => error.code === 'ENOENT');
+});
+
+test('run binds preflight decision bytes against later path mutation', async t => {
+  for (const mutation of [
+    { name: 'different self-consistent catalog', replacement: 'Substituted decision wording.', validDigest: true },
+    { name: 'invalid replacement catalog', replacement: 'Invalid substituted wording.', validDigest: false },
+  ]) {
+    await t.test(mutation.name, async () => {
+      const inputPath = path.join(os.tmpdir(), `issue-17-bound-input-${process.pid}-${Date.now()}-${Math.random()}`);
+      const piScript = `#!/bin/sh\ncat > ${inputPath}\nprintf '%s\\n' '{"status":"lifecycle-complete"}'\n`;
+      const value = await fixture({ scenarioReference: 'resolve-question@2', attentionRequired: true, piScript });
+      const wording = 'Preflight-bound decision wording.';
+      const authorityBasis = 'Standing authorization permits this attended decision.';
+      const digestValue = `sha256:${createHash('sha256').update(wording).digest('hex')}`;
+      const decisionCatalogPath = path.join(value.scratch, 'bound-decisions.json');
+      const catalog = {
+        contract: 'mdlm-demo-decision-catalog@1',
+        decisions: [{ assignment: value.assignment, wording, origin: 'operator-selected', authorityBasis, digest: digestValue }],
+      };
+      const catalogBytes = Buffer.from(JSON.stringify(catalog));
+      await writeFile(decisionCatalogPath, catalogBytes);
+      value.request.decisionCatalogPath = decisionCatalogPath;
+      const barrier = path.join(value.scratch, 'decision-catalog-barrier');
+      await mkdir(barrier);
+      const child = spawn(process.execPath, [cli, 'run'], {
+        cwd: root,
+        env: { ...process.env, MDLM_DEMO_TEST_DECISION_CATALOG_BARRIER: barrier },
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+      let stdout = '', stderr = '';
+      child.stdout.on('data', chunk => { stdout += chunk; });
+      child.stderr.on('data', chunk => { stderr += chunk; });
+      child.stdin.end(JSON.stringify(value.request));
+      const readyPath = path.join(barrier, 'ready');
+      let ready = false;
+      for (let attempt = 0; attempt < 200; attempt++) {
+        try { await stat(readyPath); ready = true; break; }
+        catch { await new Promise(resolve => setTimeout(resolve, 10)); }
+      }
+      assert.equal(ready, true, stderr);
+      assert.deepEqual(JSON.parse(await readFile(readyPath, 'utf8')), {
+        digest: `sha256:${createHash('sha256').update(catalogBytes).digest('hex')}`,
+      });
+      const replacementDigest = mutation.validDigest
+        ? `sha256:${createHash('sha256').update(mutation.replacement).digest('hex')}`
+        : `sha256:${'0'.repeat(64)}`;
+      await writeFile(decisionCatalogPath, JSON.stringify({
+        contract: 'mdlm-demo-decision-catalog@1',
+        decisions: [{
+          assignment: value.assignment,
+          wording: mutation.replacement,
+          origin: 'operator-selected',
+          authorityBasis,
+          digest: replacementDigest,
+        }],
+      }));
+      await writeFile(path.join(barrier, 'release'), 'release\n');
+      const status = await new Promise(resolve => child.once('close', resolve));
+
+      assert.equal(status, 0, stderr);
+      const output = JSON.parse(stdout);
+      assert.equal(output.status, 'completed');
+      assert.deepEqual(output.decision, { origin: 'operator-selected', authorityBasis, digest: digestValue });
+      assert.equal(await readFile(inputPath, 'utf8'), `${wording}\n`);
+    });
+  }
+});
+
 test('attended correction re-entry passes an operator-selected catalog decision to mdlm-pi', async () => {
   const inputPath = path.join(os.tmpdir(), `issue-213-pi-input-${process.pid}-${Date.now()}`);
   const piScript = `#!/bin/sh\ncat > ${inputPath}\nprintf '%s\\n' '{"status":"lifecycle-complete"}'\nexit 0\n`;
