@@ -92,7 +92,7 @@ export async function reconcile(request) {
   await requireCanonicalDirectory(context.repository);
   const release = await acquireRepositoryLock(context, 'checkpoint-reconciliation');
   try {
-    const authenticated = await authenticateTimedOutCheckpointReconciliation(request, context);
+    const authenticated = await authenticateStandaloneCheckpointReconciliation(request, context);
     const { journalPath, journalDirectory, journalDirectoryIdentity, existingJournal } = authenticated;
     const priorPhase = existingJournal?.phase ?? null;
     if (existingJournal === null) {
@@ -123,7 +123,7 @@ export async function reconcile(request) {
   }
 }
 
-async function authenticateTimedOutCheckpointReconciliation(request, context) {
+async function authenticateStandaloneCheckpointReconciliation(request, context) {
   const evidence = request.evidence;
   const requestEvidence = await requirePinnedEvidence(evidence.request, 'original run request');
   let originalRequest;
@@ -134,11 +134,9 @@ async function authenticateTimedOutCheckpointReconciliation(request, context) {
   validateOperator(originalRequest.operator);
   if (originalRequest.timeoutMs !== request.timeoutMs) throw new Error('reconciliation timeout differs from the original run request');
   const targetBinding = reconcileTargetBinding(request, originalRequest);
-  if (targetBinding.relocated) {
-    const expectedRequestPath = relocatedRunEvidencePath(targetBinding, originalRequest, 'request.json');
-    if (path.resolve(evidence.request.path) !== expectedRequestPath) {
-      throw new Error('original request pin does not match the authenticated relocation');
-    }
+  const recoveryShape = standaloneCheckpointRecoveryShape(originalRequest, targetBinding.relocated);
+  if (targetBinding.relocated && path.resolve(evidence.request.path) !== targetBinding.translate(recoveryShape.requestPath)) {
+    throw new Error('original request pin does not match the authenticated relocation');
   }
   const fromAssignment = originalRequest.assignmentId;
   const sourceDirectory = path.join(path.resolve(request.stateDirectory), 'assignments', assignmentKey(fromAssignment));
@@ -201,7 +199,7 @@ async function authenticateTimedOutCheckpointReconciliation(request, context) {
   let initialRepositoryIdentity;
   try { initialRepositoryIdentity = JSON.parse(repositoryIdentityEvidence.bytes.toString('utf8')); }
   catch { throw new Error('initial repository identity is not valid JSON'); }
-  const outerCommandEvidence = await authenticateOuterControllerEvidence(evidence.outerCommand, targetBinding, originalRequest);
+  const outerCommandEvidence = await authenticateOuterControllerEvidence(evidence.outerCommand, targetBinding, recoveryShape);
   const initialVerified = await verifySnapshot(evidence.initialSnapshot.directory, evidence.initialSnapshot.digest, false);
   const postVerified = await verifySnapshot(evidence.postSnapshot.directory, evidence.postSnapshot.digest, true);
   const initial = initialVerified.snapshot;
@@ -318,23 +316,57 @@ async function authenticateTimedOutCheckpointReconciliation(request, context) {
   ];
   if (typeof authorizedShim !== 'string' || !path.isAbsolute(authorizedShim) || path.basename(authorizedShim) !== path.basename(mdlmShim) ||
       !sameJson(second.record.argv, expectedWorker) || path.resolve(second.record.cwd) !== path.resolve(originalRequest.repository) ||
-      second.record.timeoutMs !== originalRequest.timeoutMs || second.record.timedOut !== true || second.record.exitStatus !== null ||
-      second.record.signal !== 'SIGKILL' || second.record.spawnError !== null || second.record.outputLimitExceeded !== false) {
-    throw new Error('durable worker command is not the exact timed-out SIGKILL attempt');
+      second.record.timeoutMs !== originalRequest.timeoutMs || second.record.spawnError !== null ||
+      second.record.outputLimitExceeded !== false) {
+    throw new Error('durable worker command differs from the authorized checkpoint attempt');
   }
-  const typedFailure = JSON.parse(second.stderr.toString('utf8'));
-  if (!typedFailure || !sameJson(Object.keys(typedFailure).sort(), ['details', 'error', 'status']) ||
-      typedFailure.status !== 'operational-failure' || typedFailure.error !== 'MDLM could not prepare the Assignment' ||
-      !sameJson(typedFailure.details, {
-        contract: 'mdlm-demo-reserved-stop@1', type: 'assignment-checkpoint', phase: 'before-worker',
-        assignment: toAssignment, scenario: checkpoint.scenario,
-        packetPath: path.join(originalSourceDirectory, 'shim', 'stops', `${toAssignment}.json`),
-        completedAssignment: fromAssignment,
-      })) throw new Error('durable worker stderr is not the exact typed A-to-B checkpoint stop');
+  let nonTimeoutSourceCommit = null;
+  if (recoveryShape.kind === 'timed-out') {
+    if (second.record.timedOut !== true || second.record.exitStatus !== null || second.record.signal !== 'SIGKILL') {
+      throw new Error('durable worker command is not the exact timed-out SIGKILL attempt');
+    }
+    const typedFailure = JSON.parse(second.stderr.toString('utf8'));
+    if (!typedFailure || !sameJson(Object.keys(typedFailure).sort(), ['details', 'error', 'status']) ||
+        typedFailure.status !== 'operational-failure' || typedFailure.error !== 'MDLM could not prepare the Assignment' ||
+        !sameJson(typedFailure.details, {
+          contract: 'mdlm-demo-reserved-stop@1', type: 'assignment-checkpoint', phase: 'before-worker',
+          assignment: toAssignment, scenario: checkpoint.scenario,
+          packetPath: path.join(originalSourceDirectory, 'shim', 'stops', `${toAssignment}.json`),
+          completedAssignment: fromAssignment,
+        })) throw new Error('durable worker stderr is not the exact typed A-to-B checkpoint stop');
+  } else {
+    if (second.record.timedOut !== false || second.record.exitStatus !== 1 || second.record.signal !== null) {
+      throw new Error('durable worker command is not the exact non-timeout exit-1 checkpoint attempt');
+    }
+    const operationalFailure = JSON.parse(second.stderr.toString('utf8'));
+    if (!sameJson(operationalFailure, {
+      contract: 'mdlm-pi-operational-failure@1', status: 'operational-failure',
+      error: { code: 'MDLM_CLIENT_ERROR', message: 'MDLM could not prepare the Assignment' },
+      telemetry: {
+        stopReason: null, providerError: null, retriesConsumed: null, provider: null,
+        model: null, completeAssignmentObserved: null,
+      },
+    })) throw new Error('durable worker stderr is not the exact non-timeout MDLM prepare failure');
+    const stdoutLines = second.stdout.toString('utf8').trimEnd().split('\n');
+    const sourceCommit = /^Committed ([0-9a-f]{40}): (.+)$/.exec(stdoutLines[1] ?? '');
+    nonTimeoutSourceCommit = sourceCommit?.[1] ?? null;
+    if (!sameJson(stdoutLines, [
+      `Assignment ${fromAssignment}: ${initial.assignment.scenarioReference}`,
+      `Committed ${nonTimeoutSourceCommit}: ${initial.assignment.scenarioReference}`,
+      `Committed ${post.lifecycleRepository.head}: create-review-context@1`,
+    ]) || nonTimeoutSourceCommit === post.lifecycleRepository.head) {
+      throw new Error('durable worker stdout does not prove the exact source and materialization publications');
+    }
+  }
 
   const authorizationEvidence = await requirePinnedEvidence(evidence.authorization, 'durable authorization');
   const authorization = JSON.parse(authorizationEvidence.bytes.toString('utf8'));
   requireStoredDurableAuthorization(authorization, originalSourceDirectory);
+  const validAuthorizationInput = recoveryShape.kind === 'timed-out'
+    ? authorization.command.input?.present === true &&
+      authorization.command.input.digest === sha256(Buffer.from(authorization.context.decisionInputBase64 ?? '', 'base64'))
+    : authorization.context.decisionInputBase64 === null && authorization.context.decisionEvidence === null &&
+      sameJson(authorization.command.input, { present: false, bytes: 0, digest: sha256(Buffer.alloc(0)) });
   if (authorization?.contract !== 'mdlm-demo-command-authorization@1' || authorization.purpose !== 'assignment-worker' ||
       !sameJson(authorization.command.argv, expectedWorker) || authorization.command.cwd !== originalRequest.repository ||
       authorization.command.timeoutMs !== originalRequest.timeoutMs || authorization.context?.assignment?.id !== fromAssignment ||
@@ -348,8 +380,7 @@ async function authenticateTimedOutCheckpointReconciliation(request, context) {
       authorization.context.shimDirectory !== path.join(originalSourceDirectory, 'shim') ||
       authorization.compatibilityEvidence?.index !== 2 ||
       authorization.compatibilityEvidence?.prefix !== path.join(originalSourceDirectory, 'command-evidence', 'command-000002') ||
-      authorization.command.input?.present !== true ||
-      authorization.command.input.digest !== sha256(Buffer.from(authorization.context.decisionInputBase64 ?? '', 'base64'))) {
+      !validAuthorizationInput) {
     throw new Error('durable authorization differs from the original request, snapshot, or Assignment A');
   }
   const resultEvidence = await requirePinnedEvidence(evidence.result, 'durable result');
@@ -377,9 +408,14 @@ async function authenticateTimedOutCheckpointReconciliation(request, context) {
   }
   const bDirectory = path.join(path.resolve(request.stateDirectory), 'assignments', assignmentKey(toAssignment));
   if (await optionalLstat(bDirectory) !== null) throw new Error('Assignment B already has private attempt evidence');
-  await authenticateLifecycleTransactionAncestry(context.repository, initial.lifecycleRepository.head, post.lifecycleRepository.head, {
-    firstAssignmentId: fromAssignment, commitCount: 4,
-  });
+  await authenticateLifecycleTransactionAncestry(context.repository, initial.lifecycleRepository.head, post.lifecycleRepository.head,
+    recoveryShape.kind === 'timed-out'
+      ? { firstAssignmentId: fromAssignment, commitCount: 4 }
+      : {
+          firstAssignmentId: fromAssignment, commitCount: 2, finalScenario: 'create-review-context@1',
+          finalAssignmentExcludes: [fromAssignment, toAssignment],
+          commits: [nonTimeoutSourceCommit, post.lifecycleRepository.head],
+        });
 
   const manifests = {
     request: evidenceManifest(requestEvidence),
@@ -401,7 +437,10 @@ async function authenticateTimedOutCheckpointReconciliation(request, context) {
     sourceScenario: initial.assignment.scenarioReference, package: processPackage,
     targetBinding: targetBinding.manifest,
     outerControllerCompletion: { completed: true, exitStatus: 1, internalRunnerResult: 'absent' },
-    timedOutCheckpointRecovery: manifests, evidence: manifests,
+    ...(recoveryShape.kind === 'timed-out'
+      ? { timedOutCheckpointRecovery: manifests }
+      : { nonTimeoutMaterializedCheckpointRecovery: manifests }),
+    evidence: manifests,
   };
   const journalName = `${assignmentKey(fromAssignment)}-to-${assignmentKey(toAssignment)}.json`;
   const journalInspection = await inspectStandaloneReconciliationDirectory(context.identityDirectory, journalName);
@@ -3677,16 +3716,21 @@ async function reconcilePriorAssignmentCheckpoint({ request, context, assignment
     if (existing === null && sameJson(global.lifecycleRepository, captured.lifecycleRepository)) {
       return { ok: true, result: null };
     }
-    if (existing?.document.timedOutCheckpointRecovery !== undefined) {
+    const standaloneRecovery = existing?.document.timedOutCheckpointRecovery !== undefined
+      ? 'timedOutCheckpointRecovery'
+      : existing?.document.nonTimeoutMaterializedCheckpointRecovery !== undefined
+        ? 'nonTimeoutMaterializedCheckpointRecovery'
+        : null;
+    if (standaloneRecovery !== null) {
       const retained = existing.document;
       if (retained.phase !== 'completed' || !sameJson(global.lifecycleRepository, captured.lifecycleRepository) ||
           !sameJson(retained.completedRepository, captured.lifecycleRepository) || retained.toAssignment !== assignmentId ||
           !sameProcessPackageIdentity(retained.package, processPackage)) {
-        throw new Error('standalone timed-out checkpoint reconciliation is incomplete or differs from current Assignment B');
+        throw new Error('standalone checkpoint reconciliation is incomplete or differs from current Assignment B');
       }
       const sourceDirectory = retained.sourceAssignmentDirectory;
-      if (typeof sourceDirectory !== 'string') throw new Error('standalone timed-out checkpoint reconciliation has no source Assignment directory');
-      await authenticateCompletedTimedOutReconciliation(retained);
+      if (typeof sourceDirectory !== 'string') throw new Error('standalone checkpoint reconciliation has no source Assignment directory');
+      await authenticateCompletedStandaloneReconciliation(retained, standaloneRecovery);
       await validateExistingCheckpointTransaction(sourceDirectory, retained, existing.path);
       return {
         ok: true,
@@ -3752,11 +3796,12 @@ async function reconcilePriorAssignmentCheckpoint({ request, context, assignment
   }
 }
 
-async function authenticateCompletedTimedOutReconciliation(journal) {
-  if (!sameJson(journal.evidence, journal.timedOutCheckpointRecovery)) {
-    throw new Error('standalone timed-out checkpoint reconciliation evidence differs');
+async function authenticateCompletedStandaloneReconciliation(journal, recoveryField) {
+  if (!['timedOutCheckpointRecovery', 'nonTimeoutMaterializedCheckpointRecovery'].includes(recoveryField) ||
+      !sameJson(journal.evidence, journal[recoveryField])) {
+    throw new Error('standalone checkpoint reconciliation evidence differs');
   }
-  const manifests = journal.timedOutCheckpointRecovery;
+  const manifests = journal[recoveryField];
   const authenticateManifest = async (manifest, label) => {
     if (!manifest || typeof manifest.path !== 'string' || !Number.isSafeInteger(manifest.bytes) ||
         !/^sha256:[0-9a-f]{64}$/.test(manifest.digest ?? '')) {
@@ -4062,6 +4107,9 @@ async function authenticateLifecycleTransactionAncestry(repository, oldHead, new
   if (expectedAssignment.commitCount !== undefined && commits.length !== expectedAssignment.commitCount) {
     throw new Error(`lifecycle transaction ancestry contains ${commits.length} commits instead of exactly ${expectedAssignment.commitCount}`);
   }
+  if (expectedAssignment.commits !== undefined && !sameJson(commits, expectedAssignment.commits)) {
+    throw new Error('lifecycle transaction ancestry differs from the durable command publications');
+  }
   let parent = oldHead;
   for (const commit of commits) {
     const identity = (await runGit(['rev-list', '--parents', '-n', '1', commit])).toString('utf8').trim().split(' ');
@@ -4099,6 +4147,12 @@ async function authenticateLifecycleTransactionAncestry(repository, oldHead, new
     if (commit === newHead && expectedAssignment.finalAssignmentId !== undefined &&
         execution.response.assignment !== expectedAssignment.finalAssignmentId) {
       throw new Error('final lifecycle transaction does not belong to the recovering Assignment');
+    }
+    if (commit === newHead && expectedAssignment.finalScenario !== undefined && scenario !== expectedAssignment.finalScenario) {
+      throw new Error('final lifecycle transaction is not the exact package materialization Scenario');
+    }
+    if (commit === newHead && expectedAssignment.finalAssignmentExcludes?.includes(execution.response.assignment)) {
+      throw new Error('final package materialization transaction attempted Assignment A or B');
     }
     parent = commit;
   }
@@ -4404,13 +4458,33 @@ function reconcileTargetBinding(request, originalRequest) {
   };
 }
 
-async function authenticateOuterControllerEvidence(pins, targetBinding, originalRequest) {
+function standaloneCheckpointRecoveryShape(originalRequest, relocated) {
+  const evidenceDirectory = path.resolve(originalRequest.evidenceDirectory);
+  const parent = path.dirname(evidenceDirectory);
+  const timedOut = /^run-([0-9]+)-snapshot$/.exec(path.basename(evidenceDirectory));
+  if (timedOut !== null) {
+    return {
+      kind: 'timed-out',
+      requestPath: path.join(parent, `${timedOut[1]}-request.json`),
+      outerPaths: Object.fromEntries(['stdout', 'stderr', 'exit'].map(name => [name, path.join(parent, `${timedOut[1]}-run.${name}`)])),
+    };
+  }
+  const nonTimeout = /^run-([0-9]+)-snapshots$/.exec(path.basename(evidenceDirectory));
+  if (nonTimeout !== null && nonTimeout[1] === '001' && originalRequest.signal === 'fresh-assignment') {
+    return {
+      kind: 'non-timeout-materialized',
+      requestPath: path.join(parent, '004-run-001-request.json'),
+      outerPaths: Object.fromEntries(['stdout', 'stderr', 'exit'].map(name => [name, path.join(parent, `012-run-001.runner.${name}`)])),
+    };
+  }
+  if (!relocated) return { kind: 'timed-out', requestPath: null, outerPaths: null };
+  throw new Error('reconciliation evidence directory and signal do not identify a supported recovery shape');
+}
+
+async function authenticateOuterControllerEvidence(pins, targetBinding, recoveryShape) {
   if (targetBinding.relocated) {
-    const match = /^run-([0-9]+)-snapshot$/.exec(path.basename(originalRequest.evidenceDirectory));
-    if (match === null) throw new Error('relocated reconciliation evidence directory does not identify its original run');
-    const prefix = match[1];
     for (const name of ['stdout', 'stderr', 'exit']) {
-      const expected = relocatedRunEvidencePath(targetBinding, originalRequest, `run.${name}`, prefix);
+      const expected = targetBinding.translate(recoveryShape.outerPaths[name]);
       if (path.resolve(pins[name].path) !== expected) {
         throw new Error(`outer ${name} pin does not match the authenticated relocation`);
       }
@@ -4427,13 +4501,6 @@ async function authenticateOuterControllerEvidence(pins, targetBinding, original
     throw new Error('outer controller stderr, exit status, or completion evidence differs from the preserved failed command');
   }
   return authenticated;
-}
-
-function relocatedRunEvidencePath(targetBinding, originalRequest, suffix, prefix = null) {
-  const match = /^run-([0-9]+)-snapshot$/.exec(path.basename(originalRequest.evidenceDirectory));
-  const run = prefix ?? match?.[1];
-  if (run === undefined) throw new Error('relocated reconciliation evidence directory does not identify its original run');
-  return targetBinding.translate(path.join(path.dirname(originalRequest.evidenceDirectory), `${run}-${suffix}`));
 }
 
 async function requireCanonicalPathAbsent(file, trustedRoot, label) {
@@ -4509,6 +4576,8 @@ function reconciliationEvidence(value) {
     ...(value.checkpointRecovery === undefined ? {} : { checkpointRecovery: value.checkpointRecovery }),
     ...(value.orphanedCheckpointRecovery === undefined ? {} : { orphanedCheckpointRecovery: value.orphanedCheckpointRecovery }),
     ...(value.timedOutCheckpointRecovery === undefined ? {} : { timedOutCheckpointRecovery: value.timedOutCheckpointRecovery }),
+    ...(value.nonTimeoutMaterializedCheckpointRecovery === undefined
+      ? {} : { nonTimeoutMaterializedCheckpointRecovery: value.nonTimeoutMaterializedCheckpointRecovery }),
     evidence: value.evidence,
   };
 }
@@ -4533,6 +4602,8 @@ function completedCheckpointTransaction(journal, journalPath) {
     ...(journal.checkpointRecovery === undefined ? {} : { checkpointRecovery: journal.checkpointRecovery }),
     ...(journal.orphanedCheckpointRecovery === undefined ? {} : { orphanedCheckpointRecovery: journal.orphanedCheckpointRecovery }),
     ...(journal.timedOutCheckpointRecovery === undefined ? {} : { timedOutCheckpointRecovery: journal.timedOutCheckpointRecovery }),
+    ...(journal.nonTimeoutMaterializedCheckpointRecovery === undefined
+      ? {} : { nonTimeoutMaterializedCheckpointRecovery: journal.nonTimeoutMaterializedCheckpointRecovery }),
   };
 }
 

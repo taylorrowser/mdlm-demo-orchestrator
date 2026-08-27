@@ -1,0 +1,23 @@
+{
+  "argv": [
+    "/home/ubuntu/git/mdlm-successor-demos/.tooling-89230a0747ac5a701ba3929f5ec0345701ae387f-ffd5e70c545449850900ec8ceaae68c18aaf17b0/node_modules/mdlm/dist/mdlm.js",
+    "assignment",
+    "show",
+    "7086ad7d-93c6-4c0a-be11-6189377fd536",
+    "--json"
+  ],
+  "cwd": "/home/ubuntu/git/mdlm-successor-demos/operations/json-max-depth-ops-002/repository",
+  "startedAt": "2026-08-27T15:58:06.360Z",
+  "completedAt": "2026-08-27T15:58:06.528Z",
+  "timeoutMs": 900000,
+  "timedOut": false,
+  "outputLimitExceeded": false,
+  "observedOutputBytes": 204,
+  "exitStatus": 0,
+  "signal": null,
+  "spawnError": null,
+  "stdoutBase64": "ewogICJvayI6IHRydWUsCiAgImNvbW1hbmQiOiAiYXNzaWdubWVudC5zaG93IiwKICAiY29udHJhY3QiOiAibWRsbS1hc3NpZ25tZW50LXN0YXRlQDEiLAogICJhc3NpZ25tZW50IjogewogICAgImlkIjogIjcwODZhZDdkLTkzYzYtNGMwYS1iZTExLTYxODkzNzdmZDUzNiIKICB9LAogICJzZWxlY3RlZCI6IGZhbHNlLAogICJkaWFnbm9zdGljcyI6IFtdCn0K",
+  "stderrBase64": "",
+  "stdoutSha256": "sha256:f5effd1e775504eef3b9ece7876aa3adf4446ca3ce2639f9f2bb63a70440ea5c",
+  "stderrSha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

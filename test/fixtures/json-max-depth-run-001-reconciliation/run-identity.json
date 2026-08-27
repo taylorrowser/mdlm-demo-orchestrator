@@ -1,0 +1,66 @@
+{
+  "contract": "mdlm-demo-run-identity@5",
+  "operator": {
+    "provider": "openai-codex",
+    "model": "gpt-5.6-sol",
+    "thinking": "high"
+  },
+  "mdlmPiCommandTimeoutMs": 600000,
+  "mdlmPiAssignmentTimeoutMs": 840000,
+  "processPackage": {
+    "reference": "mdlm-bootstrap@0.74.0",
+    "digest": "sha256:e77a022a2cb2d6e7d78bccba753b5d117d4384dce5621d31a397a861edf8878f",
+    "language": "mdlm-expression@1"
+  },
+  "source": {
+    "repository": "/home/ubuntu/git/mdlm-release-worktrees/mdlm-89230a0747ac5a701ba3929f5ec0345701ae387f",
+    "commit": "89230a0747ac5a701ba3929f5ec0345701ae387f",
+    "tree": "f8dab57c369efdad037e664da79de0b0825469e9"
+  },
+  "packageArtifact": {
+    "realpath": "/home/ubuntu/git/mdlm-successor-demos/.packages/candidates/89230a0747ac5a701ba3929f5ec0345701ae387f-ffd5e70c545449850900ec8ceaae68c18aaf17b0/mdlm-0.0.0.tgz",
+    "digest": "sha256:21c4d905d2b417674b6073a492e7d6c78597d226ffc7d66ac22a5fa580288bce",
+    "bytes": 3780694
+  },
+  "piPackageArtifact": {
+    "realpath": "/home/ubuntu/git/mdlm-successor-demos/.packages/candidates/89230a0747ac5a701ba3929f5ec0345701ae387f-ffd5e70c545449850900ec8ceaae68c18aaf17b0/mdlm-pi-0.0.0.tgz",
+    "digest": "sha256:10ab20125e587df9f7d35c3654b55a916069dab4b3d0650497693fec856cc533",
+    "bytes": 102576
+  },
+  "tooling": {
+    "contract": "mdlm-demo-tooling-tree@1",
+    "digest": "sha256:d94cfa18cf08a198cf795bd18c1f0e3ac8bc9e83b39d1f2832ecb9eb6a5ab7fe",
+    "entries": 17303,
+    "files": 15764,
+    "symlinks": 12,
+    "bytes": 124663029,
+    "lock": {
+      "realpath": "/home/ubuntu/git/mdlm-successor-demos/.tooling-89230a0747ac5a701ba3929f5ec0345701ae387f-ffd5e70c545449850900ec8ceaae68c18aaf17b0/package-lock.json",
+      "digest": "sha256:44752c6331772897f9014ffd2896cb9a4e4b633eaf9a31b4b2f0885f5ee2b6af",
+      "bytes": 77452
+    }
+  },
+  "tools": {
+    "mdlm": {
+      "realpath": "/home/ubuntu/git/mdlm-successor-demos/.tooling-89230a0747ac5a701ba3929f5ec0345701ae387f-ffd5e70c545449850900ec8ceaae68c18aaf17b0/node_modules/mdlm/dist/mdlm.js",
+      "digest": "sha256:c8117c43233d3735ee3cdc39d6ceba3aaf2cb3b395e93a67429513d816c82b2f",
+      "bytes": 998
+    },
+    "mdlmPi": {
+      "realpath": "/home/ubuntu/git/mdlm-successor-demos/.tooling-89230a0747ac5a701ba3929f5ec0345701ae387f-ffd5e70c545449850900ec8ceaae68c18aaf17b0/node_modules/mdlm-pi/dist/cli.js",
+      "digest": "sha256:5ffbbf60ba44e7ab2ebab261c93fa6385cb98cb0829002abb2c0acc23c37f3c1",
+      "bytes": 6920
+    }
+  },
+  "qualificationHarness": {
+    "repository": "/home/ubuntu/git/mdlm-release-worktrees/harness-623bba1c1cf13a7460862dc398b4cae38e0ed907",
+    "commit": "623bba1c1cf13a7460862dc398b4cae38e0ed907",
+    "tree": "0f70fce58a25840c18fe802213fd601c18539428",
+    "repositoryLocator": "https://github.com/taylorrowser/mdlm-phase1-qualification-harness.git",
+    "manifest": {
+      "realpath": "/home/ubuntu/git/mdlm-release-worktrees/harness-623bba1c1cf13a7460862dc398b4cae38e0ed907/manifest.json",
+      "digest": "sha256:9dad7f7773ca0b7bdeb9a06ce25ddf0253b780c786ea244239627902c811b027",
+      "bytes": 4519
+    }
+  }
+}

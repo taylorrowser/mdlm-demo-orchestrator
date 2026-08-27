@@ -1,0 +1,16 @@
+{
+  "contract": "mdlm-demo-shim-config@1",
+  "realMdlm": "/home/ubuntu/git/mdlm-successor-demos/.tooling-89230a0747ac5a701ba3929f5ec0345701ae387f-ffd5e70c545449850900ec8ceaae68c18aaf17b0/node_modules/mdlm/dist/mdlm.js",
+  "allowedAssignment": "7086ad7d-93c6-4c0a-be11-6189377fd536",
+  "package": {
+    "reference": "mdlm-bootstrap@0.74.0",
+    "digest": "sha256:e77a022a2cb2d6e7d78bccba753b5d117d4384dce5621d31a397a861edf8878f",
+    "language": "mdlm-expression@1"
+  },
+  "repository": {
+    "head": "96e3dc18aee3a7dc1fe752eb63bd7af528a6307e",
+    "trackedState": "sha256:cd336eb4082ebc7b07f5c0eb052f81ad28c0770f9c2a2d67ad1f5b3145c092eb"
+  },
+  "stopDirectory": "/home/ubuntu/git/mdlm-successor-demos/operations/json-max-depth-ops-002/private-state/assignments/7086ad7d-93c6-4c0a-be11-6189377fd536-b40783d09378/shim/stops",
+  "timeoutMs": 900000
+}

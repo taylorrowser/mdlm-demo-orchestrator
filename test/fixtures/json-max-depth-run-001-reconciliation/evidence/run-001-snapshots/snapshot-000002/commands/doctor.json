@@ -1,0 +1,21 @@
+{
+  "argv": [
+    "/home/ubuntu/git/mdlm-successor-demos/.tooling-89230a0747ac5a701ba3929f5ec0345701ae387f-ffd5e70c545449850900ec8ceaae68c18aaf17b0/node_modules/mdlm/dist/mdlm.js",
+    "doctor",
+    "--json"
+  ],
+  "cwd": "/home/ubuntu/git/mdlm-successor-demos/operations/json-max-depth-ops-002/repository",
+  "startedAt": "2026-08-27T15:58:03.087Z",
+  "completedAt": "2026-08-27T15:58:04.736Z",
+  "timeoutMs": 900000,
+  "timedOut": false,
+  "outputLimitExceeded": false,
+  "observedOutputBytes": 616,
+  "exitStatus": 0,
+  "signal": null,
+  "spawnError": null,
+  "stdoutBase64": "ewogICJvayI6IHRydWUsCiAgImNvbW1hbmQiOiAiZG9jdG9yIiwKICAicGFja2FnZSI6IHsKICAgICJpZCI6ICJtZGxtLWJvb3RzdHJhcCIsCiAgICAidmVyc2lvbiI6ICIwLjc0LjAiLAogICAgInJlZmVyZW5jZSI6ICJtZGxtLWJvb3RzdHJhcEAwLjc0LjAiLAogICAgImxhbmd1YWdlIjogIm1kbG0tZXhwcmVzc2lvbkAxIiwKICAgICJkaWdlc3QiOiAic2hhMjU2OmU3N2EwMjJhMmNiMmQ2ZTdkNzhiY2NiYTc1M2I1ZDExN2Q0Mzg0ZGNlNTYyMWQzMWEzOTdhODYxZWRmODg3OGYiCiAgfSwKICAiYmFzZWxpbmVSZXBvc2l0b3J5VmVyaWZpY2F0aW9uIjogewogICAgInZlcmlmaWVkQmFzZWxpbmVzIjogMSwKICAgICJwcm9jZXNzRHJpZnQiOiAwCiAgfSwKICAiaW5kZXgiOiB7CiAgICAicmVidWlsdCI6IGZhbHNlLAogICAgImRhdGEiOiAzLAogICAgInBhdGgiOiAiLmxpZmVjeWNsZS9nZW5lcmF0ZWQvaW5kZXhlcy9kYXRhLmpzb24iCiAgfSwKICAicmVwb3J0IjogewogICAgInJlYnVpbHQiOiBmYWxzZSwKICAgICJkYXRhIjogMywKICAgICJwYXRoIjogIi5saWZlY3ljbGUvZ2VuZXJhdGVkL3JlcG9ydHMvbGlmZWN5Y2xlLmpzb24iCiAgfSwKICAiZGlhZ25vc3RpY3MiOiBbXQp9Cg==",
+  "stderrBase64": "",
+  "stdoutSha256": "sha256:ba52c4d31fcaa6d5e9789e4a3cc1a9094289bcf5e33b99ea102632a871c43a0b",
+  "stderrSha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

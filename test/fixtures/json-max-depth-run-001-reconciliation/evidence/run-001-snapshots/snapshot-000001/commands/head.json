@@ -1,0 +1,21 @@
+{
+  "argv": [
+    "git",
+    "rev-parse",
+    "HEAD^{commit}"
+  ],
+  "cwd": "/home/ubuntu/git/mdlm-successor-demos/operations/json-max-depth-ops-002/repository",
+  "startedAt": "2026-08-27T15:57:17.835Z",
+  "completedAt": "2026-08-27T15:57:17.838Z",
+  "timeoutMs": 900000,
+  "timedOut": false,
+  "outputLimitExceeded": false,
+  "observedOutputBytes": 41,
+  "exitStatus": 0,
+  "signal": null,
+  "spawnError": null,
+  "stdoutBase64": "OTZlM2RjMThhZWUzYTdkYzFmZTc1MmViNjNiZDdhZjUyOGE2MzA3ZQo=",
+  "stderrBase64": "",
+  "stdoutSha256": "sha256:5db58acf1d688f0b5a3838b4fa47c1834bc70bf3b7c3ce71b9ae069dab1c916e",
+  "stderrSha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}
