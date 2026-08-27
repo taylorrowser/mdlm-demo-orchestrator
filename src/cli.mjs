@@ -6,6 +6,17 @@ import {
 import { snapshot } from './evidence.mjs';
 import { reconcile, run } from './orchestrator.mjs';
 
+const publicCommands = [
+  'snapshot',
+  'classify',
+  'decision-catalog-build',
+  'decision-catalog-validate',
+  'run',
+  'resume',
+  'reconcile',
+];
+const usage = `mdlm-demo-runner ${publicCommands.join('|')} [--input file]`;
+
 async function readRequest(args, maxBytes) {
   if (args.length === 0) {
     const chunks = [];
@@ -28,6 +39,10 @@ async function readRequest(args, maxBytes) {
 
 async function main(args) {
   const [command, ...rest] = args;
+  const helpRequested = (command === '--help' && rest.length === 0)
+    || (publicCommands.includes(command) && rest.length === 1 && rest[0] === '--help');
+  if (helpRequested) return { contract: 'mdlm-demo-help@1', usage, commands: publicCommands };
+  if (!publicCommands.includes(command)) throw new Error(`usage: ${usage}`);
   const decisionCatalogCommand = command === 'decision-catalog-build' || command === 'decision-catalog-validate';
   const request = await readRequest(rest, decisionCatalogCommand ? decisionCatalogLimits.buildRequestBytes : undefined);
   if (command === 'classify') return classify(request);
@@ -36,13 +51,15 @@ async function main(args) {
   if (command === 'snapshot') return snapshot(request);
   if (command === 'run' || command === 'resume') return run(request, command);
   if (command === 'reconcile') return reconcile(request);
-  throw new Error('usage: mdlm-demo-runner snapshot|classify|decision-catalog-build|decision-catalog-validate|run|resume|reconcile [--input file]');
+  throw new Error(`usage: ${usage}`);
 }
 
-try {
-  const output = await main(process.argv.slice(2));
-  process.stdout.write(`${JSON.stringify(output)}\n`);
-} catch (error) {
-  process.stderr.write(`${JSON.stringify({ contract: 'mdlm-demo-error@1', error: error instanceof Error ? error.message : String(error) })}\n`);
-  process.exitCode = 1;
+export async function executeCli(args) {
+  try {
+    const output = await main(args);
+    process.stdout.write(`${JSON.stringify(output)}\n`);
+  } catch (error) {
+    process.stderr.write(`${JSON.stringify({ contract: 'mdlm-demo-error@1', error: error instanceof Error ? error.message : String(error) })}\n`);
+    process.exitCode = 1;
+  }
 }
