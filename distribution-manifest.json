@@ -75,8 +75,8 @@
     },
     {
       "path": "src/evidence.mjs",
-      "bytes": 32728,
-      "sha256": "66f1af61056b2960b4331086bc8e5f846bde7ec558a2f961d059a26f77c63392"
+      "bytes": 33763,
+      "sha256": "f80a2a1e4ed2276ae58302b337f316991e805d51822b35dfae73ae4fcd3b0e83"
     },
     {
       "path": "src/orchestrator.mjs",
@@ -95,8 +95,8 @@
     },
     {
       "path": "src/run-request.mjs",
-      "bytes": 11254,
-      "sha256": "8b45b90ea9c34d30dd76fae19bd7d1094270ebe0fc6298e1d234a0a9d5a0e9e5"
+      "bytes": 11368,
+      "sha256": "e0cc06d2e9c0fe8c41f74f3fb634ef6cc46eacd34249702b7732d011edabfe92"
     },
     {
       "path": "src/shim-cli.mjs",

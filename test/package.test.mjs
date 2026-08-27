@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { execFile, spawn } from 'node:child_process';
+import { execFile, spawn, spawnSync } from 'node:child_process';
 import { gzipSync } from 'node:zlib';
 import {
   chmod, copyFile, cp, lstat, mkdtemp, mkdir, readFile, readdir, readlink, realpath, rename, rm,
@@ -300,6 +300,17 @@ test('npm package has an externally authenticated, source-independent, read-only
     assert.equal(smoke.stdout, expectedHelp, args.join(' '));
     assert.equal(smoke.stderr, '', args.join(' '));
   }
+  const preflightFailure = spawnSync(process.execPath, [
+    '--permission', `--allow-fs-read=${installRoot}`, publicExecutable, 'preflight',
+  ], { cwd: installRoot, input: '', encoding: 'utf8' });
+  assert.equal(preflightFailure.status, 1, preflightFailure.stderr);
+  assert.equal(preflightFailure.stderr, '');
+  assert.deepEqual(JSON.parse(preflightFailure.stdout), {
+    contract: 'mdlm-demo-preflight-result@1',
+    status: 'FAIL',
+    checks: [{ name: 'request', ok: false, error: 'preflight request is not valid JSON at character offset 0' }],
+    limitation: 'A PASS authenticates only supplied bytes against supplied pins; it neither proves nor authorizes invocation, Assignment, publication, lifecycle transition, Review, or qualification.',
+  });
   assert.deepEqual(await listTree(packageRoot), beforeHelp);
 });
 

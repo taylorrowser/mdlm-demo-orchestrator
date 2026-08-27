@@ -84,7 +84,10 @@ function validateProvenance(value) {
   validateGitPin(value.source, 'provenance.source');
   validateArtifactPin(value.package, 'provenance.package');
   validateArtifactPin(value.piPackage, 'provenance.piPackage');
-  if (value.git !== undefined) validatePathPin(value.git, 'provenance.git');
+  if (value.git !== undefined) {
+    validatePathPin(value.git, 'provenance.git');
+    if (value.git.path !== '/usr/bin/git') throw new Error('provenance.git.path must be /usr/bin/git');
+  }
 
   exactObject(value.tooling, ['digest', 'lock', 'root'], 'provenance.tooling');
   requireAbsolutePath(value.tooling.root, 'provenance.tooling.root');

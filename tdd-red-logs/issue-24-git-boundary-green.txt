@@ -1,0 +1,16 @@
+Command: node --test --test-name-pattern='caller-selected Git executable|Git executable hashing' test/preflight.test.mjs
+Exit status: 0
+
+✔ preflight rejects a caller-selected Git executable without running it
+✔ Git executable hashing is bounded when the opened file grows
+ℹ tests 2
+ℹ suites 0
+ℹ pass 2
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+
+The public request schema now permits only /usr/bin/git with an optional
+additional digest pin. Descriptor hashing reads incrementally through a hard
+byte cap and rejects concurrent growth before executing Git.

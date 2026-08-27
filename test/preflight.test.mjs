@@ -605,6 +605,45 @@ test('preflight binds an optional expected Git executable digest', async t => {
   assert.match(resultOf(execution).checks.find(check => check.name === 'provenance').error, /Git executable differs/);
 });
 
+test('preflight rejects a caller-selected Git executable without running it', async t => {
+  const value = await fixture();
+  t.after(() => rm(value.scratch, { recursive: true, force: true }));
+  const marker = path.join(value.scratch, 'caller-git-ran');
+  const fakeGit = path.join(value.scratch, 'caller-git');
+  await writeFile(fakeGit, `#!/bin/sh\nprintf ran > '${marker}'\nexit 0\n`);
+  await chmod(fakeGit, 0o755);
+  value.runRequest.provenance.git = { path: fakeGit, digest: await fileDigest(fakeGit) };
+  const bytes = await value.writeRunRequest();
+  value.preflightRequest.input.digest = digest(bytes);
+
+  const execution = invoke(value.preflightRequest, value.scratch);
+  assert.equal(execution.status, 1);
+  assert.match(resultOf(execution).checks.find(check => check.name === 'run-request').error, /\/usr\/bin\/git/);
+  await assert.rejects(readFile(marker), { code: 'ENOENT' });
+});
+
+test('Git executable hashing is bounded when the opened file grows', async t => {
+  const value = await fixture();
+  t.after(() => rm(value.scratch, { recursive: true, force: true }));
+  const marker = path.join(value.scratch, 'grown-git-ran');
+  const fakeGit = path.join(value.scratch, 'grown-git');
+  await writeFile(fakeGit, `#!/bin/sh\nprintf ran > '${marker}'\nexit 0\n`);
+  await chmod(fakeGit, 0o755);
+  const maximumBytes = (await readFile(fakeGit)).length + 8;
+  let grew = false;
+
+  await assert.rejects(inspectProvenance(value.runRequest.provenance, 30_000, {
+    gitPath: fakeGit,
+    gitExecutableMaxBytes: maximumBytes,
+    afterGitExecutableStat: async () => {
+      grew = true;
+      await writeFile(fakeGit, 'x'.repeat(128), { flag: 'a' });
+    },
+  }), new RegExp(`Git executable exceeds ${maximumBytes}-byte limit`));
+  assert.equal(grew, true);
+  await assert.rejects(readFile(marker), { code: 'ENOENT' });
+});
+
 test('preflight disables repository-local fsmonitor execution', async t => {
   const value = await fixture();
   t.after(() => rm(value.scratch, { recursive: true, force: true }));

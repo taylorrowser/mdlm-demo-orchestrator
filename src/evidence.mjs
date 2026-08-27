@@ -410,21 +410,27 @@ async function gitIdentity(value, timeoutMs, label, gitBinding, options = {}) {
 }
 
 async function openGitExecutable(expected, options = {}) {
-  const requestedPath = expected?.path ?? options.gitPath ?? '/usr/bin/git';
+  const requestedPath = options.gitPath ?? '/usr/bin/git';
   if (!path.isAbsolute(requestedPath)) throw new Error('Git executable path must be absolute');
   const configuredPath = path.resolve(requestedPath);
+  if (expected?.path !== undefined && expected.path !== configuredPath) {
+    throw new Error(`Git executable path must be ${configuredPath}`);
+  }
+  const maximumBytes = options.gitExecutableMaxBytes ?? 67_108_864;
+  if (!Number.isSafeInteger(maximumBytes) || maximumBytes < 0) throw new Error('Git executable byte limit is invalid');
   let handle;
   try {
     handle = await (options.openGit ?? open)(configuredPath, constants.O_RDONLY | constants.O_NOFOLLOW);
     const opened = await handle.stat({ bigint: true });
     if (!opened.isFile()) throw new Error(`Git executable is not a regular file: ${configuredPath}`);
     if ((Number(opened.mode) & 0o111) === 0) throw new Error(`Git executable is not executable: ${configuredPath}`);
-    if (opened.size > 67_108_864n) throw new Error('Git executable exceeds 67108864-byte limit');
+    if (opened.size > BigInt(maximumBytes)) throw new Error(`Git executable exceeds ${maximumBytes}-byte limit`);
     const descriptorTarget = await realpath(`/proc/self/fd/${handle.fd}`);
     if (descriptorTarget !== configuredPath) throw new Error(`Git executable has a symbolic-link path component: ${configuredPath}`);
     const current = await lstat(configuredPath, { bigint: true });
     if (!sameIdentity(opened, current)) throw new Error(`Git executable changed while it was opened: ${configuredPath}`);
-    const bytes = await handle.readFile();
+    await options.afterGitExecutableStat?.({ handle, path: configuredPath, information: opened });
+    const bytes = await readGitExecutableWithinLimit(handle, maximumBytes);
     const digest = sha256(bytes);
     if (expected?.digest !== undefined && digest !== expected.digest) throw new Error('Git executable differs from provenance.git.digest');
     const after = await handle.stat({ bigint: true });
@@ -445,6 +451,20 @@ async function openGitExecutable(expected, options = {}) {
   } catch (error) {
     await handle?.close();
     throw error;
+  }
+}
+
+async function readGitExecutableWithinLimit(handle, maximumBytes) {
+  const chunks = [];
+  let total = 0;
+  for (;;) {
+    const remaining = maximumBytes + 1 - total;
+    const buffer = Buffer.allocUnsafe(Math.min(64 * 1024, remaining));
+    const { bytesRead } = await handle.read(buffer, 0, buffer.length, null);
+    if (bytesRead === 0) return Buffer.concat(chunks, total);
+    total += bytesRead;
+    if (total > maximumBytes) throw new Error(`Git executable exceeds ${maximumBytes}-byte limit`);
+    chunks.push(Buffer.from(buffer.subarray(0, bytesRead)));
   }
 }
 
