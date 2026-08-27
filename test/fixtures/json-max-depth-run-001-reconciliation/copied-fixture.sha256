@@ -13,4 +13,5 @@ bde5cdbea3c11e85b704325a36826d99cb3ab9b8fd2f877348bf05dfa3277b32  assignment-a/s
 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  outer-command/012-run-001.runner.stdout
 2ab3869bb7fd1dadcbdea7ad89fd2b3f68eec2124d85370931b557c1bf7787e2  outer-command/012-run-001.runner.stderr
 4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865  outer-command/012-run-001.runner.exit
+7f60baf8dc4dcfcbad9dac1b8e03dbb54b043ad9a4fb8032182f580b7392f025  outer-command/012-run-001.runner.command.json
 e277f65c97ce893753715b4abc1f57d14ceea96ceb1223738d5cf0750ec99e04  repository.bundle

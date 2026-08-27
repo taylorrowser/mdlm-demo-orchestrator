@@ -514,30 +514,35 @@ test('successful public reconcile requires a separate ordinary public B run', as
   assert.equal(JSON.parse(await readFile(path.join(bDirectory, 'durable-command', 'result.json'))).contract, 'mdlm-demo-command-result@1');
 });
 
-test('reconcile resumes atomically at every durable boundary', async () => {
-  const seams = [
-    'authenticated:after-rename',
-    'checkpoint-reconciliation-global:after-rename',
-    'boundary-advanced:after-rename',
-    'checkpoint-reconciliation-assignment:after-rename',
-    'completed:after-rename',
+test('timeout recovery resumes at paired temp-sync and rename crashes for its five replacements', async t => {
+  const replacements = [
+    'authenticated',
+    'checkpoint-reconciliation-global',
+    'boundary-advanced',
+    'checkpoint-reconciliation-assignment',
+    'completed',
   ];
-  for (const seam of seams) {
-    const value = await run046Fixture();
-    const crashed = exec(process.execPath, [cli, 'reconcile'], root, JSON.stringify(value.request), {
-      ...process.env, MDLM_DEMO_TEST_CRASH: seam,
-    });
-    assert.equal(crashed.status, 86, `${seam}: ${crashed.stderr}`);
+  for (const replacement of replacements) {
+    for (const boundary of ['after-temp-sync', 'after-rename']) {
+      const seam = `${replacement}:${boundary}`;
+      await t.test(seam, async () => {
+        const value = await run046Fixture();
+        const crashed = exec(process.execPath, [cli, 'reconcile'], root, JSON.stringify(value.request), {
+          ...process.env, MDLM_DEMO_TEST_CRASH: seam,
+        });
+        assert.equal(crashed.status, 86, `${seam}: ${crashed.stderr}`);
 
-    const resumed = exec(process.execPath, [cli, 'reconcile'], root, JSON.stringify(value.request));
-    assert.equal(resumed.status, 0, `${seam}: ${resumed.stderr}`);
-    assert.match(JSON.parse(resumed.stdout).status, /^(?:reconciled|already-reconciled)$/);
-    const trusted = JSON.parse(await readFile(path.join(value.identityDirectory, 'repository-identity.json')));
-    assert.equal(trusted.lifecycleRepository.head, 'ad5db41378473822d33d984e90da3e1658bdb12b', seam);
-    assert.equal(JSON.parse(await readFile(path.join(value.sourceDirectory, 'transaction.json'))).phase, 'completed', seam);
-    const journals = await readdir(path.join(value.identityDirectory, 'checkpoint-reconciliations'));
-    assert.equal(journals.length, 1, seam);
-    assert.equal(JSON.parse(await readFile(path.join(value.identityDirectory, 'checkpoint-reconciliations', journals[0]))).phase, 'completed', seam);
+        const resumed = exec(process.execPath, [cli, 'reconcile'], root, JSON.stringify(value.request));
+        assert.equal(resumed.status, 0, `${seam}: ${resumed.stderr}`);
+        assert.match(JSON.parse(resumed.stdout).status, /^(?:reconciled|already-reconciled)$/);
+        const trusted = JSON.parse(await readFile(path.join(value.identityDirectory, 'repository-identity.json')));
+        assert.equal(trusted.lifecycleRepository.head, 'ad5db41378473822d33d984e90da3e1658bdb12b', seam);
+        assert.equal(JSON.parse(await readFile(path.join(value.sourceDirectory, 'transaction.json'))).phase, 'completed', seam);
+        const journals = await readdir(path.join(value.identityDirectory, 'checkpoint-reconciliations'));
+        assert.equal(journals.length, 1, seam);
+        assert.equal(JSON.parse(await readFile(path.join(value.identityDirectory, 'checkpoint-reconciliations', journals[0]))).phase, 'completed', seam);
+      });
+    }
   }
 });
 
@@ -653,9 +658,14 @@ test('authenticated intent is durable before any trusted boundary or transaction
   assert.equal(crashed.status, 86, crashed.stderr);
   assert.deepEqual(await readFile(path.join(value.identityDirectory, 'repository-identity.json')), initialIdentity);
   assert.equal(await stat(path.join(value.sourceDirectory, 'transaction.json')).then(() => true, () => false), false);
-  const journals = await readdir(path.join(value.identityDirectory, 'checkpoint-reconciliations'));
-  assert.equal(journals.length, 1);
-  assert.equal(JSON.parse(await readFile(path.join(value.identityDirectory, 'checkpoint-reconciliations', journals[0]))).phase, 'authenticated');
+  const reconciliationDirectory = path.join(value.identityDirectory, 'checkpoint-reconciliations');
+  const entries = await readdir(reconciliationDirectory);
+  const journal = entries.find(name => !name.startsWith('.'));
+  const pendingIntent = entries.find(name => name.endsWith('.durable-replacement.json'));
+  assert.ok(journal);
+  assert.ok(pendingIntent);
+  assert.equal(JSON.parse(await readFile(path.join(reconciliationDirectory, journal))).phase, 'authenticated');
+  assert.equal(JSON.parse(await readFile(path.join(reconciliationDirectory, pendingIntent))).contract, 'mdlm-demo-durable-json-replacement@1');
 });
 
 test('first reconciliation rejects a matching source transaction without its prior intent journal', async () => {

@@ -35,6 +35,15 @@ async function pin(file) {
   return { path: file, digest: await digest(file) };
 }
 
+async function replacePinnedJson(pinRecord, mutate) {
+  const value = JSON.parse(await readFile(pinRecord.path));
+  await mutate(value);
+  await chmod(pinRecord.path, 0o600);
+  await writeFile(pinRecord.path, `${JSON.stringify(value, null, 2)}\n`);
+  pinRecord.digest = await digest(pinRecord.path);
+  return value;
+}
+
 async function run001Fixture() {
   const scratch = await mkdtemp(path.join(os.tmpdir(), 'mdlm-json-run-001-reconcile-'));
   const repository = path.join(scratch, 'repository');
@@ -65,6 +74,9 @@ async function run001Fixture() {
     await cp(path.join(fixture, 'outer-command', `012-run-001.runner.${stream}`), target);
     outerCommand[stream] = await pin(target);
   }
+  const outerCommandRecordPath = path.join(evidenceRoot, '012-run-001.runner.command.json');
+  await cp(path.join(fixture, 'outer-command/012-run-001.runner.command.json'), outerCommandRecordPath);
+  outerCommand.record = await pin(outerCommandRecordPath);
 
   const commandDirectory = path.join(sourceDirectory, 'command-evidence');
   const durableDirectory = path.join(sourceDirectory, 'durable-command');
@@ -116,7 +128,7 @@ async function run001Fixture() {
 
 test('run 001 fixture preserves the non-timeout A-to-B materialization and failed consumption boundary', async () => {
   const fixtureManifest = path.join(fixture, 'copied-fixture.sha256');
-  assert.equal(await digest(fixtureManifest), 'sha256:e66c4847256f9f1d38fe0c9c1e87f37d278e84f9b2e253682324fd5c21779b5d');
+  assert.equal(await digest(fixtureManifest), 'sha256:0182a757f8e75332d152efc44f04832b350df03afca67b996567c090657c3d8b');
   for (const line of (await readFile(fixtureManifest, 'utf8')).trimEnd().split('\n')) {
     const match = /^([0-9a-f]{64})  (.+)$/.exec(line);
     assert.ok(match, line);
@@ -131,6 +143,7 @@ test('run 001 fixture preserves the non-timeout A-to-B materialization and faile
     ['outer-command/012-run-001.runner.stdout', 'sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'],
     ['outer-command/012-run-001.runner.stderr', 'sha256:2ab3869bb7fd1dadcbdea7ad89fd2b3f68eec2124d85370931b557c1bf7787e2'],
     ['outer-command/012-run-001.runner.exit', 'sha256:4355a46b19d348dc2f57c046f8ef63d4538ebb936000f3c9ee954a27460dd865'],
+    ['outer-command/012-run-001.runner.command.json', 'sha256:7f60baf8dc4dcfcbad9dac1b8e03dbb54b043ad9a4fb8032182f580b7392f025'],
   ]);
   for (const [relative, expectedDigest] of expected) {
     assert.equal(await digest(path.join(fixture, relative)), expectedDigest, relative);
@@ -197,33 +210,215 @@ test('public reconcile consumes non-timeout A without invoking A or B', async ()
   assert.deepEqual(await readdir(path.join(value.stateDirectory, 'assignments')), [assignmentKey(assignmentA)]);
 });
 
-test('non-timeout recovery resumes atomically at every durable boundary', async () => {
-  const seams = [
-    'authenticated:after-rename',
-    'checkpoint-reconciliation-global:after-rename',
-    'boundary-advanced:after-rename',
-    'checkpoint-reconciliation-assignment:after-rename',
-    'completed:after-rename',
+test('non-timeout recovery resumes at paired temp-sync and rename crashes for its five replacements', async t => {
+  const replacements = [
+    'authenticated',
+    'checkpoint-reconciliation-global',
+    'boundary-advanced',
+    'checkpoint-reconciliation-assignment',
+    'completed',
   ];
-  for (const seam of seams) {
-    const value = await run001Fixture();
-    const crashed = exec(process.execPath, [cli, 'reconcile'], root, JSON.stringify(value.request), {
-      ...process.env, MDLM_DEMO_TEST_CRASH: seam,
-    });
-    assert.equal(crashed.status, 86, `${seam}: ${crashed.stderr}`);
+  for (const replacement of replacements) {
+    for (const boundary of ['after-temp-sync', 'after-rename']) {
+      const seam = `${replacement}:${boundary}`;
+      await t.test(seam, async () => {
+        const value = await run001Fixture();
+        const crashed = exec(process.execPath, [cli, 'reconcile'], root, JSON.stringify(value.request), {
+          ...process.env, MDLM_DEMO_TEST_CRASH: seam,
+        });
+        assert.equal(crashed.status, 86, `${seam}: ${crashed.stderr}`);
 
-    const resumed = exec(process.execPath, [cli, 'reconcile'], root, JSON.stringify(value.request));
-    assert.equal(resumed.status, 0, `${seam}: ${resumed.stderr}`);
-    assert.match(JSON.parse(resumed.stdout).status, /^(?:reconciled|already-reconciled)$/);
-    const trusted = JSON.parse(await readFile(path.join(value.identityDirectory, 'repository-identity.json')));
-    assert.equal(trusted.lifecycleRepository.head, 'db99d2e68d7c764ea760986465263c80ca2edac7', seam);
-    assert.deepEqual(trusted.lastAssignment, { id: assignmentA, outcome: 'accepted-publication', completed: true }, seam);
-    assert.equal(JSON.parse(await readFile(path.join(value.sourceDirectory, 'transaction.json'))).phase, 'completed', seam);
+        const resumed = exec(process.execPath, [cli, 'reconcile'], root, JSON.stringify(value.request));
+        assert.equal(resumed.status, 0, `${seam}: ${resumed.stderr}`);
+        assert.match(JSON.parse(resumed.stdout).status, /^(?:reconciled|already-reconciled)$/);
+        const trusted = JSON.parse(await readFile(path.join(value.identityDirectory, 'repository-identity.json')));
+        assert.equal(trusted.lifecycleRepository.head, 'db99d2e68d7c764ea760986465263c80ca2edac7', seam);
+        assert.deepEqual(trusted.lastAssignment, { id: assignmentA, outcome: 'accepted-publication', completed: true }, seam);
+        assert.equal(JSON.parse(await readFile(path.join(value.sourceDirectory, 'transaction.json'))).phase, 'completed', seam);
+      });
+    }
+  }
+});
+
+test('non-timeout recovery rejects wrong or extra pending replacement bytes', async t => {
+  const cases = [
+    ['wrong temporary bytes', async (directory, entries) => {
+      const temporary = entries.find(name => name.endsWith('.tmp'));
+      assert.ok(temporary);
+      await writeFile(path.join(directory, temporary), 'wrong replacement bytes\n');
+    }],
+    ['extra temporary file', async (directory, entries) => {
+      const intent = entries.find(name => name.endsWith('.json'));
+      assert.ok(intent);
+      await writeFile(path.join(directory, `${intent}.extra.tmp`), 'extra replacement bytes\n');
+    }],
+  ];
+  for (const [name, mutate] of cases) {
+    await t.test(name, async () => {
+      const value = await run001Fixture();
+      const identityPath = path.join(value.identityDirectory, 'repository-identity.json');
+      const before = await readFile(identityPath);
+      const crashed = exec(process.execPath, [cli, 'reconcile'], root, JSON.stringify(value.request), {
+        ...process.env, MDLM_DEMO_TEST_CRASH: 'authenticated:after-temp-sync',
+      });
+      assert.equal(crashed.status, 86, crashed.stderr);
+      const directory = path.join(value.identityDirectory, 'checkpoint-reconciliations');
+      await mutate(directory, await readdir(directory));
+
+      const resumed = exec(process.execPath, [cli, 'reconcile'], root, JSON.stringify(value.request));
+
+      assert.equal(resumed.status, 1, `${name}: ${resumed.stdout}\n${resumed.stderr}`);
+      assert.match(resumed.stderr, /durable JSON replacement|checkpoint reconciliation directory/, name);
+      assert.deepEqual(await readFile(identityPath), before, name);
+      assert.equal(await stat(path.join(value.sourceDirectory, 'transaction.json')).then(() => true, () => false), false, name);
+    });
+  }
+});
+
+test('non-timeout recovery rejects repinned outer command and runner substitutions before mutation', async t => {
+  const cases = [
+    ['runner argv', record => { record.argv[2] = 'resume'; }],
+    ['cwd', (record, value) => { record.cwd = value.scratch; }],
+    ['runtime', record => { record.runtime.executable.digest = `sha256:${'0'.repeat(64)}`; }],
+    ['runner commit', record => { record.runner.commit = '1'.repeat(40); }],
+    ['runner tree', record => { record.runner.tree = '2'.repeat(40); }],
+    ['launcher digest', record => { record.runner.launcher.digest = `sha256:${'3'.repeat(64)}`; }],
+    ['dependency closure', record => {
+      record.runner.dependencyClosure.entries.find(entry => entry.path === 'src/cli.mjs').digest = `sha256:${'4'.repeat(64)}`;
+      record.runner.dependencyClosure.digest = digestBytes(Buffer.from(JSON.stringify(record.runner.dependencyClosure.entries)));
+    }],
+  ];
+  for (const [name, mutate] of cases) {
+    await t.test(name, async () => {
+      const value = await run001Fixture();
+      await replacePinnedJson(value.request.evidence.outerCommand.record, record => mutate(record, value));
+      const identityPath = path.join(value.identityDirectory, 'repository-identity.json');
+      const before = await readFile(identityPath);
+
+      const execution = exec(process.execPath, [cli, 'reconcile'], root, JSON.stringify(value.request));
+
+      assert.equal(execution.status, 1, `${name}: ${execution.stdout}\n${execution.stderr}`);
+      assert.match(execution.stderr, /outer command|runner|runtime|dependency closure/, name);
+      assert.doesNotMatch(execution.stderr, /must contain exactly stdout, stderr, and exit/, name);
+      assert.deepEqual(await readFile(identityPath), before, name);
+      assert.equal(await stat(path.join(value.sourceDirectory, 'transaction.json')).then(() => true, () => false), false, name);
+    });
+  }
+});
+
+test('non-timeout recovery rejects coherently repinned provenance and executable evidence before mutation', async t => {
+  const cases = [
+    ['altered source configured path and expected commit/tree', async value => {
+      await replacePinnedJson(value.request.evidence.request, request => {
+        request.provenance.source = {
+          repository: '/coherently-repinned/source',
+          commit: '0'.repeat(40),
+          tree: '1'.repeat(40),
+        };
+      });
+    }],
+    ['altered artifact, tooling, tool, and qualification-harness configured paths and expected pins', async value => {
+      await replacePinnedJson(value.request.evidence.request, request => {
+        request.provenance.package = {
+          artifact: '/coherently-repinned/artifacts/mdlm.tgz',
+          digest: `sha256:${'2'.repeat(64)}`,
+        };
+        request.provenance.piPackage = {
+          artifact: '/coherently-repinned/artifacts/mdlm-pi.tgz',
+          digest: `sha256:${'3'.repeat(64)}`,
+        };
+        request.provenance.tooling = {
+          root: '/coherently-repinned/tooling',
+          digest: `sha256:${'4'.repeat(64)}`,
+          lock: {
+            path: '/coherently-repinned/tooling/package-lock.json',
+            digest: `sha256:${'5'.repeat(64)}`,
+          },
+        };
+        request.provenance.tools = {
+          mdlm: {
+            path: '/coherently-repinned/tooling/mdlm.js',
+            digest: `sha256:${'6'.repeat(64)}`,
+          },
+          mdlmPi: {
+            path: '/coherently-repinned/tooling/mdlm-pi.js',
+            digest: `sha256:${'7'.repeat(64)}`,
+          },
+        };
+        request.provenance.qualificationHarness = {
+          repository: '/coherently-repinned/harness',
+          commit: '8'.repeat(40),
+          tree: '9'.repeat(40),
+          repositoryLocator: 'https://example.invalid/coherently-repinned-harness.git',
+          manifest: {
+            path: '/coherently-repinned/harness/manifest.json',
+            digest: `sha256:${'a'.repeat(64)}`,
+          },
+        };
+      });
+    }],
+    ['coherently altered commands, authorization, result, and shim executable', async value => {
+      const substituteRoot = path.join(value.scratch, 'substitute-executables');
+      const substituteMdlm = path.join(substituteRoot, 'mdlm.js');
+      const substituteMdlmPi = path.join(substituteRoot, 'mdlm-pi.js');
+      const substituteShim = path.join(substituteRoot, 'mdlm-demo-mdlm-shim.mjs');
+      await mkdir(substituteRoot);
+      for (const file of [substituteMdlm, substituteMdlmPi, substituteShim]) {
+        await writeFile(file, '#!/usr/bin/env node\n');
+        await chmod(file, 0o755);
+      }
+      await replacePinnedJson(value.request.evidence.request, request => {
+        request.commands.mdlm = substituteMdlm;
+        request.commands.mdlmPi = substituteMdlmPi;
+        request.provenance.tools.mdlm = { path: substituteMdlm, digest: null };
+        request.provenance.tools.mdlmPi = { path: substituteMdlmPi, digest: null };
+      });
+      const requestDocument = JSON.parse(await readFile(value.request.evidence.request.path));
+      requestDocument.provenance.tools.mdlm.digest = await digest(substituteMdlm);
+      requestDocument.provenance.tools.mdlmPi.digest = await digest(substituteMdlmPi);
+      await writeFile(value.request.evidence.request.path, `${JSON.stringify(requestDocument, null, 2)}\n`);
+      value.request.evidence.request.digest = await digest(value.request.evidence.request.path);
+
+      await replacePinnedJson(value.request.evidence.commands[0].record, record => {
+        record.argv[0] = substituteMdlm;
+      });
+      const second = await replacePinnedJson(value.request.evidence.commands[1].record, record => {
+        record.argv[0] = substituteMdlmPi;
+        record.argv[4] = substituteShim;
+      });
+      await replacePinnedJson(value.request.evidence.shimConfig, config => {
+        config.realMdlm = substituteMdlm;
+      });
+      const authorization = await replacePinnedJson(value.request.evidence.authorization, document => {
+        document.command.argv = second.argv;
+      });
+      await replacePinnedJson(value.request.evidence.result, document => {
+        document.authorization.digest = value.request.evidence.authorization.digest;
+        document.process = second;
+      });
+      assert.deepEqual(authorization.command.argv, second.argv);
+    }],
+  ];
+  for (const [name, mutate] of cases) {
+    await t.test(name, async () => {
+      const value = await run001Fixture();
+      await mutate(value);
+      const identityPath = path.join(value.identityDirectory, 'repository-identity.json');
+      const before = await readFile(identityPath);
+
+      const execution = exec(process.execPath, [cli, 'reconcile'], root, JSON.stringify(value.request));
+
+      assert.equal(execution.status, 1, `${name}: ${execution.stdout}\n${execution.stderr}`);
+      assert.match(execution.stderr, /mdlm-demo-error@1/, name);
+      assert.deepEqual(await readFile(identityPath), before, name);
+      assert.equal(await stat(path.join(value.sourceDirectory, 'transaction.json')).then(() => true, () => false), false, name);
+    });
   }
 });
 
 test('non-timeout recovery rejects missing, drifted, truncated, and cross-run evidence before mutation', async () => {
   const cases = [
+    ['missing outer command record', value => { delete value.request.evidence.outerCommand.record; }],
     ['missing result', value => rm(value.request.evidence.result.path)],
     ['repository drift', async value => {
       await writeFile(path.join(value.repository, 'unrelated.txt'), 'unrelated\n');
