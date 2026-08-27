@@ -21,6 +21,7 @@ const thinkingLevels = new Set(['off', 'minimal', 'low', 'medium', 'high', 'xhig
 const assignmentCheckpointEvidence = Symbol('assignmentCheckpointEvidence');
 const publicationClosureEvidence = Symbol('publicationClosureEvidence');
 const operationalFailureEvidence = Symbol('operationalFailureEvidence');
+const exhaustedBoundaryEvidence = Symbol('exhaustedBoundaryEvidence');
 const durableResultRepository = Symbol('durableResultRepository');
 const boundDecisionCatalog = Symbol('boundDecisionCatalog');
 const authoritativeDecisionUtf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
@@ -69,6 +70,7 @@ export async function run(request, mode) {
         );
       }
     }
+    output = await finalizeExhaustedBoundary(output, postRunSnapshot);
     output = await finalizeAssignmentCheckpoint(output, postRunSnapshot, assignmentId);
     output = await finalizePublicationClosure(output, postRunSnapshot);
     output = await finalizeOperationalFailure(output, initial, postRunSnapshot, context, assignmentDirectory, request);
@@ -273,6 +275,17 @@ async function executeRun(request, context, assignmentDirectory, journalPath, sn
       snapshotResult, processPackage, runIdentity, isCorrection: true,
     }));
   }
+  if (journal?.phase === 'assignment-exhausted') {
+    let disposition;
+    try {
+      disposition = await authenticateExhaustedBoundary({
+        journal, assignment, status, assignmentDirectory, captured, processPackage, request, context,
+      });
+    } catch (error) {
+      return withCheckpointRecovery(stopped('exhausted-boundary-drift', error instanceof Error ? error.message : String(error), snapshotResult, assignmentId));
+    }
+    return withCheckpointRecovery(assignmentExhaustedStop(snapshotResult, assignmentId, disposition));
+  }
   if (journal?.phase === 'submitting' || journal?.phase === 'correction-submitting' || journal?.phase === 'uncertain-transaction') {
     return withCheckpointRecovery(stopped('uncertain-partial-publication', 'submission began without durable accepted execution evidence', snapshotResult, assignmentId, { transactionPhase: journal.phase }));
   }
@@ -414,6 +427,18 @@ async function submitExternalResponse({
     });
     return correctionRequiredStop(snapshotResult, assignmentId, correction);
   }
+  const exhausted = exhaustedAssignmentSubmission(submission, assignmentId);
+  if (exhausted !== null) {
+    const exhaustedJournal = {
+      ...journal, phase: 'assignment-exhausted', submission: commandRecord(submission), assignmentDisposition: exhausted,
+    };
+    await writeJournal(journalPath, exhaustedJournal);
+    const output = assignmentExhaustedStop(snapshotResult, assignmentId, exhausted);
+    output[exhaustedBoundaryEvidence] = {
+      journal: exhaustedJournal, assignmentDirectory, processPackage, request, context,
+    };
+    return output;
+  }
   const submissionEvidence = isCorrection ? { correctionSubmission: commandRecord(submission) } : { submission: commandRecord(submission) };
   if (!commandSucceeded(submission)) {
     await writeJournal(journalPath, { ...journal, ...submissionEvidence, phase: 'uncertain-transaction' });
@@ -471,6 +496,37 @@ function isCorrectionRequiredDocument(output, assignmentId) {
     sameJson(malformed.diagnostics, output.diagnostics);
 }
 
+function exhaustedAssignmentSubmission(submission, assignmentId) {
+  if (submission.timedOut || submission.outputLimitExceeded || submission.signal !== null || submission.spawnError !== null ||
+      submission.exitStatus !== 1 || submission.stderr.length !== 0 ||
+      submission.observedOutputBytes !== submission.stdout.length) return null;
+  let output;
+  try { output = parseJsonBytes(submission.stdout, 'scenario submit exhausted disposition'); }
+  catch { return null; }
+  return isExhaustedAssignmentDisposition(output, assignmentId) ? output : null;
+}
+
+function isExhaustedAssignmentDisposition(output, assignmentId) {
+  const malformed = output?.malformedResponse;
+  const diagnostics = malformed?.diagnostics;
+  return output && typeof output === 'object' && !Array.isArray(output) &&
+    sameJson(Object.keys(output).sort(), [
+      'assignment', 'command', 'contract', 'diagnostics', 'disposition', 'malformedResponse', 'ok', 'orchestration',
+    ]) && output.contract === 'mdlm-assignment-disposition@1' && output.command === 'scenario.submit' && output.ok === false &&
+    sameJson(output.assignment, { id: assignmentId }) && output.disposition === 'exhausted' &&
+    sameJson(output.orchestration, { action: 'stop', automaticReplacement: false }) &&
+    malformed && sameJson(Object.keys(malformed).sort(), ['attempt', 'correctionsRemaining', 'diagnostics']) &&
+    malformed.attempt === 2 && malformed.correctionsRemaining === 0 &&
+    Array.isArray(diagnostics) && diagnostics.length > 0 && diagnostics.every(validAssignmentDispositionDiagnostic) &&
+    Array.isArray(output.diagnostics) && sameJson(diagnostics, output.diagnostics);
+}
+
+function validAssignmentDispositionDiagnostic(diagnostic) {
+  return diagnostic && typeof diagnostic === 'object' && !Array.isArray(diagnostic) &&
+    sameJson(Object.keys(diagnostic).sort(), ['code', 'message', 'path']) &&
+    ['code', 'message', 'path'].every(key => typeof diagnostic[key] === 'string' && diagnostic[key].length > 0);
+}
+
 function correctionFromCommandRecord(record, assignmentId, mdlmCommand, repository, timeoutMs) {
   if (!record || !sameJson(record.argv, [mdlmCommand, 'scenario', 'submit', '-', '--json']) ||
       record.cwd !== repository || record.timeoutMs !== timeoutMs || record.timedOut !== false ||
@@ -492,6 +548,15 @@ function correctionRequiredStop(snapshotResult, assignmentId, correction) {
     assignmentId, recoverable: true, reason: 'malformed-response-correction-required',
     detail: 'MDLM rejected the response without publication and retained a correction attempt',
     outcome: 'correction-required', transactionPhase: 'correction-required', correction,
+  });
+}
+
+function assignmentExhaustedStop(snapshotResult, assignmentId, assignmentDisposition) {
+  return result('stopped', snapshotResult, {
+    assignmentId, recoverable: false, reason: 'assignment-exhausted',
+    detail: 'MDLM rejected the response without publication and exhausted malformed-response corrections',
+    outcome: 'assignment-exhausted', transactionPhase: 'assignment-exhausted', trustedRepositoryAdvance: false,
+    assignmentDisposition,
   });
 }
 
@@ -540,6 +605,79 @@ async function authenticateCorrectionBoundary({
     throw new Error('journaled malformed response differs from the active Assignment');
   }
   return recordedCorrection;
+}
+
+async function authenticateExhaustedBoundary({
+  journal, assignment, status, assignmentDirectory, captured, processPackage, request, context,
+}) {
+  const assignmentId = assignment.id;
+  if (journal.contract !== 'mdlm-demo-transaction-journal@2' || journal.phase !== 'assignment-exhausted' ||
+      journal.assignmentId !== assignmentId || assignment.disposition !== 'exhausted' || assignment.selected !== true ||
+      statusHasActiveAssignment(status, assignmentId) || status.currentOutcome?.outcome !== 'assignment' ||
+      !sameJson(status.currentOutcome?.assignment, { allocation: 'not-allocated' }) ||
+      journal.scenario !== assignment.scenarioReference || !sameProcessPackageIdentity(journal.package, processPackage) ||
+      !sameProcessPackageIdentity(journal.package, status.package) || !sameProcessPackageIdentity(journal.package, assignment.package) ||
+      captured.diagnosis?.ok !== true || captured.diagnosis?.baselineRepositoryVerification?.processDrift !== 0 ||
+      !sameProcessPackageIdentity(journal.package, captured.diagnosis?.package) ||
+      !sameJson(journal.repository, assignment.repository) || journal.baseCommit !== journal.repository?.head ||
+      captured.lifecycleRepository.clean !== true || !sameRepositoryFingerprint(journal.repository, captured.lifecycleRepository)) {
+    throw new Error('journaled exhaustion does not match the terminal Assignment, package, and clean unpublished repository boundary');
+  }
+  const disposition = exhaustedFromCommandRecord(
+    journal.submission, assignmentId, request.commands.mdlm, context.repository, request.timeoutMs ?? 30_000,
+  );
+  const malformedResponses = assignment.malformedResponses;
+  const retainedHistoryIsExact = Array.isArray(malformedResponses) && malformedResponses.length === 2 &&
+    malformedResponses.every(response => response && typeof response === 'object' && !Array.isArray(response) &&
+      sameJson(Object.keys(response).sort(), ['diagnostics', 'digest']) && /^sha256:[0-9a-f]{64}$/.test(response.digest) &&
+      Array.isArray(response.diagnostics) && response.diagnostics.length > 0 &&
+      response.diagnostics.every(validAssignmentDispositionDiagnostic)) &&
+    malformedResponses[0].digest !== malformedResponses[1].digest &&
+    malformedResponses[1].digest === journal.responseDigest;
+  const retained = retainedHistoryIsExact ? malformedResponses[1] : undefined;
+  if (disposition === null || !sameJson(disposition, journal.assignmentDisposition)) {
+    throw new Error('journaled exhaustion does not match its authenticated malformed submission');
+  }
+  if (!retainedHistoryIsExact || !sameJson(assignment.retryAvailability, { malformedResponseCorrection: 0 }) ||
+      disposition.malformedResponse.attempt !== malformedResponses.length) {
+    throw new Error('journaled exhaustion does not match its exact retry history and latest malformed response');
+  }
+  if (!sameJson(retained.diagnostics, disposition.malformedResponse.diagnostics) ||
+      !sameJson(assignment.terminalDiagnostics, disposition.malformedResponse.diagnostics)) {
+    throw new Error('journaled exhaustion does not match the latest and terminal Assignment diagnostics');
+  }
+  const [packetEvidence, malformedEvidence] = await Promise.all([
+    readCanonicalFile(path.join(assignmentDirectory, 'prepared-packet.json'), 'prepared exhausted packet'),
+    readCanonicalFile(journal.responsePath, 'exhausted Assignment response'),
+  ]);
+  const packet = validateScenarioPrepare(parseJsonBytes(packetEvidence.bytes, 'prepared exhausted packet'), {
+    assignmentId, package: processPackage, repository: assignment.repository,
+  });
+  if (packet.scenario.reference !== journal.scenario || sha256(packetEvidence.bytes) !== journal.packetDigest ||
+      sha256(malformedEvidence.bytes) !== journal.responseDigest) {
+    throw new Error('journaled exhausted packet or malformed response bytes differ');
+  }
+  const malformedResponse = parseJsonBytes(malformedEvidence.bytes, 'exhausted Assignment response');
+  if (malformedResponse.contract !== 'mdlm-assignment-response@1' || malformedResponse.assignment !== assignmentId) {
+    throw new Error('journaled exhausted response differs from the terminal Assignment');
+  }
+  return disposition;
+}
+
+function exhaustedFromCommandRecord(record, assignmentId, mdlmCommand, repository, timeoutMs) {
+  if (!record || !sameJson(record.argv, [mdlmCommand, 'scenario', 'submit', '-', '--json']) ||
+      record.cwd !== repository || record.timeoutMs !== timeoutMs || record.timedOut !== false ||
+      record.outputLimitExceeded !== false || record.exitStatus !== 1 || record.signal !== null || record.spawnError !== null ||
+      typeof record.stdoutBase64 !== 'string' || typeof record.stderrBase64 !== 'string') return null;
+  const stdout = Buffer.from(record.stdoutBase64, 'base64');
+  const stderr = Buffer.from(record.stderrBase64, 'base64');
+  if (stdout.toString('base64') !== record.stdoutBase64 || stderr.toString('base64') !== record.stderrBase64 ||
+      sha256(stdout) !== record.stdoutSha256 || sha256(stderr) !== record.stderrSha256 || stderr.length !== 0 ||
+      record.observedOutputBytes !== stdout.length) return null;
+  let disposition;
+  try { disposition = parseJsonBytes(stdout, 'journaled scenario submit exhausted disposition'); }
+  catch { return null; }
+  return isExhaustedAssignmentDisposition(disposition, assignmentId) ? disposition : null;
 }
 
 async function bindCorrectionInput(journal, requested, lifecycleRepository) {
@@ -1617,6 +1755,31 @@ async function authenticateReservedStop(stop, shimDirectory, processPackage) {
     return { ok: true, packet };
   } catch (error) {
     return { ok: false, detail: `reserved stop evidence is not authentic: ${error.message}` };
+  }
+}
+
+async function finalizeExhaustedBoundary(output, postSnapshot) {
+  const evidence = output[exhaustedBoundaryEvidence];
+  if (evidence === undefined) return output;
+  delete output[exhaustedBoundaryEvidence];
+  try {
+    if (postSnapshot.status !== 'complete') throw new Error('exhausted Assignment post-run snapshot is incomplete');
+    const captured = JSON.parse(await readFile(path.join(postSnapshot.snapshotDirectory, 'snapshot.json'), 'utf8'));
+    const disposition = await authenticateExhaustedBoundary({
+      ...evidence, assignment: captured.assignment, status: captured.status, captured,
+    });
+    output.assignmentDisposition = disposition;
+    return output;
+  } catch (error) {
+    output.status = 'stopped';
+    output.recoverable = false;
+    output.reason = 'exhausted-boundary-drift';
+    output.detail = error instanceof Error ? error.message : String(error);
+    delete output.outcome;
+    delete output.transactionPhase;
+    delete output.trustedRepositoryAdvance;
+    delete output.assignmentDisposition;
+    return output;
   }
 }
 
