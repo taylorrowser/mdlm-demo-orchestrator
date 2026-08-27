@@ -30,8 +30,8 @@
     },
     {
       "path": "scripts/create-distribution-manifest.mjs",
-      "bytes": 3815,
-      "sha256": "bf4a3b04e0c777f0b06d9949d69d55bfec16fca2803677c60022a20c7b742375"
+      "bytes": 3888,
+      "sha256": "aee11d5dabe49f52cb11e1d996386e0f791e7821defcbe45b1b5eef09ddee15e"
     },
     {
       "path": "scripts/inspect-package.mjs",
@@ -84,14 +84,29 @@
       "sha256": "bf60642ea69b2878c0a32b36c74a36b5d9ac18eb7458dedd5046da3d76f2e30b"
     },
     {
+      "path": "src/preflight.mjs",
+      "bytes": 11196,
+      "sha256": "c80852b3c2429bea9d63d6c15e0d299e8a910099742e8e243078576e5586af50"
+    },
+    {
       "path": "src/process-package.mjs",
       "bytes": 1734,
       "sha256": "c1a25a0e8b598dd07c5a293e173a0c599a368e9ae9ea71d2c950a457708d24d5"
     },
     {
+      "path": "src/run-request.mjs",
+      "bytes": 11254,
+      "sha256": "8b45b90ea9c34d30dd76fae19bd7d1094270ebe0fc6298e1d234a0a9d5a0e9e5"
+    },
+    {
       "path": "src/shim-cli.mjs",
       "bytes": 5141,
       "sha256": "3d71386239b60739864775cc33c120fc404037e3e9bf7911159ea997f8fe9a2c"
+    },
+    {
+      "path": "src/strict-json.mjs",
+      "bytes": 3085,
+      "sha256": "d721e53705808ed490700501cf5d0f1e7e61b380bcd651d5e4c632b3f3c15765"
     },
     {
       "path": "src/util.mjs",
