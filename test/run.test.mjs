@@ -3127,6 +3127,39 @@ test('canonical lifecycle repository lock excludes an independent state director
   assert.equal(JSON.parse(stdout).status, 'completed');
 });
 
+test('decision catalog digest mismatch is rejected before durable run consumption', async () => {
+  const workerMarker = path.join(os.tmpdir(), `issue-17-worker-${process.pid}-${Date.now()}`);
+  const value = await fixture({
+    scenarioReference: 'resolve-question@2',
+    attentionRequired: true,
+    piScript: `#!/bin/sh\n: > ${workerMarker}\nprintf '%s\\n' '{"status":"lifecycle-complete"}'\n`,
+  });
+  const wording = 'Exact attended decision wording.';
+  const sourceBytes = Buffer.from(`${wording}\n`);
+  const decisionCatalogPath = path.join(value.scratch, 'decisions.json');
+  await writeFile(decisionCatalogPath, JSON.stringify({
+    contract: 'mdlm-demo-decision-catalog@1',
+    decisions: [{
+      assignment: value.assignment,
+      wording,
+      origin: 'operator-selected',
+      authorityBasis: 'Standing authorization permits this attended decision.',
+      digest: `sha256:${createHash('sha256').update(sourceBytes).digest('hex')}`,
+    }],
+  }));
+  value.request.decisionCatalogPath = decisionCatalogPath;
+
+  const execution = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
+
+  assert.equal(execution.status, 1);
+  assert.match(JSON.parse(execution.stderr).error, /operator decision wording digest differs/);
+  await assert.rejects(stat(value.request.stateDirectory), error => error.code === 'ENOENT');
+  await assert.rejects(stat(value.request.evidenceDirectory), error => error.code === 'ENOENT');
+  await assert.rejects(stat(path.join(value.repository, '.git', 'mdlm-demo-orchestrator')), error => error.code === 'ENOENT');
+  await assert.rejects(stat(workerMarker), error => error.code === 'ENOENT');
+  await assert.rejects(stat(path.join(value.scratch, 'calls.log')), error => error.code === 'ENOENT');
+});
+
 test('attended correction re-entry passes an operator-selected catalog decision to mdlm-pi', async () => {
   const inputPath = path.join(os.tmpdir(), `issue-213-pi-input-${process.pid}-${Date.now()}`);
   const piScript = `#!/bin/sh\ncat > ${inputPath}\nprintf '%s\\n' '{"status":"lifecycle-complete"}'\nexit 0\n`;

@@ -2,11 +2,13 @@
 
 This public repository contains the issue #213 recovery runner. It does not yet contain a successful public demonstration and has not run a real lifecycle repository.
 
-The runner uses four JSON commands:
+The runner uses six JSON commands:
 
 ```text
 mdlm-demo-runner snapshot [--input FILE]
 mdlm-demo-runner classify [--input FILE]
+mdlm-demo-runner decision-catalog-build [--input FILE]
+mdlm-demo-runner decision-catalog-validate [--input FILE]
 mdlm-demo-runner run [--input FILE]
 mdlm-demo-runner resume [--input FILE]
 ```
@@ -17,7 +19,7 @@ Without `--input`, each command reads one JSON value from standard input. It wri
 
 Tests use the approved public seams.
 
-1. The JSON CLI is the operator boundary. `snapshot`, `classify`, `run`, and `resume` do not require imports from MDLM.
+1. The JSON CLI is the operator boundary. Its six commands do not require imports from MDLM.
 2. `src/adapter.mjs` consumes exact `mdlm-assignment-packet@2` bytes. It returns exact `mdlm-assignment-response@1` bytes or `mdlm-demo-reserved-stop@1` before submission.
 3. Process tests run fake `mdlm` and `mdlm-pi` executables in scratch Git repositories. They check raw process evidence, transaction counts, and Git commit counts.
 4. Deterministic integrations import the installed `mdlm-pi` controller and Assignment runner. They prove attended Review-correction wording reaches proposal authority context, accepted Scenarios are not replayed, and publication A is committed before external Assignment B reaches the worker boundary.
@@ -166,7 +168,35 @@ Each observations file uses `mdlm-external-observations@1`, names the Assignment
 
 ## Operator decisions
 
-Attended runs use a decision catalog. The digest covers the exact UTF-8 wording bytes.
+Attended runs use a decision catalog. Build one from wording source files with `decision-catalog-build`:
+
+```json
+{
+  "contract": "mdlm-demo-decision-catalog-build-request@1",
+  "decisions": [
+    {
+      "assignment": "ASSIGNMENT_UUID",
+      "wordingPath": "/absolute/path/to/wording.txt",
+      "authorityBasis": "Standing authorization permits operator selection without pausing for user input."
+    }
+  ]
+}
+```
+
+The command writes the canonical `mdlm-demo-decision-catalog@1` JSON to standard output. For each source file, it converts every CRLF pair to LF and removes exactly one terminal LF. It preserves lone CR code points, additional terminal line breaks, and every other code point. It does not apply NFC, NFD, or any other Unicode normalization. The digest covers the exact UTF-8 bytes of the normalized `wording` string stored in the catalog, not the pre-normalization source bytes or the surrounding JSON token.
+
+Independently check a canonical or manually assembled catalog with `decision-catalog-validate`:
+
+```json
+{
+  "contract": "mdlm-demo-decision-catalog-validate-request@1",
+  "catalogPath": "/absolute/path/to/decisions.json"
+}
+```
+
+The validator reads the catalog without creating state or evidence. It checks every decision's exact UTF-8 wording bytes against its declared digest. `run` and `resume` perform the same side-effect-free preflight before repository resolution, locking, snapshots, transaction state, or worker invocation. The execution seam later reads the catalog again and retains its authoritative fail-closed selected-decision digest check.
+
+A catalog has this shape:
 
 ```json
 {

@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { adaptAssignment } from './adapter.mjs';
 import { readCanonicalFile } from './canonical-file.mjs';
 import { validateScenarioPrepare } from './contracts.mjs';
+import { validateDecisionCatalogFile } from './decision-catalog.mjs';
 import { snapshot, verifySnapshot } from './evidence.mjs';
 import { normalizeProcessPackage, sameProcessPackageIdentity } from './process-package.mjs';
 import {
@@ -28,6 +29,7 @@ export async function run(request, mode) {
   validateRunRequest(request);
   validateOperator(request.operator);
   const assignmentId = required(request.assignmentId, 'assignmentId');
+  await validateDecisionCatalogFile(request.decisionCatalogPath);
   const context = await repositoryContext(required(request.repository, 'repository'), request.timeoutMs);
   const release = await acquireRepositoryLock(context, assignmentId);
   try {

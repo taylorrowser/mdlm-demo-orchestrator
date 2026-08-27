@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { classify } from './classify.mjs';
+import { buildDecisionCatalogRequest, validateDecisionCatalogRequest } from './decision-catalog.mjs';
 import { snapshot } from './evidence.mjs';
 import { run } from './orchestrator.mjs';
 
@@ -19,9 +20,11 @@ async function main(args) {
   const [command, ...rest] = args;
   const request = await readRequest(rest);
   if (command === 'classify') return classify(request);
+  if (command === 'decision-catalog-build') return buildDecisionCatalogRequest(request);
+  if (command === 'decision-catalog-validate') return validateDecisionCatalogRequest(request);
   if (command === 'snapshot') return snapshot(request);
   if (command === 'run' || command === 'resume') return run(request, command);
-  throw new Error('usage: mdlm-demo-runner snapshot|classify|run|resume [--input file]');
+  throw new Error('usage: mdlm-demo-runner snapshot|classify|decision-catalog-build|decision-catalog-validate|run|resume [--input file]');
 }
 
 try {
