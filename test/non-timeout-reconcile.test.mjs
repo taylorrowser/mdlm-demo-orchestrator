@@ -275,6 +275,51 @@ test('non-timeout recovery rejects wrong or extra pending replacement bytes', as
   }
 });
 
+test('non-timeout recovery rejects a forged pending source transaction before mutation', async () => {
+  const value = await run001Fixture();
+  const target = path.join(value.sourceDirectory, 'transaction.json');
+  const intent = path.join(value.sourceDirectory, '.transaction.json.durable-replacement.json');
+  const temporary = path.join(value.sourceDirectory, '.transaction.json.durable-replacement.tmp');
+  const forgedBytes = Buffer.from(`${JSON.stringify({
+    contract: 'mdlm-demo-transaction-journal@2',
+    phase: 'completed',
+    assignmentId: assignmentA,
+    scenario: 'forged-source-scenario@1',
+    outcome: 'accepted-publication',
+    completedRepository: { forged: true },
+    trustedRepositoryAdvance: true,
+    checkpointReconciliation: '/forged/reconciliation.json',
+  }, null, 2)}\n`);
+  const intentBytes = Buffer.from(`${JSON.stringify({
+    contract: 'mdlm-demo-durable-json-replacement@1',
+    target,
+    temporary,
+    bytes: forgedBytes.length,
+    digest: digestBytes(forgedBytes),
+    bytesBase64: forgedBytes.toString('base64'),
+  }, null, 2)}\n`);
+  await writeFile(intent, intentBytes);
+  await writeFile(temporary, forgedBytes);
+  const identityPath = path.join(value.identityDirectory, 'repository-identity.json');
+  const trustedBefore = await readFile(identityPath);
+
+  const execution = exec(process.execPath, [cli, 'reconcile'], root, JSON.stringify(value.request));
+
+  assert.equal(execution.status, 1, `${execution.stdout}\n${execution.stderr}`);
+  assert.match(execution.stderr, /source Assignment transaction|durable JSON replacement/);
+  assert.equal(await stat(target).then(() => true, () => false), false);
+  assert.deepEqual(await readFile(intent), intentBytes);
+  assert.deepEqual(await readFile(temporary), forgedBytes);
+  assert.deepEqual(await readFile(identityPath), trustedBefore);
+  assert.deepEqual(
+    await readdir(path.join(value.identityDirectory, 'checkpoint-reconciliations')).catch(error => {
+      if (error.code === 'ENOENT') return [];
+      throw error;
+    }),
+    [],
+  );
+});
+
 test('non-timeout recovery rejects repinned outer command and runner substitutions before mutation', async t => {
   const cases = [
     ['runner argv', record => { record.argv[2] = 'resume'; }],

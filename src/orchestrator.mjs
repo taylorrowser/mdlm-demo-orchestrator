@@ -143,14 +143,23 @@ async function authenticateStandaloneCheckpointReconciliation(request, context) 
   await requireCanonicalDirectory(path.resolve(request.stateDirectory));
   await requireCanonicalDirectory(path.join(path.resolve(request.stateDirectory), 'assignments'));
   await requireCanonicalDirectory(sourceDirectory);
-  await recoverDurableJsonReplacement(path.join(sourceDirectory, 'transaction.json'));
-
+  const sourceTransactionPath = path.join(sourceDirectory, 'transaction.json');
+  const sourceReplacementPaths = durableJsonReplacementPaths(sourceTransactionPath);
   const sourceEntries = (await readdir(sourceDirectory)).sort();
+  const requiredSourceEntries = ['command-evidence', 'durable-command', 'identity.json', 'shim'];
+  const permittedSourceEntries = new Set([
+    ...requiredSourceEntries,
+    'transaction.json',
+    path.basename(sourceReplacementPaths.intent),
+    path.basename(sourceReplacementPaths.temporary),
+  ]);
+  if (!requiredSourceEntries.every(name => sourceEntries.includes(name)) ||
+      sourceEntries.some(name => !permittedSourceEntries.has(name))) {
+    throw new Error('source Assignment evidence is missing, extra, or ambiguous');
+  }
   const sourceTransactionPresent = sourceEntries.includes('transaction.json');
-  const expectedSourceEntries = sourceTransactionPresent
-    ? ['command-evidence', 'durable-command', 'identity.json', 'shim', 'transaction.json']
-    : ['command-evidence', 'durable-command', 'identity.json', 'shim'];
-  if (!sameJson(sourceEntries, expectedSourceEntries)) throw new Error('source Assignment evidence is missing, extra, or ambiguous');
+  const sourceReplacementPresent = sourceEntries.includes(path.basename(sourceReplacementPaths.intent)) ||
+    sourceEntries.includes(path.basename(sourceReplacementPaths.temporary));
   const commandDirectory = path.join(sourceDirectory, 'command-evidence');
   const durableDirectory = path.join(sourceDirectory, 'durable-command');
   const shimDirectory = path.join(sourceDirectory, 'shim');
@@ -448,20 +457,23 @@ async function authenticateStandaloneCheckpointReconciliation(request, context) 
     evidence: manifests,
   };
   const journalName = `${assignmentKey(fromAssignment)}-to-${assignmentKey(toAssignment)}.json`;
-  const journalInspection = await inspectStandaloneReconciliationDirectory(context.identityDirectory, journalName);
+  const journalInspection = await inspectStandaloneReconciliationDirectory(context.identityDirectory, journalName, record);
   const existingJournal = journalInspection.existing;
   if (existingJournal !== null &&
       (!['authenticated', 'boundary-advanced', 'completed'].includes(existingJournal.phase) ||
        !sameJson({ ...existingJournal, phase: 'authenticated' }, record))) {
     throw new Error('checkpoint reconciliation journal differs from the authenticated command evidence');
   }
-  if (sourceTransactionPresent) {
+  const completedSource = completedCheckpointTransaction(record, journalInspection.journalPath);
+  const completedSourceBytes = canonicalJsonBytes(completedSource);
+  if (sourceTransactionPresent || sourceReplacementPresent) {
     if (existingJournal === null) {
       throw new Error('source Assignment transaction has no prior authenticated reconciliation journal');
     }
     if (existingJournal.phase === 'authenticated') {
       throw new Error('source Assignment transaction is ahead of its authenticated reconciliation journal');
     }
+    await recoverDurableJsonReplacement(sourceTransactionPath, completedSourceBytes);
     await validateExistingCheckpointTransaction(sourceDirectory, record, journalInspection.journalPath);
   } else if (existingJournal?.phase === 'completed') {
     throw new Error('completed reconciliation journal has no matching source Assignment transaction');
@@ -4684,7 +4696,7 @@ async function requireCanonicalPathAbsent(file, trustedRoot, label) {
   }
 }
 
-async function inspectStandaloneReconciliationDirectory(identityDirectory, journalName) {
+async function inspectStandaloneReconciliationDirectory(identityDirectory, journalName, authenticatedRecord) {
   await requireCanonicalDirectory(identityDirectory);
   const directory = path.join(identityDirectory, 'checkpoint-reconciliations');
   let created = false;
@@ -4695,7 +4707,27 @@ async function inspectStandaloneReconciliationDirectory(identityDirectory, journ
   const information = await lstat(directory, { bigint: true });
   const identity = { directory, dev: information.dev, ino: information.ino };
   const journalPath = path.join(directory, journalName);
-  await recoverDurableJsonReplacement(journalPath);
+  const journalCandidates = Object.fromEntries(['authenticated', 'boundary-advanced', 'completed']
+    .map(phase => [phase, canonicalJsonBytes({ ...authenticatedRecord, phase })]));
+  const originalJournal = await optionalCanonicalJson(journalPath);
+  let originalPhase = null;
+  if (originalJournal !== null) {
+    originalPhase = originalJournal.phase;
+    if (journalCandidates[originalPhase] === undefined ||
+        !canonicalJsonBytes(originalJournal).equals(journalCandidates[originalPhase])) {
+      throw new Error('checkpoint reconciliation journal differs from the authenticated command evidence');
+    }
+  }
+  const permittedPendingPhases = originalPhase === null
+    ? ['authenticated']
+    : originalPhase === 'authenticated'
+      ? ['authenticated', 'boundary-advanced']
+      : originalPhase === 'boundary-advanced'
+        ? ['boundary-advanced', 'completed']
+        : ['completed'];
+  const permittedPendingBytes = permittedPendingPhases.map(phase => journalCandidates[phase]);
+  const pendingExpectedBytes = await matchPendingDurableJsonReplacement(journalPath, permittedPendingBytes);
+  await recoverDurableJsonReplacement(journalPath, pendingExpectedBytes ?? permittedPendingBytes[0]);
   const entries = await readdir(directory, { withFileTypes: true });
   if (entries.length > 1 || (entries.length === 1 && entries[0].name !== journalName)) {
     throw new Error('checkpoint reconciliation directory contains prior, extra, or ambiguous journals');
@@ -5158,8 +5190,11 @@ async function durableWriteJson(file, value, phase) {
   await mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
   await durableReplaceJson(file, value, phase);
 }
+function canonicalJsonBytes(value) {
+  return Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
+}
 async function durableReplaceJson(file, value, phase) {
-  const bytes = Buffer.from(`${JSON.stringify(value, null, 2)}\n`);
+  const bytes = canonicalJsonBytes(value);
   if (await recoverDurableJsonReplacement(file, bytes)) return;
   const { intent, temporary } = durableJsonReplacementPaths(file);
   const intentBytes = Buffer.from(`${JSON.stringify({
@@ -5194,7 +5229,29 @@ async function writeSyncedExclusive(file, bytes) {
   finally { await handle.close(); }
 }
 
-async function recoverDurableJsonReplacement(file, expectedBytes = null) {
+async function matchPendingDurableJsonReplacement(file, candidates) {
+  const { intent } = durableJsonReplacementPaths(file);
+  const intentInformation = await optionalLstat(intent);
+  if (intentInformation === null) return null;
+  if (!intentInformation.isFile() || intentInformation.isSymbolicLink()) {
+    throw new Error('durable JSON replacement pending intent is not a regular file');
+  }
+  let pending;
+  try { pending = JSON.parse((await readCanonicalEvidenceFile(intent)).bytes.toString('utf8')); }
+  catch (error) { throw new Error(`durable JSON replacement pending intent is invalid: ${error.message}`); }
+  if (typeof pending?.bytesBase64 !== 'string') {
+    throw new Error('durable JSON replacement pending intent does not contain replacement bytes');
+  }
+  const pendingBytes = Buffer.from(pending.bytesBase64, 'base64');
+  const expected = candidates.find(candidate => candidate.equals(pendingBytes));
+  if (expected === undefined) {
+    throw new Error('durable JSON replacement pending intent bytes differ from every authenticated replacement');
+  }
+  return expected;
+}
+
+async function recoverDurableJsonReplacement(file, expectedBytes) {
+  if (!Buffer.isBuffer(expectedBytes)) throw new Error('durable JSON replacement recovery requires authenticated expected bytes');
   const resolved = path.resolve(file);
   const directory = path.dirname(resolved);
   const basename = path.basename(resolved);
@@ -5225,7 +5282,7 @@ async function recoverDurableJsonReplacement(file, expectedBytes = null) {
   }
   const bytes = Buffer.from(pending.bytesBase64, 'base64');
   if (bytes.toString('base64') !== pending.bytesBase64 || bytes.length !== pending.bytes || sha256(bytes) !== pending.digest ||
-      (expectedBytes !== null && !bytes.equals(expectedBytes))) {
+      !bytes.equals(expectedBytes)) {
     throw new Error('durable JSON replacement pending intent bytes differ from the requested replacement');
   }
 
