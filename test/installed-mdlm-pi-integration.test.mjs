@@ -10,9 +10,9 @@ import { decodeMdlmPiResult } from '../src/orchestrator.mjs';
 const producerSource = process.env.MDLM_PI_ISSUE_19_SOURCE ??
   '/home/ubuntu/git/mdlm-worktrees/issue-19-operational-failure-telemetry';
 const expectedProducer = {
-  commit: '41c6c4efad97e1793f712776d04ce80c31874b60',
-  tree: 'cb7961480775a68187dbef3068945429a79d1fa8',
-  distSha256: 'sha256:72a3e2ad3cd93b6b4b6d9844e7cf44a6b8e23ce6f9a80c5605c5a0cbb22a1488',
+  commit: 'bbb56e654146daccdb21d0641a8ce98c425e9c7f',
+  tree: '96c44e3e263226e4776d82e1aa4010288c1f1e55',
+  distSha256: 'sha256:b94ed944edbece78ee17fa05d7b772736c921be047ca1409eac3bc7c9dc67c93',
   executableSha256: 'sha256:5ffbbf60ba44e7ab2ebab261c93fa6385cb98cb0829002abb2c0acc23c37f3c1',
 };
 const installed = path.join(producerSource, 'packages', 'mdlm-pi', 'dist');
@@ -59,6 +59,7 @@ assert.equal(`sha256:${createHash('sha256').update(await readFile(executable)).d
 const { RunController } = await import(`${installed}/run-controller.js`);
 const { RunJournal } = await import(`${installed}/run-journal.js`);
 const { PiAssignmentRunner } = await import(`${installed}/pi-assignment-runner.js`);
+const { operationalFailureDocument, redactProviderError } = await import(`${installed}/operational-failure.js`);
 
 const assignmentId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const executionId = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
@@ -108,6 +109,43 @@ test('exact issue 19 MDLM-Pi executable produces the canonical envelope consumed
     detail: "mdlm-pi reported authenticated operational failure 'CLI_USAGE_INVALID'",
     document: envelope,
   });
+});
+
+test('exact issue 19 built producer redacts every supported shell-escaped credential before the runner accepts its envelope', () => {
+  const credentialNames = [
+    'apiKey', 'accessToken', 'x-api-key', 'clientSecret', 'password', 'authorization',
+  ];
+  const escapedQuoteWidths = [1, 3, 7, 15, 31, 63];
+  for (const credentialName of credentialNames) {
+    for (const quoteWidth of escapedQuoteWidths) {
+      const escapedQuote = `${'\\'.repeat(quoteWidth)}"`;
+      const secret = `opaque-${credentialName}-${quoteWidth}-value`;
+      const source = `provider --header ${credentialName}=${escapedQuote}${secret}${escapedQuote} unrelated=true`;
+      const providerError = redactProviderError(source);
+      assert.deepEqual(providerError, {
+        message: 'provider --header [REDACTED] unrelated=true',
+        truncated: false,
+      });
+      assert.doesNotMatch(providerError.message, new RegExp(secret));
+
+      const envelope = operationalFailureDocument({
+        code: 'PI_ASSIGNMENT_RUNNER_ERROR',
+        message: 'Provider failed before Assignment completion',
+        telemetry: {
+          stopReason: 'error', providerError, retriesConsumed: 0,
+          provider: null, model: null, completeAssignmentObserved: false,
+        },
+      });
+      const stderr = Buffer.from(`${JSON.stringify(envelope)}\n`);
+      const consumed = decodeMdlmPiResult({
+        argv: [executable], exitStatus: 1, signal: null, timedOut: false,
+        outputLimitExceeded: false, spawnError: null, stdout: Buffer.alloc(0), stderr,
+      }, Buffer.alloc(0));
+      assert.equal(consumed.kind, 'operational-failure', `${credentialName} at quote width ${quoteWidth}`);
+      assert.equal(consumed.status, 'mdlm-pi-operational-failure', `${credentialName} at quote width ${quoteWidth}`);
+      assert.deepEqual(consumed.document, envelope);
+    }
+  }
 });
 
 test('exact issue 19 built mdlm-pi consumes attended Review-correction wording in the same Assignment without replaying accepted Scenarios', async () => {

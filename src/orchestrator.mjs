@@ -2204,7 +2204,7 @@ function isRedactedProviderError(value) {
 }
 
 const secretLookingTextPattern = /(?:[A-Za-z][A-Za-z0-9+.-]*:\/\/[^\s/@]+:[^\s/@]+@|bearer\s+[^\s,;]+|["']?(?:x[-_ ]?api[-_ ]?key|api[-_ ]?key|access[-_ ]?token|refresh[-_ ]?token|client[-_ ]?secret|authorization|token|secret|password)["']?\s*[:=]\s*(?:"(?:\\.|[^"\\\r\n])*"|'(?:\\.|[^'\\\r\n])*'|[^\s,"';}]+)|(?:sk|rk|pk|ghp|github_pat|xox[baprs])[-_][A-Za-z0-9_-]{8,}|(?:AKIA|ASIA|AIDA|AROA|AIPA|ANPA|ANVA|A3T)[A-Z0-9]{16}|(?:glpat-|npm_|AIza)[A-Za-z0-9_-]{16,}|eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{8,})/iu;
-const maximumEscapedCredentialLayers = 4;
+const maximumEscapedCredentialLayers = 6;
 
 function containsSecretLookingText(value) {
   let candidate = value;

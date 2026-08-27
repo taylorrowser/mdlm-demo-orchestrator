@@ -2662,15 +2662,25 @@ test('canonical operational failures fail closed on arbitrary, malformed, or una
   const attendedPrompt = 'Explicit conclusion from the named authority holder (not chat approval): ';
   const escapedCredentialCases = [
     'apiKey', 'accessToken', 'x-api-key', 'clientSecret', 'password', 'authorization',
-  ].flatMap(key => [1, 3].map(layers => {
-    let message = JSON.stringify({ credentials: { [key]: 'nested-api-secret' } });
+  ].flatMap(key => [1, 2, 3, 4, 5, 6].flatMap(layers => {
+    let serializedMessage = JSON.stringify({ credentials: { [key]: 'nested-api-secret' } });
     for (let layer = 0; layer < layers; layer++) {
-      message = message.replaceAll('\\', '\\\\').replaceAll('"', '\\"');
+      serializedMessage = serializedMessage.replaceAll('\\', '\\\\').replaceAll('"', '\\"');
     }
+    const quoteWidth = (2 ** layers) - 1;
+    const escapedQuote = `${'\\'.repeat(quoteWidth)}"`;
+    const shellMessage = `${key}=${escapedQuote}shell-api-secret${escapedQuote}`;
     return [
-      `${key} credential escaped through ${layers} serialized layer${layers === 1 ? '' : 's'}`,
-      progress,
-      canonicalPiOperationalFailure({ telemetry: { providerError: { message, truncated: false } } }),
+      [
+        `${key} credential escaped through ${layers} serialized layer${layers === 1 ? '' : 's'}`,
+        progress,
+        canonicalPiOperationalFailure({ telemetry: { providerError: { message: serializedMessage, truncated: false } } }),
+      ],
+      [
+        `${key} shell credential at escaped quote width ${quoteWidth}`,
+        progress,
+        canonicalPiOperationalFailure({ telemetry: { providerError: { message: shellMessage, truncated: false } } }),
+      ],
     ];
   }));
   const adversarial = [
