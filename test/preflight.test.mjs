@@ -37,7 +37,7 @@ async function fileDigest(file) {
   return digest(await readFile(file));
 }
 
-async function fixture() {
+async function fixture(options = {}) {
   const scratch = await mkdtemp(path.join(os.tmpdir(), 'mdlm-preflight-'));
   const source = path.join(scratch, 'source');
   const harness = path.join(scratch, 'qualification-harness');
@@ -45,7 +45,7 @@ async function fixture() {
   const repository = path.join(scratch, 'lifecycle-repository');
   for (const directory of [source, harness, tooling, repository]) await mkdir(directory);
   for (const directory of [source, harness, repository]) {
-    git(['init', '-b', 'main'], directory);
+    git(['init', ...(options.objectFormat === undefined ? [] : [`--object-format=${options.objectFormat}`]), '-b', 'main'], directory);
     git(['config', 'user.name', 'Test'], directory);
     git(['config', 'user.email', 'test@example.invalid'], directory);
     await writeFile(path.join(directory, 'README.md'), `${path.basename(directory)} fixture\n`);
@@ -696,6 +696,32 @@ test('preflight status ignores repository attributes that select local clean fil
   const execution = invoke(value.preflightRequest, value.scratch);
   assert.equal(execution.status, 1);
   await assert.rejects(readFile(marker), { code: 'ENOENT' });
+});
+
+test('preflight rejects Git info attributes before they can select a local clean filter', async t => {
+  const value = await fixture();
+  t.after(() => rm(value.scratch, { recursive: true, force: true }));
+  const marker = path.join(value.scratch, 'info-clean-filter-ran');
+  const filter = path.join(value.scratch, 'info-clean-filter.sh');
+  await writeFile(path.join(value.source, '.git', 'info', 'attributes'), 'README.md filter=untrusted\n');
+  await writeFile(filter, `#!/bin/sh\nprintf ran > '${marker}'\ncat\n`);
+  await chmod(filter, 0o755);
+  git(['config', 'filter.untrusted.clean', filter], value.source);
+  git(['config', 'filter.untrusted.required', 'true'], value.source);
+  await writeFile(path.join(value.source, 'README.md'), 'dirty! fixture\n');
+
+  const execution = invoke(value.preflightRequest, value.scratch);
+  assert.equal(execution.status, 1);
+  await assert.rejects(readFile(marker), { code: 'ENOENT' });
+});
+
+test('preflight authenticates SHA-256 repositories without a SHA-1 attribute source', async t => {
+  const value = await fixture({ objectFormat: 'sha256' });
+  t.after(() => rm(value.scratch, { recursive: true, force: true }));
+  const execution = invoke(value.preflightRequest, value.scratch);
+  assert.equal(value.runRequest.provenance.source.commit.length, 64);
+  assert.equal(execution.status, 0, execution.stderr);
+  assert.equal(resultOf(execution).status, 'PASS');
 });
 
 test('provenance inspection rejects a repository pathname replacement between Git observations', async t => {

@@ -345,6 +345,7 @@ async function gitIdentity(value, timeoutMs, label, gitBinding, options = {}) {
     const preCommit = await runProcess(gitBinding.program, args(['rev-parse', 'HEAD^{commit}']), processOptions);
     const preTree = await runProcess(gitBinding.program, args(['rev-parse', 'HEAD^{tree}']), processOptions);
     await options.afterGitPreIdentity?.({ label, repository, repositoryHandle });
+    await rejectRepositoryFilters(gitBinding, args, processOptions, label);
     const status = await runProcess(
       gitBinding.program,
       args(['status', '--porcelain=v1', '-z', '--untracked-files=all']),
@@ -406,6 +407,38 @@ async function gitIdentity(value, timeoutMs, label, gitBinding, options = {}) {
     };
   } finally {
     await repositoryHandle?.close();
+  }
+}
+
+async function rejectRepositoryFilters(gitBinding, args, processOptions, label) {
+  const filters = await runProcess(
+    gitBinding.program,
+    args(['config', '--local', '--includes', '--null', '--name-only', '--get-regexp', '^filter\\..*\\.(clean|process)$']),
+    processOptions,
+  );
+  const noConfiguredFilter = filters.exitStatus === 1 && filters.signal === null && filters.spawnError === null &&
+    filters.timedOut === false && filters.outputLimitExceeded === false &&
+    filters.stdout.length === 0 && filters.stderr.length === 0;
+  if (commandSucceeded(filters) && filters.stdout.length > 0) {
+    throw new Error(`provenance.${label}.repository configures a clean or process filter`);
+  }
+  if (!noConfiguredFilter) throw new Error(`provenance.${label}.repository filter configuration could not be authenticated`);
+
+  const attributes = await runProcess(
+    gitBinding.program,
+    args(['rev-parse', '--path-format=absolute', '--git-path', 'info/attributes']),
+    processOptions,
+  );
+  if (!commandSucceeded(attributes)) throw new Error(`provenance.${label}.repository info attributes path could not be authenticated`);
+  const attributesPath = attributes.stdout.toString('utf8').trim();
+  if (!path.isAbsolute(attributesPath) || attributesPath.includes('\0')) {
+    throw new Error(`provenance.${label}.repository info attributes path is invalid`);
+  }
+  try {
+    await lstat(attributesPath);
+    throw new Error(`provenance.${label}.repository has info/attributes`);
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
   }
 }
 

@@ -1,0 +1,16 @@
+Command: node --test --test-name-pattern='Git info attributes|SHA-256 repositories' test/preflight.test.mjs
+Exit status: 1
+
+✖ preflight rejects Git info attributes before they can select a local clean filter
+✖ preflight authenticates SHA-256 repositories without a SHA-1 attribute source
+ℹ tests 2
+ℹ suites 0
+ℹ pass 0
+ℹ fail 2
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+
+Git consulted info/attributes and executed the configured clean filter before
+returning a generic provenance mismatch. A real SHA-256 repository failed
+status because the sanitized environment supplied the SHA-1 empty-tree ID.
