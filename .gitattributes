@@ -1,5 +1,6 @@
 # Test runner diagnostics are preserved byte-for-byte as TDD red evidence.
 tdd-red-logs/*.log whitespace=-blank-at-eol,-blank-at-eof
+tdd-red-logs/*.txt whitespace=-blank-at-eol,-blank-at-eof
 
 # Captured issue evidence preserves exact command output bytes.
 test/evidence/** whitespace=-blank-at-eol,-blank-at-eof
