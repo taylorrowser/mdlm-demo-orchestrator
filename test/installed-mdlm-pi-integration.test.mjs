@@ -5,14 +5,18 @@ import { mkdtemp, readFile, readdir } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { decodeMdlmPiResult } from '../src/orchestrator.mjs';
+import {
+  decodeMdlmPiResult,
+  operationalFailureHasCompleteAttemptEvidence,
+  operationalFailureRetryMode,
+} from '../src/orchestrator.mjs';
 
 const producerSource = process.env.MDLM_PI_ISSUE_19_SOURCE ??
   '/home/ubuntu/git/mdlm-worktrees/issue-19-operational-failure-telemetry';
 const expectedProducer = {
-  commit: 'bbb56e654146daccdb21d0641a8ce98c425e9c7f',
-  tree: '96c44e3e263226e4776d82e1aa4010288c1f1e55',
-  distSha256: 'sha256:b94ed944edbece78ee17fa05d7b772736c921be047ca1409eac3bc7c9dc67c93',
+  commit: '402165a5a759155712007bd77d0da33ab8d07703',
+  tree: 'f8dab57c369efdad037e664da79de0b0825469e9',
+  distSha256: 'sha256:b229c9e932a079448ebe38f72aec3f94b198cf4ee3172bf7477b278fd59156c3',
   executableSha256: 'sha256:5ffbbf60ba44e7ab2ebab261c93fa6385cb98cb0829002abb2c0acc23c37f3c1',
 };
 const installed = path.join(producerSource, 'packages', 'mdlm-pi', 'dist');
@@ -58,7 +62,7 @@ assert.equal(`sha256:${createHash('sha256').update(await readFile(executable)).d
 
 const { RunController } = await import(`${installed}/run-controller.js`);
 const { RunJournal } = await import(`${installed}/run-journal.js`);
-const { PiAssignmentRunner } = await import(`${installed}/pi-assignment-runner.js`);
+const { PiAssignmentRunner, PiAssignmentRunnerError } = await import(`${installed}/pi-assignment-runner.js`);
 const { operationalFailureDocument, redactProviderError } = await import(`${installed}/operational-failure.js`);
 
 const assignmentId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -70,6 +74,96 @@ const repositoryIdentity = { head: 'base-commit', trackedState: `sha256:${'2'.re
 function prepared(response) {
   const source = `${JSON.stringify(response)}\n`;
   return { response, source, digest: `sha256:${createHash('sha256').update(source).digest('hex')}` };
+}
+
+function assignmentPacket() {
+  return {
+    contract: 'mdlm-assignment-packet@2',
+    ok: true,
+    command: 'scenario.prepare',
+    assignment: { id: assignmentId },
+    package: { reference: 'package@1' },
+    repository: { head: 'base' },
+    scenario: { reference: 'independent-judgment@1' },
+    responseSchema: { type: 'object' },
+  };
+}
+
+async function correctionFailure(scripts, assignmentTimeoutMs = 1_000) {
+  let listener = () => {};
+  let idle = true;
+  let captureResponse = () => {};
+  const previousResponse = scripts[0].response;
+  const session = {
+    get isIdle() { return idle; },
+    async prompt() {
+      const script = scripts.shift();
+      assert.ok(script, 'attempt script');
+      idle = !script.hang;
+      listener({ type: 'agent_start' });
+      if (script.providerError !== undefined) {
+        listener({
+          type: 'auto_retry_start',
+          attempt: script.retriesConsumed,
+          errorMessage: script.providerError,
+        });
+      }
+      if (script.stopReason !== undefined) {
+        listener({
+          type: 'message_end',
+          message: {
+            role: 'assistant', stopReason: script.stopReason,
+            provider: script.provider, model: script.model,
+          },
+        });
+      }
+      if (script.response !== undefined) captureResponse(script.response);
+      if (script.hang) await new Promise(() => {});
+    },
+    async abort() { idle = true; },
+    dispose() {},
+    subscribe(next) {
+      listener = next;
+      return () => {};
+    },
+  };
+  const runner = new PiAssignmentRunner({
+    repository: '.',
+    assignmentTimeoutMs,
+    sessionFactory: async (_packet, capture) => {
+      captureResponse = capture;
+      return session;
+    },
+  });
+
+  await runner.run(assignmentPacket());
+  try {
+    await runner.run(assignmentPacket(), {
+      correction: {
+        previousResponse,
+        diagnostics: [{ code: 'FIX', message: 'Correct it' }],
+      },
+    });
+  } catch (error) {
+    assert.ok(error instanceof PiAssignmentRunnerError);
+    return error;
+  }
+  assert.fail('correction attempt should fail');
+}
+
+function consumeOperationalFailure(document, provider = null, model = null) {
+  const argv = [executable];
+  if (provider !== null) argv.push('--provider', provider);
+  if (model !== null) argv.push('--model', model);
+  const stderr = Buffer.from(`${JSON.stringify(document)}\n`);
+  const consumed = decodeMdlmPiResult({
+    argv, exitStatus: 1, signal: null, timedOut: false,
+    outputLimitExceeded: false, spawnError: null, stdout: Buffer.alloc(0), stderr,
+  }, Buffer.alloc(0));
+  assert.equal(consumed.kind, 'operational-failure');
+  assert.equal(consumed.status, 'mdlm-pi-operational-failure');
+  assert.deepEqual(consumed.document, document);
+  return consumed;
 }
 
 test('exact issue 19 MDLM-Pi executable produces the canonical envelope consumed by the runner contract', () => {
@@ -109,6 +203,71 @@ test('exact issue 19 MDLM-Pi executable produces the canonical envelope consumed
     detail: "mdlm-pi reported authenticated operational failure 'CLI_USAGE_INVALID'",
     document: envelope,
   });
+});
+
+test('exact issue 19 built producer keeps correction telemetry current before runner recovery authorization', async () => {
+  const priorAttempt = {
+    response: { assignment: assignmentId, malformed: true },
+    stopReason: 'error',
+    providerError: 'prior provider failure',
+    retriesConsumed: 2,
+    provider: 'prior-provider',
+    model: 'prior-model',
+  };
+
+  const unavailable = operationalFailureDocument(await correctionFailure([priorAttempt, {}]));
+  assert.deepEqual(unavailable.telemetry, {
+    stopReason: null,
+    providerError: null,
+    retriesConsumed: 0,
+    provider: null,
+    model: null,
+    completeAssignmentObserved: false,
+  });
+  const unavailableConsumed = consumeOperationalFailure(unavailable);
+  assert.equal(operationalFailureHasCompleteAttemptEvidence(unavailableConsumed.document), false);
+  assert.equal(operationalFailureRetryMode(unavailableConsumed.document), 'resume');
+
+  const current = operationalFailureDocument(await correctionFailure([priorAttempt, {
+    stopReason: 'length',
+    providerError: 'current provider failure',
+    retriesConsumed: 1,
+    provider: 'current-provider',
+    model: 'current-model',
+  }]));
+  assert.deepEqual(current.telemetry, {
+    stopReason: 'length',
+    providerError: { message: 'current provider failure', truncated: false },
+    retriesConsumed: 1,
+    provider: 'current-provider',
+    model: 'current-model',
+    completeAssignmentObserved: false,
+  });
+  const currentConsumed = consumeOperationalFailure(current, 'current-provider', 'current-model');
+  assert.equal(operationalFailureHasCompleteAttemptEvidence(currentConsumed.document), true);
+  assert.equal(operationalFailureRetryMode(currentConsumed.document), 'resume');
+
+  const timeoutError = await correctionFailure([priorAttempt, {
+    stopReason: 'aborted',
+    providerError: 'current timeout failure',
+    retriesConsumed: 1,
+    provider: 'current-provider',
+    model: 'current-model',
+    hang: true,
+  }], 30);
+  assert.match(timeoutError.message, /exceeded 30ms/);
+  const timeout = operationalFailureDocument(timeoutError);
+  assert.deepEqual(timeout.telemetry, {
+    stopReason: 'aborted',
+    providerError: { message: 'current timeout failure', truncated: false },
+    retriesConsumed: 1,
+    provider: 'current-provider',
+    model: 'current-model',
+    completeAssignmentObserved: false,
+  });
+  const timeoutConsumed = consumeOperationalFailure(timeout, 'current-provider', 'current-model');
+  assert.equal(operationalFailureHasCompleteAttemptEvidence(timeoutConsumed.document), true);
+  assert.equal(operationalFailureRetryMode(timeoutConsumed.document), 'run');
 });
 
 test('exact issue 19 built producer redacts every supported shell-escaped credential before the runner accepts its envelope', () => {

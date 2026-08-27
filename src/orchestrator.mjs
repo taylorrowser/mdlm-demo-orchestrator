@@ -2135,6 +2135,13 @@ export function decodeMdlmPiResult(processResult, expectedStdout = null) {
 const mdlmPiOperationalFailureContract = 'mdlm-pi-operational-failure@1';
 const maximumOperationalProgressBytes = 64 * 1024;
 
+export function operationalFailureHasCompleteAttemptEvidence(document) {
+  return document?.contract !== mdlmPiOperationalFailureContract ||
+    (document.telemetry?.completeAssignmentObserved === false &&
+      document.telemetry.stopReason !== null && document.telemetry.retriesConsumed !== null &&
+      document.telemetry.provider !== null && document.telemetry.model !== null);
+}
+
 export function operationalFailureRetryMode(document) {
   return document?.contract === mdlmPiOperationalFailureContract &&
       document?.error?.code === 'PI_SETTLED_WITHOUT_COMPLETION'
@@ -2365,11 +2372,7 @@ async function finalizeOperationalFailure(output, initialSnapshot, postSnapshot,
   if (evidence === undefined) return output;
   delete output[operationalFailureEvidence];
   try {
-    const canonicalFailure = output.mdlmPi?.document?.contract === mdlmPiOperationalFailureContract;
-    const telemetry = output.mdlmPi?.document?.telemetry;
-    if (canonicalFailure && (telemetry?.completeAssignmentObserved !== false ||
-        telemetry.stopReason === null || telemetry.retriesConsumed === null ||
-        telemetry.provider === null || telemetry.model === null)) {
+    if (!operationalFailureHasCompleteAttemptEvidence(output.mdlmPi?.document)) {
       throw new Error('worker failure lacks complete authenticated terminal and response-capture evidence');
     }
     if (initialSnapshot.status !== 'complete' || postSnapshot.status !== 'complete') {

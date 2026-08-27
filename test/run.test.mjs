@@ -6,7 +6,10 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { operationalFailureRetryMode } from '../src/orchestrator.mjs';
+import {
+  operationalFailureHasCompleteAttemptEvidence,
+  operationalFailureRetryMode,
+} from '../src/orchestrator.mjs';
 import { toolingTreeDigest } from './provenance-fixture.mjs';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -2650,6 +2653,16 @@ test('operational failure retry mode requires resume only for canonical Pi settl
     contract: 'legacy-operational-failure',
     error: { code: 'PI_SETTLED_WITHOUT_COMPLETION' },
   }), 'run');
+});
+
+test('operational failure recovery requires complete current-attempt evidence', () => {
+  assert.equal(operationalFailureHasCompleteAttemptEvidence(canonicalPiOperationalFailure()), true);
+  assert.equal(operationalFailureHasCompleteAttemptEvidence(canonicalPiOperationalFailure({
+    telemetry: { stopReason: null, provider: null, model: null },
+  })), false);
+  assert.equal(operationalFailureHasCompleteAttemptEvidence({
+    contract: 'legacy-operational-failure',
+  }), true);
 });
 
 test('canonical operational failures fail closed on arbitrary, malformed, or unauthenticated output', async () => {
