@@ -2089,7 +2089,7 @@ async function writeSyncedOrMatch(file, bytes) {
   await writeExclusiveSynced(file, bytes);
 }
 
-function decodeMdlmPiResult(processResult, expectedStdout = null) {
+export function decodeMdlmPiResult(processResult, expectedStdout = null) {
   const stdout = trailingJson(processResult.stdout);
   const stderr = trailingJson(processResult.stderr);
   const reserved = processResult.exitStatus === 1 ? findReservedStop(stderr) : null;
@@ -2129,6 +2129,13 @@ function decodeMdlmPiResult(processResult, expectedStdout = null) {
 
 const mdlmPiOperationalFailureContract = 'mdlm-pi-operational-failure@1';
 const maximumOperationalProgressBytes = 64 * 1024;
+
+export function operationalFailureRetryMode(document) {
+  return document?.contract === mdlmPiOperationalFailureContract &&
+      document?.error?.code === 'PI_SETTLED_WITHOUT_COMPLETION'
+    ? 'resume'
+    : 'run';
+}
 const piStopReasons = new Set(['stop', 'length', 'toolUse', 'error', 'aborted', 'deferred']);
 
 function isTypedOperationalFailure(processResult, stderr, expectedStdout) {
@@ -2192,7 +2199,7 @@ function isRedactedProviderError(value) {
 }
 
 function containsSecretLookingText(value) {
-  return /(?:[A-Za-z][A-Za-z0-9+.-]*:\/\/[^\s/@]+:[^\s/@]+@|bearer\s+[^\s,;]+|(?:api[-_ ]?key|authorization|token|secret|password)\s*[:=]\s*["']?[^\s,"';}]+|(?:sk|rk|pk|ghp|github_pat|xox[baprs])[-_][A-Za-z0-9_-]{8,}|(?:AKIA|ASIA|AIDA|AROA|AIPA|ANPA|ANVA|A3T)[A-Z0-9]{16}|(?:glpat-|npm_|AIza)[A-Za-z0-9_-]{16,}|eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{8,})/iu.test(value);
+  return /(?:[A-Za-z][A-Za-z0-9+.-]*:\/\/[^\s/@]+:[^\s/@]+@|bearer\s+[^\s,;]+|["']?(?:x[-_ ]?api[-_ ]?key|api[-_ ]?key|access[-_ ]?token|refresh[-_ ]?token|client[-_ ]?secret|authorization|token|secret|password)["']?\s*[:=]\s*(?:"(?:\\.|[^"\\\r\n])*"|'(?:\\.|[^'\\\r\n])*'|[^\s,"';}]+)|(?:sk|rk|pk|ghp|github_pat|xox[baprs])[-_][A-Za-z0-9_-]{8,}|(?:AKIA|ASIA|AIDA|AROA|AIPA|ANPA|ANVA|A3T)[A-Z0-9]{16}|(?:glpat-|npm_|AIza)[A-Za-z0-9_-]{16,}|eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{8,})/iu.test(value);
 }
 
 function isBoundedText(value, minimum, maximum) {
@@ -2414,8 +2421,7 @@ async function finalizeOperationalFailure(output, initialSnapshot, postSnapshot,
     output.outcome = 'pre-submission-operational-failure';
     output.recoverable = true;
     output.trustedRepositoryAdvance = false;
-    const retryCommand = output.mdlmPi.document.contract === mdlmPiOperationalFailureContract &&
-      output.mdlmPi.document.error.code === 'PI_SETTLED_WITHOUT_COMPLETION' ? 'resume' : 'run';
+    const retryCommand = operationalFailureRetryMode(output.mdlmPi.document);
     output.operationalFailureRecovery = {
       verified: true,
       assignmentId: output.assignmentId,
@@ -2631,8 +2637,7 @@ async function writeOperationalFailureMarker({
   const marker = {
     contract: 'mdlm-demo-operational-failure-marker@1',
     assignmentId,
-    requiredNextMode: document.contract === mdlmPiOperationalFailureContract &&
-      document.error.code === 'PI_SETTLED_WITHOUT_COMPLETION' ? 'resume' : 'run',
+    requiredNextMode: operationalFailureRetryMode(document),
     source,
     assignmentDirectory: path.resolve(assignmentDirectory),
     initialBoundary: await operationalBoundary(initialSnapshot, initial),
@@ -2807,8 +2812,7 @@ async function validateOperationalFailureMarker({ document, index, transitioned,
     ),
   );
   const expectedDocument = operationalFailureDocumentEvidence(stored.stderr, typed);
-  const expectedMode = typed.contract === mdlmPiOperationalFailureContract &&
-    typed.error.code === 'PI_SETTLED_WITHOUT_COMPLETION' ? 'resume' : 'run';
+  const expectedMode = operationalFailureRetryMode(typed);
   if (document.requiredNextMode !== expectedMode) {
     throw new Error('operational failure marker recovery mode differs from its typed failure');
   }

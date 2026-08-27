@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { operationalFailureRetryMode } from '../src/orchestrator.mjs';
 import { toolingTreeDigest } from './provenance-fixture.mjs';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -2470,8 +2471,34 @@ const fs=require('node:fs'),path=require('node:path'); const configPath=process.
   assert.equal((await readdir(durableDirectory)).some(name => name.startsWith('attempt-')), false);
 });
 
-test('issue 19 preserved boundaries reject the legacy envelope and recover only with exact canonical evidence', async () => {
+test('byte-faithful IPv4 run021, URI run016, and SemVer run011 boundaries accept only the canonical issue 19 envelope', async () => {
   const cases = JSON.parse(await readFile(path.join(issue19OperationalFailureDirectory, 'cases.json'), 'utf8'));
+  assert.deepEqual(cases.slice(0, 3).map(item => ({
+    name: item.name,
+    assignment: item.assignment,
+    scenario: item.scenario,
+    stdoutSha256: item.stdoutSha256,
+    attentionSha256: item.attentionSha256,
+  })), [
+    {
+      name: 'ipv4-021', assignment: 'd80b478b-34aa-49dd-bdc0-8bfa83c2c9a8',
+      scenario: 'review-datum-in-context@2',
+      stdoutSha256: 'sha256:e9e2ad0729fafd3a78787e06e54ae27efb4af765b7e65710e9b8afbb4c92ffd8',
+      attentionSha256: undefined,
+    },
+    {
+      name: 'uri-016', assignment: '8e63b0cd-92e0-4704-ac42-10fcde3f5090',
+      scenario: 'draft-stakeholder-requirements@2',
+      stdoutSha256: 'sha256:ed012fc3fc64c171a8d974a3a181d7f68d7c8b0317db9365091b2b96a724d335',
+      attentionSha256: undefined,
+    },
+    {
+      name: 'semver-011', assignment: '47ee5038-5461-41be-b495-eac22dc028c9',
+      scenario: 'resolve-question@2',
+      stdoutSha256: 'sha256:d5d159eb710328ccb6c96be0a76641c3ca9bae30a09f929a081ffa8939b6f1e2',
+      attentionSha256: 'sha256:47c9c93cd128faf7ad30b98c25114e1a92de74da52ef574ce1773f7ea9c4fc1f',
+    },
+  ]);
   const legacyStderrPath = path.join(issue19OperationalFailureDirectory, 'legacy.stderr');
   const legacyStderr = await readFile(legacyStderrPath);
   assert.equal(`sha256:${createHash('sha256').update(legacyStderr).digest('hex')}`, cases[0].legacyStderrSha256);
@@ -2576,7 +2603,18 @@ test('issue 19 preserved boundaries reject the legacy envelope and recover only 
   }
 });
 
-test('canonical operational failures fail closed on unrecognized stdout and unauthenticated envelopes', async () => {
+test('operational failure retry mode requires resume only for canonical Pi settlement', () => {
+  assert.equal(operationalFailureRetryMode(canonicalPiOperationalFailure()), 'resume');
+  assert.equal(operationalFailureRetryMode(canonicalPiOperationalFailure({
+    error: { code: 'PI_ASSIGNMENT_RUNNER_ERROR', message: 'Provider failed before settlement' },
+  })), 'run');
+  assert.equal(operationalFailureRetryMode({
+    contract: 'legacy-operational-failure',
+    error: { code: 'PI_SETTLED_WITHOUT_COMPLETION' },
+  }), 'run');
+});
+
+test('canonical operational failures fail closed on arbitrary, malformed, or unauthenticated output', async () => {
   const assignment = '44444444-4444-4444-8444-444444444444';
   const progress = `Assignment ${assignment}: ordinary@1\n`;
   const canonical = canonicalPiOperationalFailure();
@@ -2593,6 +2631,7 @@ test('canonical operational failures fail closed on unrecognized stdout and unau
     ['nonterminal pending stop reason', progress, canonicalPiOperationalFailure({ telemetry: { stopReason: 'pending' } })],
     ['mismatched provider', progress, canonicalPiOperationalFailure({ telemetry: { provider: 'anthropic' } })],
     ['secret-bearing provider error', progress, canonicalPiOperationalFailure({ telemetry: { providerError: { message: 'Authorization Bearer sk-secretvalue', truncated: false } } })],
+    ['quoted nested provider credential', progress, canonicalPiOperationalFailure({ telemetry: { providerError: { message: '{"headers":{"x-api-key":"nested-provider-secret"}}', truncated: false } } })],
     ['opaque provider credential', progress, canonicalPiOperationalFailure({ telemetry: { providerError: { message: Buffer.from('opaque provider credential value').toString('base64'), truncated: false } } })],
     ['AWS provider credential', progress, canonicalPiOperationalFailure({ telemetry: { providerError: { message: 'AKIAIOSFODNN7EXAMPLE', truncated: false } } })],
     ['JWT provider credential', progress, canonicalPiOperationalFailure({ telemetry: { providerError: { message: 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.signature-value', truncated: false } } })],

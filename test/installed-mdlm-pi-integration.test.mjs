@@ -1,11 +1,61 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { decodeMdlmPiResult } from '../src/orchestrator.mjs';
 
-const installed = '/home/ubuntu/git/mdlm-successor-demos/.tooling-issue-214/node_modules/mdlm-pi/dist';
+const producerSource = process.env.MDLM_PI_ISSUE_19_SOURCE ??
+  '/home/ubuntu/git/mdlm-worktrees/issue-19-operational-failure-telemetry';
+const expectedProducer = {
+  commit: '41c6c4efad97e1793f712776d04ce80c31874b60',
+  tree: 'cb7961480775a68187dbef3068945429a79d1fa8',
+  distSha256: 'sha256:72a3e2ad3cd93b6b4b6d9844e7cf44a6b8e23ce6f9a80c5605c5a0cbb22a1488',
+  executableSha256: 'sha256:5ffbbf60ba44e7ab2ebab261c93fa6385cb98cb0829002abb2c0acc23c37f3c1',
+};
+const installed = path.join(producerSource, 'packages', 'mdlm-pi', 'dist');
+
+function git(...args) {
+  const result = spawnSync('git', ['-C', producerSource, ...args], { encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  return result.stdout.trim();
+}
+
+async function builtTreeDigest(directory) {
+  async function files(current) {
+    const values = [];
+    for (const entry of await readdir(current, { withFileTypes: true })) {
+      const entryPath = path.join(current, entry.name);
+      if (entry.isDirectory()) values.push(...await files(entryPath));
+      else if (entry.isFile()) values.push(entryPath);
+    }
+    return values;
+  }
+  const hash = createHash('sha256');
+  for (const file of (await files(directory)).sort()) {
+    const relative = path.relative(directory, file);
+    const bytes = await readFile(file);
+    hash.update(`${relative}\0${bytes.length}\0`);
+    hash.update(bytes);
+  }
+  return `sha256:${hash.digest('hex')}`;
+}
+
+assert.equal(git('rev-parse', 'HEAD^{commit}'), expectedProducer.commit);
+assert.equal(git('rev-parse', 'HEAD^{tree}'), expectedProducer.tree);
+assert.equal(git('status', '--porcelain=v1', '--untracked-files=no'), '');
+const build = spawnSync('npm', ['run', 'build:mdlm-pi'], {
+  cwd: producerSource,
+  encoding: 'utf8',
+});
+assert.equal(build.status, 0, `${build.stdout}\n${build.stderr}`);
+assert.equal(await builtTreeDigest(installed), expectedProducer.distSha256);
+const executable = path.join(installed, 'cli.js');
+assert.equal(`sha256:${createHash('sha256').update(await readFile(executable)).digest('hex')}`,
+  expectedProducer.executableSha256);
+
 const { RunController } = await import(`${installed}/run-controller.js`);
 const { RunJournal } = await import(`${installed}/run-journal.js`);
 const { PiAssignmentRunner } = await import(`${installed}/pi-assignment-runner.js`);
@@ -21,7 +71,46 @@ function prepared(response) {
   return { response, source, digest: `sha256:${createHash('sha256').update(source).digest('hex')}` };
 }
 
-test('installed mdlm-pi consumes attended Review-correction wording in the same Assignment without replaying accepted Scenarios', async () => {
+test('exact issue 19 MDLM-Pi executable produces the canonical envelope consumed by the runner contract', () => {
+  const execution = spawnSync(process.execPath, [executable]);
+  assert.equal(execution.status, 1, execution.stderr.toString('utf8'));
+  assert.equal(execution.stdout.length, 0);
+  const envelope = JSON.parse(execution.stderr.toString('utf8'));
+  assert.deepEqual(envelope, {
+    contract: 'mdlm-pi-operational-failure@1',
+    status: 'operational-failure',
+    error: {
+      code: 'CLI_USAGE_INVALID',
+      message: 'Usage: mdlm-pi run <repository> [--mdlm <executable>] [--provider <provider>] [--model <model>] [--thinking <level>]',
+    },
+    telemetry: {
+      stopReason: null,
+      providerError: null,
+      retriesConsumed: null,
+      provider: null,
+      model: null,
+      completeAssignmentObserved: null,
+    },
+  });
+  const consumed = decodeMdlmPiResult({
+    argv: execution.spawnargs,
+    exitStatus: execution.status,
+    signal: execution.signal,
+    timedOut: false,
+    outputLimitExceeded: false,
+    spawnError: execution.error ?? null,
+    stdout: execution.stdout,
+    stderr: execution.stderr,
+  }, Buffer.alloc(0));
+  assert.deepEqual(consumed, {
+    kind: 'operational-failure',
+    status: 'mdlm-pi-operational-failure',
+    detail: "mdlm-pi reported authenticated operational failure 'CLI_USAGE_INVALID'",
+    document: envelope,
+  });
+});
+
+test('exact issue 19 built mdlm-pi consumes attended Review-correction wording in the same Assignment without replaying accepted Scenarios', async () => {
   const repository = await mkdtemp(path.join(os.tmpdir(), 'mdlm-demo-installed-controller-'));
   const wording = 'Preserve the accepted Scenario evidence and revise only the Review finding.';
   const authorityRequirement = { mode: 'attended', authority: 'stakeholder', delegationAllowed: false };
@@ -120,7 +209,7 @@ test('installed mdlm-pi consumes attended Review-correction wording in the same 
   assert.equal(submitted[0].proposal.completionEvidence.authorizedCorrection, wording);
 });
 
-test('installed controller serializes accepted A publication before it prepares external B', async () => {
+test('exact issue 19 built controller serializes accepted A publication before it prepares external B', async () => {
   const repository = await mkdtemp(path.join(os.tmpdir(), 'mdlm-demo-installed-boundary-'));
   const externalId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
   const trace = [];
