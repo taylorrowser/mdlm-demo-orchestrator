@@ -1,0 +1,59 @@
+[
+  {
+    "name": "ipv4-021",
+    "assignment": "d80b478b-34aa-49dd-bdc0-8bfa83c2c9a8",
+    "scenario": "review-datum-in-context@2",
+    "stdoutSha256": "sha256:e9e2ad0729fafd3a78787e06e54ae27efb4af765b7e65710e9b8afbb4c92ffd8",
+    "legacyStderrBase64": "ewogICJzdGF0dXMiOiAib3BlcmF0aW9uYWwtZmFpbHVyZSIsCiAgImVycm9yIjogIlBpIHNldHRsZWQgd2l0aG91dCBjYWxsaW5nIGNvbXBsZXRlX2Fzc2lnbm1lbnQiCn0K",
+    "legacyStderrSha256": "sha256:b8109c0c8454cae021e61b3aa891469e8fa783375d10242e78102e2c2dc66dec"
+  },
+  {
+    "name": "uri-016",
+    "assignment": "8e63b0cd-92e0-4704-ac42-10fcde3f5090",
+    "scenario": "draft-stakeholder-requirements@2",
+    "stdoutSha256": "sha256:ed012fc3fc64c171a8d974a3a181d7f68d7c8b0317db9365091b2b96a724d335",
+    "legacyStderrBase64": "ewogICJzdGF0dXMiOiAib3BlcmF0aW9uYWwtZmFpbHVyZSIsCiAgImVycm9yIjogIlBpIHNldHRsZWQgd2l0aG91dCBjYWxsaW5nIGNvbXBsZXRlX2Fzc2lnbm1lbnQiCn0K",
+    "legacyStderrSha256": "sha256:b8109c0c8454cae021e61b3aa891469e8fa783375d10242e78102e2c2dc66dec"
+  },
+  {
+    "name": "semver-011",
+    "assignment": "47ee5038-5461-41be-b495-eac22dc028c9",
+    "scenario": "resolve-question@2",
+    "attentionFixture": "semver-011.attention.json",
+    "attentionSha256": "sha256:47c9c93cd128faf7ad30b98c25114e1a92de74da52ef574ce1773f7ea9c4fc1f",
+    "stdoutSha256": "sha256:d5d159eb710328ccb6c96be0a76641c3ca9bae30a09f929a081ffa8939b6f1e2",
+    "legacyStderrBase64": "ewogICJzdGF0dXMiOiAib3BlcmF0aW9uYWwtZmFpbHVyZSIsCiAgImVycm9yIjogIlBpIHNldHRsZWQgd2l0aG91dCBjYWxsaW5nIGNvbXBsZXRlX2Fzc2lnbm1lbnQiCn0K",
+    "legacyStderrSha256": "sha256:b8109c0c8454cae021e61b3aa891469e8fa783375d10242e78102e2c2dc66dec"
+  },
+  {
+    "name": "jsonl-013",
+    "assignment": "ad7bede7-1758-4af2-8acc-4aa0b6cd62be",
+    "scenario": "compile-psp@3",
+    "stdoutSha256": "sha256:6cfb8297bde1ff6d2fe71a31fb66d7eb2bac562e9f83b992b264c3822f25daa7",
+    "legacyStderrBase64": "ewogICJzdGF0dXMiOiAib3BlcmF0aW9uYWwtZmFpbHVyZSIsCiAgImVycm9yIjogIlBpIHNldHRsZWQgd2l0aG91dCBjYWxsaW5nIGNvbXBsZXRlX2Fzc2lnbm1lbnQiCn0K",
+    "legacyStderrSha256": "sha256:b8109c0c8454cae021e61b3aa891469e8fa783375d10242e78102e2c2dc66dec"
+  },
+  {
+    "name": "toml-014",
+    "assignment": "2dd783b7-bcf2-4b69-bdde-ea7b1716ac96",
+    "scenario": "compile-psp@3",
+    "stdoutSha256": "sha256:0f6277382d36f438fd698821de0b6316cfbe0f00b76c8b23c9f71ba51d727255",
+    "legacyStderrBase64": "ewogICJzdGF0dXMiOiAib3BlcmF0aW9uYWwtZmFpbHVyZSIsCiAgImVycm9yIjogIlBpIHNldHRsZWQgd2l0aG91dCBjYWxsaW5nIGNvbXBsZXRlX2Fzc2lnbm1lbnQiCn0K",
+    "legacyStderrSha256": "sha256:b8109c0c8454cae021e61b3aa891469e8fa783375d10242e78102e2c2dc66dec",
+    "sourceEvidence": "operations/toml-table-count-ops-001/evidence/014-run.stdout",
+    "initialSnapshotSha256": "sha256:12c7336eb66e9d86ce0697df1bd7b5e3208cb7c3a67cfef6064110f7a7c632a8",
+    "postSnapshotSha256": "sha256:e39493729b2f4ad0b7ffb261459bb71cc411af3443ea16be55e61035b435b8e7",
+    "durableRepository": {
+      "head": "65ac5cb82f2bea707bb8681c4f1aa80170a9d6c9",
+      "tree": "aadf10d1e49270b018d0bf68f743d308473b6f91",
+      "trackedState": "sha256:23963cf5ba80b067008566ed7e5cbc5b0445ef99869a6c2cc5cca62ed0a87936",
+      "clean": true
+    },
+    "qualifiedIdentity": {
+      "mdlm": "edf5ed73d38d032e93c38f0d2d568c5be43e305c",
+      "runner": "c0977b67f91fdc8bdee8f202066f8c971d436bce",
+      "mdlmArtifact": "sha256:59d86a58c3d8eccb2a6ed8ef38426360d23add3e5df5cb3c2e80879dc27171c3",
+      "mdlmPiArtifact": "sha256:2cf7302b5906ca1e25084333c1b1ce5127004f9914467be99c5f0160dccaad7e"
+    }
+  }
+]
