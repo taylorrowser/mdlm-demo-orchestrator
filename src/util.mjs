@@ -1,7 +1,8 @@
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { lstat, readFile, readlink, realpath, readdir } from 'node:fs/promises';
+import { lstat } from 'node:fs/promises';
 import path from 'node:path';
+import { readCanonicalDirectory, readCanonicalFile, readCanonicalSymlink } from './canonical-file.mjs';
 
 export const sha256 = bytes => `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
 
@@ -51,27 +52,35 @@ export function gitEnvironment(extra = {}) {
   return controlledEnvironment(extra, { git: true });
 }
 
-export async function fileIdentity(file) {
+export const toolingTreeLimits = Object.freeze({
+  fileBytes: 16_777_216,
+  totalBytes: 268_435_456,
+  entries: 100_000,
+  symlinkBytes: 4096,
+});
+
+export async function fileIdentity(file, options = {}) {
   const configuredPath = path.resolve(file);
-  const information = await lstat(configuredPath);
-  const target = await realpath(configuredPath);
-  const bytes = await readFile(target);
+  const evidence = await readCanonicalFile(
+    configuredPath,
+    options.label ?? 'file',
+    options.openFile,
+    { maxBytes: options.maxBytes ?? toolingTreeLimits.fileBytes },
+  );
   return {
     path: configuredPath,
-    realpath: target,
-    pathKind: information.isSymbolicLink() ? 'symbolic-link' : 'file',
-    digest: sha256(bytes),
-    bytes: bytes.length,
+    realpath: evidence.path,
+    pathKind: 'file',
+    digest: sha256(evidence.bytes),
+    bytes: evidence.bytes.length,
   };
 }
 
-export async function toolingTreeIdentity(root) {
+export async function toolingTreeIdentity(root, options = {}) {
   const configuredRoot = path.resolve(root);
-  const rootInformation = await lstat(configuredRoot);
-  if (!rootInformation.isDirectory() || rootInformation.isSymbolicLink()) throw new Error('tooling closure root must be a real directory');
-  const canonicalRoot = await realpath(configuredRoot);
   const entries = [];
-  await visitToolingEntry(configuredRoot, canonicalRoot, '.', entries);
+  const state = { bytes: 0 };
+  await visitToolingEntry(configuredRoot, configuredRoot, '.', entries, state, options);
   const manifest = Buffer.from(`${JSON.stringify({ contract: 'mdlm-demo-tooling-tree@1', entries })}\n`);
   return {
     root: configuredRoot,
@@ -80,33 +89,46 @@ export async function toolingTreeIdentity(root) {
     entries: entries.length,
     files: entries.filter(entry => entry.type === 'file').length,
     symlinks: entries.filter(entry => entry.type === 'symlink').length,
-    bytes: entries.reduce((total, entry) => total + (entry.bytes ?? 0), 0),
+    bytes: state.bytes,
   };
 }
 
-async function visitToolingEntry(root, canonicalRoot, relative, entries) {
+async function visitToolingEntry(root, canonicalRoot, relative, entries, state, options) {
+  if (entries.length >= toolingTreeLimits.entries) throw new Error(`tooling closure exceeds ${toolingTreeLimits.entries}-entry limit`);
   const absolute = relative === '.' ? root : path.join(root, ...relative.split('/'));
-  const information = await lstat(absolute);
-  const mode = (information.mode & 0o7777).toString(8).padStart(4, '0');
+  const information = await lstat(absolute, { bigint: true });
   if (information.isSymbolicLink()) {
-    const resolvedTarget = await realpath(absolute);
-    const targetRelative = path.relative(canonicalRoot, resolvedTarget);
-    if (targetRelative === '..' || targetRelative.startsWith(`..${path.sep}`) || path.isAbsolute(targetRelative)) {
-      throw new Error(`tooling closure symlink escapes its root: '${relative}'`);
-    }
-    entries.push({ path: relative, type: 'symlink', mode, targetBase64: Buffer.from(await readlink(absolute)).toString('base64') });
+    const link = await readCanonicalSymlink(absolute, canonicalRoot, `tooling closure symlink '${relative}'`, {
+      maxBytes: toolingTreeLimits.symlinkBytes,
+    });
+    const mode = (link.mode & 0o7777).toString(8).padStart(4, '0');
+    entries.push({ path: relative, type: 'symlink', mode, targetBase64: Buffer.from(link.target).toString('base64') });
     return;
   }
   if (information.isDirectory()) {
+    const directory = await readCanonicalDirectory(
+      absolute,
+      `tooling closure directory '${relative}'`,
+      options.openDirectory,
+    );
+    const mode = (directory.mode & 0o7777).toString(8).padStart(4, '0');
     entries.push({ path: relative, type: 'directory', mode });
-    const names = await readdir(absolute);
-    names.sort();
-    for (const name of names) await visitToolingEntry(root, canonicalRoot, relative === '.' ? name : `${relative}/${name}`, entries);
+    for (const name of directory.names) {
+      await visitToolingEntry(root, canonicalRoot, relative === '.' ? name : `${relative}/${name}`, entries, state, options);
+    }
     return;
   }
   if (!information.isFile()) throw new Error(`tooling closure contains unsupported entry '${relative}'`);
-  const bytes = await readFile(absolute);
-  entries.push({ path: relative, type: 'file', mode, bytes: bytes.length, digest: sha256(bytes) });
+  const evidence = await readCanonicalFile(
+    absolute,
+    `tooling closure file '${relative}'`,
+    options.openFile,
+    { maxBytes: toolingTreeLimits.fileBytes },
+  );
+  state.bytes += evidence.bytes.length;
+  if (state.bytes > toolingTreeLimits.totalBytes) throw new Error(`tooling closure exceeds ${toolingTreeLimits.totalBytes}-byte limit`);
+  const mode = (evidence.mode & 0o7777).toString(8).padStart(4, '0');
+  entries.push({ path: relative, type: 'file', mode, bytes: evidence.bytes.length, digest: sha256(evidence.bytes) });
 }
 
 export async function runProcess(program, args, options = {}) {

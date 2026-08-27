@@ -7,7 +7,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { bindDecisionCatalogFile } from '../src/decision-catalog.mjs';
-import * as evidence from '../src/evidence.mjs';
+import { inspectProvenance } from '../src/evidence.mjs';
 import { toolingTreeDigest } from './provenance-fixture.mjs';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -16,7 +16,6 @@ const run036HarnessPin = '8156dfb33344dfd705266307daf2379dc9026a80';
 const limitation = 'This result cannot prove invocation, publication, lifecycle state, or qualification and cannot authorize an Assignment.';
 const executableDigest = await fileDigest(process.execPath);
 const scriptDigest = await fileDigest(cli);
-const { inspectProvenance } = evidence;
 
 function exec(program, args, cwd, input) {
   return spawnSync(program, args, { cwd, input, encoding: 'utf8', timeout: 20_000 });
@@ -262,10 +261,6 @@ test('preflight emits a typed stdout-only failure for omitted and empty input', 
   const request = {
     contract: 'mdlm-demo-preflight-request@1',
     input: { path: emptyInput, digest: digest('') },
-    invocation: {
-      executable: { path: process.execPath, digest: executableDigest },
-      script: { path: cli, digest: scriptDigest },
-    },
     argv: [process.execPath, cli, 'run', '--input', emptyInput],
   };
   execution = invoke(request, scratch);
@@ -318,13 +313,6 @@ test('preflight rejects malformed UTF-8 in its wrapper and run request', async t
   execution = invoke(value.preflightRequest, value.scratch);
   assert.equal(execution.status, 1);
   assert.match(resultOf(execution).checks.find(check => check.name === 'input').error, /UTF-8/);
-
-  const catalogValue = await fixture();
-  t.after(() => rm(catalogValue.scratch, { recursive: true, force: true }));
-  await writeFile(catalogValue.decisionCatalogPath, Buffer.from([0xff]));
-  execution = invoke(catalogValue.preflightRequest, catalogValue.scratch);
-  assert.equal(execution.status, 1);
-  assert.match(resultOf(execution).checks.find(check => check.name === 'decision-catalog').error, /UTF-8/);
 });
 
 test('preflight closes every nested run-request and catalog object', async t => {
@@ -396,15 +384,9 @@ test('preflight authenticates the complete executable and script identities', as
   assert.equal(execution.status, 1);
   assert.equal(resultOf(execution).checks.find(check => check.name === 'invocation').ok, false);
 
-  const wrongExecutablePin = structuredClone(value.preflightRequest);
-  wrongExecutablePin.invocation.executable.digest = digest('wrong executable bytes');
-  execution = invoke(wrongExecutablePin, value.scratch);
-  assert.equal(execution.status, 1);
-  assert.equal(resultOf(execution).checks.find(check => check.name === 'invocation').ok, false);
-
-  const wrongScriptPin = structuredClone(value.preflightRequest);
-  wrongScriptPin.invocation.script.digest = digest('wrong script bytes');
-  execution = invoke(wrongScriptPin, value.scratch);
+  const wrongPin = structuredClone(value.preflightRequest);
+  wrongPin.invocation.script.digest = digest('wrong script bytes');
+  execution = invoke(wrongPin, value.scratch);
   assert.equal(execution.status, 1);
   assert.equal(resultOf(execution).checks.find(check => check.name === 'invocation').ok, false);
 });

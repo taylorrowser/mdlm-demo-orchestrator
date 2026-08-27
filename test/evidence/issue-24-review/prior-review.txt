@@ -1,0 +1,39 @@
+## Standards — FAIL
+
+1. **Required review evidence is incomplete.** No immutable pre-review bundle or recorded automation gap was supplied, and no issue-24 failing-before-passing evidence is preserved in the commit or referenced by the issue. This does not meet `OPERATING-POLICY.md:104` or `AUTOMATION-EVIDENCE.md:21-33`.
+2. **Documentation count is stale.** `README.md:43` says the CLI has seven commands after adding an eighth.
+
+## Spec — FAIL
+
+1. **High — provenance files are neither canonical, bounded, nor race-closed.**  
+   `src/evidence.mjs:318-322` authenticates manifests, packages, tools, and the tooling lock through `fileIdentity`. `src/util.mjs:54-65` performs `lstat → realpath → unbounded readFile`, follows symlinks, and has no descriptor or post-read identity check. A symlinked artifact with the expected digest can therefore PASS, while rename/size races are not closed.
+
+2. **High — the exact helper executable identity is not checked.**  
+   `src/preflight.mjs:125-142` validates only the last three argv elements. An argv such as `["/tmp/other-runner","run","--input",path]` passes. No leading executable/script is cross-checked against a trusted pin or the current runner.
+
+3. **High — decision-catalog bytes are not bound into the result.**  
+   `src/preflight.mjs:93` discards the bound catalog record returned by `bindDecisionCatalogFile`. `result()` at `src/preflight.mjs:145-160` records only the run-request and argv digests. Since the run request contains only the catalog path, preserved PASS evidence cannot identify which catalog bytes were checked.
+
+4. **Medium — strict JSON shape and encoding are incomplete.**
+   - `validateRunRequest` checks only top-level keys; selected nested fields are inspected manually. Extra keys under `commands`, `harness`, or `provenance` are ignored.
+   - `validateDecisionCatalog` at `src/decision-catalog.mjs:51-77` allows extra catalog and decision keys.
+   - `src/cli.mjs:28` and `src/preflight.mjs:45` decode with `Buffer.toString("utf8")`, which can replace malformed UTF-8 with U+FFFD rather than reject it.
+
+5. **Medium — PASS limitation wording is weaker than required.**  
+   `src/preflight.mjs:12` and `README.md:37` say PASS “does not authorize” several outcomes, but do not explicitly state that it cannot prove invocation, publication, lifecycle, or qualification.
+
+The new tests do not cover these cases: nested extras, malformed UTF-8, wrong helper executable, provenance symlink/oversize/rename races, or catalog-byte binding.
+
+## Verified passing evidence
+
+- Exact HEAD: `3741ed6a7faa1364bccef1dab8fd61d41793df9c`
+- Parent and `origin/main`: `ffd5e70c545449850900ec8ceaae68c18aaf17b0`
+- Worktree remained clean.
+- `git diff --check`: passed.
+- Focused tests: **16 passed, 0 failed**.
+- `npm run check`: passed.
+- Run 036 wrong harness pin and run 032 omitted `--input` regressions passed.
+- Stdin/file equivalence and typed stdout-only fixture failures passed.
+- Full suite was not run, as requested.
+
+# FINAL: FAIL

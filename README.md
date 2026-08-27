@@ -43,6 +43,7 @@ Install only the authenticated tarball. The tooling root must not exist before t
 After applying read-only permissions, make the source checkout unavailable and invoke the installed executable under a filesystem policy limited to the tooling root. `mdlm-demo-runner --help` and every `<command> --help` must emit the exact same `mdlm-demo-help@1` JSON line on standard output, emit nothing on standard error, exit zero, and leave the installed tree unchanged.
 
 The combined identity `89230a0747ac5a701ba3929f5ec0345701ae387f` + `ffd5e70c545449850900ec8ceaae68c18aaf17b0` remains failed artifact-closure evidence. Its launcher bytes were present without `src/cli.mjs`. A later qualification must use a new runner commit and a new combined one-shot identity. It must not rerun or relabel the failed identity.
+
 ## Request preflight
 
 `preflight` accepts exactly this request from standard input or `--input FILE`:
@@ -54,18 +55,36 @@ The combined identity `89230a0747ac5a701ba3929f5ec0345701ae387f` + `ffd5e70c5454
     "path": "/absolute/path/to/run-request.json",
     "digest": "sha256:RUN_REQUEST_SHA256"
   },
-  "argv": ["mdlm-demo-runner", "run", "--input", "/absolute/path/to/run-request.json"]
+  "invocation": {
+    "executable": {
+      "path": "/absolute/path/to/node",
+      "digest": "sha256:NODE_EXECUTABLE_SHA256"
+    },
+    "script": {
+      "path": "/absolute/path/to/mdlm-demo-runner.mjs",
+      "digest": "sha256:RUNNER_SCRIPT_SHA256"
+    }
+  },
+  "argv": [
+    "/absolute/path/to/node",
+    "/absolute/path/to/mdlm-demo-runner.mjs",
+    "run",
+    "--input",
+    "/absolute/path/to/run-request.json"
+  ]
 }
 ```
 
-The command reads the run or resume request through a no-follow descriptor, checks its byte limit and digest, validates the exact helper argv and request contract, and compares duplicate command and qualification-harness pins. It validates any decision catalog and checks the supplied source, package, tooling, executable, and qualification-harness provenance. Request files, paths, and pins must agree exactly. Standard-input and `--input` invocations apply the same checks.
+The command reads the run or resume request through a bounded no-follow descriptor and uses the same read for each catalog, package, tool, lock, and manifest file. It rejects malformed UTF-8 and symbolic links, detects file replacement during a read, validates closed nested request and catalog objects, and checks every supplied digest. The leading executable and runner script must match the separate invocation pins and the current runner bytes. A PASS result records the catalog path, byte length, and SHA-256 digest. Standard-input and `--input` invocations apply the same checks.
 
-The command is read-only. It writes only its single result to standard output and does not create evidence. A `PASS` authenticates the supplied bytes against the supplied pins only. It does not select authoritative pins and does not authorize an Assignment, publication, lifecycle transition, or qualification.
+The command is read-only. It writes only its single result to standard output and does not create evidence. A `PASS` authenticates the supplied bytes against the supplied pins only. It does not select authoritative pins. It cannot prove invocation, publication, lifecycle state, or qualification and cannot authorize an Assignment.
+
+
 ## Approved seams
 
 Tests use the approved public seams.
 
-1. The JSON CLI is the operator boundary. Its seven commands do not require imports from MDLM.
+1. The JSON CLI is the operator boundary. Its eight commands do not require imports from MDLM.
 2. `src/adapter.mjs` consumes exact `mdlm-assignment-packet@2` bytes. It returns exact `mdlm-assignment-response@1` bytes or `mdlm-demo-reserved-stop@1` before submission.
 3. Process tests run fake `mdlm` and `mdlm-pi` executables in scratch Git repositories. They check raw process evidence, transaction counts, and Git commit counts.
 4. Deterministic integrations authenticate the pinned MDLM source commit and tree, build `mdlm-pi` from that worktree, authenticate the complete build and exact CLI bytes, and then import the controller and Assignment runner. A focused producer/consumer check executes that CLI before passing its canonical operational-failure envelope to the runner contract. These checks do not replace the separate one-shot release qualification gate.

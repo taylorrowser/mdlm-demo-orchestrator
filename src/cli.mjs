@@ -19,6 +19,7 @@ const publicCommands = [
   'reconcile',
 ];
 const usage = `mdlm-demo-runner ${publicCommands.join('|')} [--input file]`;
+const utf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
 
 async function readRequest(args, maxBytes, label = 'decision catalog request', canonical = false) {
   if (args.length === 0) {
@@ -29,7 +30,7 @@ async function readRequest(args, maxBytes, label = 'decision catalog request', c
       if (maxBytes !== undefined && bytes > maxBytes) throw new Error(`${label} exceeds ${maxBytes}-byte limit`);
       chunks.push(chunk);
     }
-    return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    return parseRequestBytes(Buffer.concat(chunks), label);
   }
   if (args.length === 2 && args[0] === '--input') {
     const bytes = canonical
@@ -37,9 +38,20 @@ async function readRequest(args, maxBytes, label = 'decision catalog request', c
       : maxBytes === undefined
         ? await readFile(args[1])
         : await readFileWithinLimit(args[1], maxBytes, label);
-    return JSON.parse(bytes.toString('utf8'));
+    return parseRequestBytes(bytes, label);
   }
   throw new Error('expected JSON on stdin or --input <file>');
+}
+
+function parseRequestBytes(bytes, label) {
+  let text;
+  try {
+    text = utf8.decode(bytes);
+  } catch (error) {
+    if (error instanceof TypeError) throw new Error(`${label} is not valid UTF-8`);
+    throw error;
+  }
+  return JSON.parse(text);
 }
 
 async function main(args) {

@@ -256,24 +256,41 @@ function commandFailures(invocations) {
   return failures;
 }
 
-export async function inspectProvenance(provenance, timeoutMs) {
+export const provenanceLimits = Object.freeze({
+  packageBytes: 16_777_216,
+  toolBytes: 16_777_216,
+  lockBytes: 4_194_304,
+  manifestBytes: 4_194_304,
+});
+
+export async function inspectProvenance(provenance, timeoutMs, options = {}) {
   const source = await gitIdentity(provenance?.source, timeoutMs, 'source');
   const qualificationHarness = await gitIdentity(provenance?.qualificationHarness, timeoutMs, 'qualificationHarness');
   qualificationHarness.manifest = await expectedFileRecord(
     provenance?.qualificationHarness?.manifest?.path,
     provenance?.qualificationHarness?.manifest?.digest,
     'qualification harness manifest',
+    provenanceLimits.manifestBytes,
+    options,
   );
   qualificationHarness.matches &&= qualificationHarness.manifest.matches;
   qualificationHarness.repositoryLocator = typeof provenance?.qualificationHarness?.repositoryLocator === 'string'
     ? provenance.qualificationHarness.repositoryLocator
     : null;
   qualificationHarness.matches &&= qualificationHarness.repositoryLocator !== null && qualificationHarness.repositoryLocator.length > 0;
-  const packageIdentity = await expectedFileRecord(provenance?.package?.artifact, provenance?.package?.digest, 'mdlm package artifact');
-  const piPackageIdentity = await expectedFileRecord(provenance?.piPackage?.artifact, provenance?.piPackage?.digest, 'mdlm-pi package artifact');
-  const mdlm = await expectedFileRecord(provenance?.tools?.mdlm?.path, provenance?.tools?.mdlm?.digest, 'mdlm');
-  const mdlmPi = await expectedFileRecord(provenance?.tools?.mdlmPi?.path, provenance?.tools?.mdlmPi?.digest, 'mdlm-pi');
-  const tooling = await expectedToolingRecord(provenance?.tooling, { mdlm, mdlmPi });
+  const packageIdentity = await expectedFileRecord(
+    provenance?.package?.artifact, provenance?.package?.digest, 'mdlm package artifact', provenanceLimits.packageBytes, options,
+  );
+  const piPackageIdentity = await expectedFileRecord(
+    provenance?.piPackage?.artifact, provenance?.piPackage?.digest, 'mdlm-pi package artifact', provenanceLimits.packageBytes, options,
+  );
+  const mdlm = await expectedFileRecord(
+    provenance?.tools?.mdlm?.path, provenance?.tools?.mdlm?.digest, 'mdlm', provenanceLimits.toolBytes, options,
+  );
+  const mdlmPi = await expectedFileRecord(
+    provenance?.tools?.mdlmPi?.path, provenance?.tools?.mdlmPi?.digest, 'mdlm-pi', provenanceLimits.toolBytes, options,
+  );
+  const tooling = await expectedToolingRecord(provenance?.tooling, { mdlm, mdlmPi }, options);
   return {
     source,
     package: packageIdentity,
@@ -315,9 +332,13 @@ async function gitIdentity(value, timeoutMs, label) {
   };
 }
 
-async function expectedFileRecord(file, expectedDigest, label) {
+async function expectedFileRecord(file, expectedDigest, label, maxBytes, options) {
   try {
-    const identity = await fileIdentity(requiredString(file, label));
+    const identity = await fileIdentity(requiredString(file, label), {
+      label,
+      maxBytes,
+      openFile: options?.openFile,
+    });
     const digest = requiredDigest(expectedDigest, `${label} digest`);
     return { ...identity, expectedDigest: digest, matches: identity.digest === digest };
   } catch (error) {
@@ -325,12 +346,14 @@ async function expectedFileRecord(file, expectedDigest, label) {
   }
 }
 
-async function expectedToolingRecord(value, tools) {
+async function expectedToolingRecord(value, tools, options) {
   try {
     const expectedDigest = requiredDigest(value?.digest, 'tooling closure digest');
-    const identity = await toolingTreeIdentity(requiredString(value?.root, 'tooling closure root'));
+    const identity = await toolingTreeIdentity(requiredString(value?.root, 'tooling closure root'), options);
     const canonicalRoot = await realpath(identity.root);
-    const lock = await expectedFileRecord(value?.lock?.path, value?.lock?.digest, 'tooling lock');
+    const lock = await expectedFileRecord(
+      value?.lock?.path, value?.lock?.digest, 'tooling lock', provenanceLimits.lockBytes, options,
+    );
     const containedTools = [tools.mdlm, tools.mdlmPi].every(tool =>
       typeof tool.realpath === 'string' && isPathWithin(canonicalRoot, tool.realpath)
     );
