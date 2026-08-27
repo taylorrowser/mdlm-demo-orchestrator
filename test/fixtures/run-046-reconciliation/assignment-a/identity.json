@@ -1,0 +1,15 @@
+{
+  "contract": "mdlm-demo-assignment-identity@1",
+  "assignmentId": "95d3eb26-17c5-4e03-b1f5-fc07bd0cafc3",
+  "lifecycleRepository": {
+    "head": "7b7eacf7dc788ff3f2e43a4249ee7fdf3f76e367",
+    "tree": "e096a60b622efa9eb0a451ce84d3b2b2a1d0846e",
+    "trackedState": "sha256:e9e3f7fef3b8e0e9bff1c7361f7ca4444210a4315753a3caade84f0b265d8018",
+    "clean": true,
+    "porcelainSha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "assignmentRepository": {
+    "head": "7b7eacf7dc788ff3f2e43a4249ee7fdf3f76e367",
+    "trackedState": "sha256:e9e3f7fef3b8e0e9bff1c7361f7ca4444210a4315753a3caade84f0b265d8018"
+  }
+}

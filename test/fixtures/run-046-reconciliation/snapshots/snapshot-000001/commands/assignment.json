@@ -1,0 +1,23 @@
+{
+  "argv": [
+    "/home/ubuntu/git/mdlm-successor-demos/.tooling-edf5ed73d38d032e93c38f0d2d568c5be43e305c-c0977b67f91fdc8bdee8f202066f8c971d436bce/node_modules/.bin/mdlm",
+    "assignment",
+    "show",
+    "95d3eb26-17c5-4e03-b1f5-fc07bd0cafc3",
+    "--json"
+  ],
+  "cwd": "/home/ubuntu/git/mdlm-successor-demos/operations/iso-date-weekday-ops-001/repository",
+  "startedAt": "2026-08-27T11:49:08.769Z",
+  "completedAt": "2026-08-27T11:49:08.933Z",
+  "timeoutMs": 900000,
+  "timedOut": false,
+  "outputLimitExceeded": false,
+  "observedOutputBytes": 751,
+  "exitStatus": 0,
+  "signal": null,
+  "spawnError": null,
+  "stdoutBase64": "ewogICJvayI6IHRydWUsCiAgImNvbW1hbmQiOiAiYXNzaWdubWVudC5zaG93IiwKICAiY29udHJhY3QiOiAibWRsbS1hc3NpZ25tZW50LXN0YXRlQDEiLAogICJhc3NpZ25tZW50IjogewogICAgImlkIjogIjk1ZDNlYjI2LTE3YzUtNGUwMy1iMWY1LWZjMDdiZDBjYWZjMyIKICB9LAogICJzZWxlY3RlZCI6IHRydWUsCiAgInBhY2thZ2UiOiB7CiAgICAicmVmZXJlbmNlIjogIm1kbG0tYm9vdHN0cmFwQDAuNzQuMCIsCiAgICAiZGlnZXN0IjogInNoYTI1NjplNzdhMDIyYTJjYjJkNmU3ZDc4YmNjYmE3NTNiNWQxMTdkNDM4NGRjZTU2MjFkMzFhMzk3YTg2MWVkZjg4NzhmIiwKICAgICJsYW5ndWFnZSI6ICJtZGxtLWV4cHJlc3Npb25AMSIKICB9LAogICJyZXBvc2l0b3J5IjogewogICAgImhlYWQiOiAiN2I3ZWFjZjdkYzc4OGZmM2YyZTQzYTQyNDllZTdmZGYzZjc2ZTM2NyIsCiAgICAidHJhY2tlZFN0YXRlIjogInNoYTI1NjplOWUzZjdmZWYzYjhlMGU5YmZmMWM3MzYxZjdjYTQ0NDQyMTBhNDMxNTc1M2EzY2FhZGU4NGYwYjI2NWQ4MDE4IgogIH0sCiAgInNjZW5hcmlvUmVmZXJlbmNlIjogImVzY2FsYXRlLWZvdW5kYXRpb24tcmV2aWV3LWNvcnJlY3Rpb25AMyIsCiAgImRpc3Bvc2l0aW9uIjogImFjdGl2ZSIsCiAgInJldHJ5QXZhaWxhYmlsaXR5IjogewogICAgIm1hbGZvcm1lZFJlc3BvbnNlQ29ycmVjdGlvbiI6IDEKICB9LAogICJtYWxmb3JtZWRSZXNwb25zZXMiOiBbXSwKICAiZGlhZ25vc3RpY3MiOiBbXQp9Cg==",
+  "stderrBase64": "",
+  "stdoutSha256": "sha256:43f18df4bb2b748fe6ac2dd4bb6a70448d2091929d63b733b8954ea6ae3bcae6",
+  "stderrSha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

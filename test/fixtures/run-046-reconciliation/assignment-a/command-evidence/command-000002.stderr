@@ -1,0 +1,13 @@
+{
+  "status": "operational-failure",
+  "error": "MDLM could not prepare the Assignment",
+  "details": {
+    "contract": "mdlm-demo-reserved-stop@1",
+    "type": "assignment-checkpoint",
+    "phase": "before-worker",
+    "assignment": "7bf4c623-f42e-4f15-9217-a78b0ad36ff9",
+    "scenario": "review-datum-in-context@2",
+    "packetPath": "/home/ubuntu/git/mdlm-successor-demos/operations/iso-date-weekday-ops-001/private-state/assignments/95d3eb26-17c5-4e03-b1f5-fc07bd0cafc3-7b5b4c71b08a/shim/stops/7bf4c623-f42e-4f15-9217-a78b0ad36ff9.json",
+    "completedAssignment": "95d3eb26-17c5-4e03-b1f5-fc07bd0cafc3"
+  }
+}
