@@ -510,6 +510,20 @@ test('decision catalog binding rejects rename substitution and records exact byt
   assert.notEqual(second.digest, first.digest);
 });
 
+test('public preflight rejects duplicate decision catalog members before JSON collapse', async t => {
+  const value = await fixture();
+  t.after(() => rm(value.scratch, { recursive: true, force: true }));
+  const catalog = JSON.stringify(value.decisionCatalog).replace(
+    '"contract":"mdlm-demo-decision-catalog@1"',
+    '"contract":"mdlm-demo-decision-catalog@1","contract":"mdlm-demo-decision-catalog@1"',
+  );
+  await writeFile(value.decisionCatalogPath, `${catalog}\n`);
+
+  const execution = invoke(value.preflightRequest, value.scratch);
+  assert.equal(execution.status, 1);
+  assert.match(resultOf(execution).checks.find(check => check.name === 'decision-catalog').error, /duplicate object member/);
+});
+
 test('preflight rejects duplicate JSON members before ordinary JSON collapse', async t => {
   const value = await fixture();
   t.after(() => rm(value.scratch, { recursive: true, force: true }));
@@ -658,6 +672,29 @@ test('preflight disables repository-local fsmonitor execution', async t => {
     OPENAI_API_KEY: 'must-not-reach-fsmonitor',
   });
   assert.equal(execution.status, 0, execution.stderr);
+  await assert.rejects(readFile(marker), { code: 'ENOENT' });
+});
+
+test('preflight status ignores repository attributes that select local clean filters', async t => {
+  const value = await fixture();
+  t.after(() => rm(value.scratch, { recursive: true, force: true }));
+  const marker = path.join(value.scratch, 'clean-filter-ran');
+  const filter = path.join(value.scratch, 'clean-filter.sh');
+  await writeFile(path.join(value.source, '.gitattributes'), 'README.md filter=untrusted\n');
+  git(['add', '.gitattributes'], value.source);
+  git(['commit', '-m', 'add attributes'], value.source);
+  value.runRequest.provenance.source.commit = git(['rev-parse', 'HEAD^{commit}'], value.source);
+  value.runRequest.provenance.source.tree = git(['rev-parse', 'HEAD^{tree}'], value.source);
+  await writeFile(filter, `#!/bin/sh\nprintf ran > '${marker}'\ncat\n`);
+  await chmod(filter, 0o755);
+  git(['config', 'filter.untrusted.clean', filter], value.source);
+  git(['config', 'filter.untrusted.required', 'true'], value.source);
+  await writeFile(path.join(value.source, 'README.md'), 'dirty! fixture\n');
+  const bytes = await value.writeRunRequest();
+  value.preflightRequest.input.digest = digest(bytes);
+
+  const execution = invoke(value.preflightRequest, value.scratch);
+  assert.equal(execution.status, 1);
   await assert.rejects(readFile(marker), { code: 'ENOENT' });
 });
 

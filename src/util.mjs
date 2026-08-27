@@ -50,6 +50,7 @@ export function controlledEnvironment(extra = {}, options = {}) {
 }
 
 export function gitEnvironment(extra = {}) {
+  const emptyTree = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
   const entries = [
     ['core.fsmonitor', 'false'],
     ['core.hooksPath', '/dev/null'],
@@ -60,7 +61,8 @@ export function gitEnvironment(extra = {}) {
   ];
   const environment = {
     HOME: '/', LANG: 'C.UTF-8', LC_ALL: 'C.UTF-8',
-    GIT_ATTR_NOSYSTEM: '1', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_SYSTEM: '/dev/null',
+    GIT_ATTR_NOSYSTEM: '1', GIT_ATTR_SOURCE: emptyTree,
+    GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_SYSTEM: '/dev/null',
     GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_COUNT: String(entries.length),
     GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0', GIT_ASKPASS: '/bin/false',
     SSH_ASKPASS: '/bin/false', GIT_PAGER: '/bin/false',

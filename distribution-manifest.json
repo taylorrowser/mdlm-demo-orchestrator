@@ -70,8 +70,8 @@
     },
     {
       "path": "src/decision-catalog.mjs",
-      "bytes": 8594,
-      "sha256": "988dfb78821e6caacffc4e4bc88708a44722b93c268eef37149be6dc6399b7c6"
+      "bytes": 8672,
+      "sha256": "bc6941ced4ac290863ebb3ba975348bf9b6a3f7413a1cc6adfedeb4227fb728c"
     },
     {
       "path": "src/evidence.mjs",
@@ -110,8 +110,8 @@
     },
     {
       "path": "src/util.mjs",
-      "bytes": 17265,
-      "sha256": "da09784c02523c73ef37a3eda5370b783c9dc13febb59129866f56178d17794c"
+      "bytes": 17361,
+      "sha256": "b9767057dc93563c00586a4434a1182b377df940f1411f7498eaeb5a6b988926"
     }
   ]
 }
