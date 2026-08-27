@@ -1,0 +1,60 @@
+{
+  "contract": "mdlm-demo-runner-distribution@1",
+  "files": [
+    {
+      "path": "bin/mdlm-demo-mdlm-shim.mjs",
+      "bytes": 5017,
+      "sha256": "7980f7cb917a2e06f73d52c8b9db55e6d841e8c4fbd4157332381cb254f33353"
+    },
+    {
+      "path": "src/adapter.mjs",
+      "bytes": 10975,
+      "sha256": "2e0606bb29c35fad01afa6f7631a9bb649b238bff8598c8da52c4379e7fb4cb3"
+    },
+    {
+      "path": "src/canonical-file.mjs",
+      "bytes": 1853,
+      "sha256": "3b4fcb52bffad913db84f03be6025cb9b442606182a64898c3ae502e19646638"
+    },
+    {
+      "path": "src/classify.mjs",
+      "bytes": 3432,
+      "sha256": "bac4f4cff351bf710bc7fe52ffb9a6d8506c5faed1b34a68e1031b427989f605"
+    },
+    {
+      "path": "src/cli.mjs",
+      "bytes": 2708,
+      "sha256": "705af44c1fb838671ee68b36a59e2c2e0f0f0cc7beb19fb38cbeead13ec23fbf"
+    },
+    {
+      "path": "src/contracts.mjs",
+      "bytes": 7534,
+      "sha256": "2555b6860dbf93173626200119e64198ff624fd4b025e7349d6cae811c5cf981"
+    },
+    {
+      "path": "src/decision-catalog.mjs",
+      "bytes": 8430,
+      "sha256": "0d43a5721baa9b901c7ef803a5ea36a2edbeef79196afdd7666ae8c3a987a12b"
+    },
+    {
+      "path": "src/evidence.mjs",
+      "bytes": 25783,
+      "sha256": "c149813a149f1736a331ef398485da181c09098b367ee4038f0bea1f393ab5c2"
+    },
+    {
+      "path": "src/orchestrator.mjs",
+      "bytes": 312542,
+      "sha256": "a765ec99552dbe7f3db99b5b556188c7c89ae6122bb6a432a5a35a92f21cdb91"
+    },
+    {
+      "path": "src/process-package.mjs",
+      "bytes": 1734,
+      "sha256": "c1a25a0e8b598dd07c5a293e173a0c599a368e9ae9ea71d2c950a457708d24d5"
+    },
+    {
+      "path": "src/util.mjs",
+      "bytes": 9016,
+      "sha256": "00eb4dd10e42b5668c3304d337ee85e127ab6104f52e5160bf57a6c8a81ceb6f"
+    }
+  ]
+}

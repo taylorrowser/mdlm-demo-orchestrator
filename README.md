@@ -14,7 +14,23 @@ mdlm-demo-runner resume [--input FILE]
 mdlm-demo-runner reconcile [--input FILE]
 ```
 
-Without `--input`, each command reads one JSON value from standard input. It writes one JSON result to standard output. Errors go to standard error and return exit status 1.
+Without `--input`, each command reads one JSON value from standard input. It writes one JSON result to standard output. Errors go to standard error and return exit status 1. `mdlm-demo-runner --help` and `<command> --help` return the machine-readable command catalog without reading standard input.
+
+## Runner package and release integration
+
+The release artifact is the npm tarball, not a copied `bin/mdlm-demo-runner.mjs`. `package.json#files` bounds the tarball to the launcher, shim, complete `src` closure, and `distribution-manifest.json`; npm also includes its package metadata and README. The committed distribution manifest records the byte length and SHA-256 of every runtime dependency. The launcher checks that exact file set before importing application code and rejects missing or changed files.
+
+Before packing, regenerate and review the manifest when runtime files change, then create the artifact:
+
+```bash
+npm run manifest
+npm run check
+npm pack --json --pack-destination /absolute/artifact-directory
+```
+
+Release tooling must install that tarball into a previously nonexistent isolated tooling root with `npm install --ignore-scripts`, smoke `--help` from the installed executable, and record separate archive, installed-tree, and executable identities plus executable mode. It must not reconstruct the package by copying files from the source checkout.
+
+The combined identity `89230a0747ac5a701ba3929f5ec0345701ae387f` + `ffd5e70c545449850900ec8ceaae68c18aaf17b0` remains failed artifact-closure evidence: its launcher bytes were present without `src/cli.mjs`. A later qualification must use a new runner commit and a new combined one-shot identity; it must not rerun or relabel that failed identity.
 
 ## Approved seams
 
