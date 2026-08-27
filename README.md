@@ -18,19 +18,30 @@ Without `--input`, each command reads one JSON value from standard input. It wri
 
 ## Runner package and release integration
 
-The release artifact is the npm tarball, not a copied `bin/mdlm-demo-runner.mjs`. `package.json#files` bounds the tarball to the launcher, shim, complete `src` closure, and `distribution-manifest.json`; npm also includes its package metadata and README. The committed distribution manifest records the byte length and SHA-256 of every runtime dependency. The launcher checks that exact file set before importing application code and rejects missing or changed files.
+The release artifact is the npm tarball, not a copied launcher. `package.json#files` bounds the tarball to two launchers, the application modules, package metadata, the distribution manifest, and the complete generator and archive-inspector closure. npm also includes the README.
 
-Before packing, regenerate and review the manifest when runtime files change, then create the artifact:
+The trust model has an external authority. An authenticated release record must pin the tarball SHA-256 and byte length. An authenticated install record must pin the tarball identity, the distribution-manifest SHA-256, both installed launcher SHA-256 values and modes, the complete installed tree, and the public executable's resolved path, SHA-256, and mode. Package files cannot authenticate themselves.
+
+The package adds a second layer without making a circular claim. `distribution-manifest.json` identifies package metadata and launcher roles, then hashes every non-launcher file. It does not claim to hash itself or either launcher. The generated launchers embed the distribution-manifest SHA-256. Once the external record authenticates a launcher, that immutable launcher value authenticates the manifest, and the manifest authenticates its payload. Changing a module and updating the mutable manifest still fails.
+
+Each launcher opens bounded regular files with no-follow semantics, rejects symlinked path components and paths outside the canonical package root, and checks file identity and SHA-256 before and after loading modules. A synchronous Node module hook loads the bytes already checked, rather than reopening mutable module paths. Release tooling must make installed directories and launchers mode `0555` and other installed files mode `0444` before smoke checks.
+
+Build the artifact from a clean source tree:
 
 ```bash
 npm run manifest
 npm run check
 npm pack --json --pack-destination /absolute/artifact-directory
+node scripts/inspect-package.mjs /absolute/artifact-directory/mdlm-demo-orchestrator-0.1.0.tgz
 ```
 
-Release tooling must install that tarball into a previously nonexistent isolated tooling root with `npm install --ignore-scripts`, smoke `--help` from the installed executable, and record separate archive, installed-tree, and executable identities plus executable mode. It must not reconstruct the package by copying files from the source checkout.
+`inspect-package.mjs` accepts only bounded POSIX ustar archives rooted at `package/`. It rejects duplicate or traversing paths, absolute paths, links, non-regular entries, unsafe modes, invalid checksums, truncation, and data after the tar terminator. Release tooling must compare its exact file list with the reviewed `npm pack --json` list before extraction.
 
-The combined identity `89230a0747ac5a701ba3929f5ec0345701ae387f` + `ffd5e70c545449850900ec8ceaae68c18aaf17b0` remains failed artifact-closure evidence: its launcher bytes were present without `src/cli.mjs`. A later qualification must use a new runner commit and a new combined one-shot identity; it must not rerun or relabel that failed identity.
+Install only the authenticated tarball. The tooling root must not exist before the installer creates it. Create its minimal private `package.json`, run `npm install --ignore-scripts --no-audit --no-fund --package-lock=false <authenticated-tarball>`, and never copy from the source checkout. Before changing permissions, `npm pack` from the installed package must succeed and reproduce the artifact bytes. This proves the advertised `prepack` lifecycle has its generator closure.
+
+After applying read-only permissions, make the source checkout unavailable and invoke the installed executable under a filesystem policy limited to the tooling root. `mdlm-demo-runner --help` and every `<command> --help` must emit the exact same `mdlm-demo-help@1` JSON line on standard output, emit nothing on standard error, exit zero, and leave the installed tree unchanged.
+
+The combined identity `89230a0747ac5a701ba3929f5ec0345701ae387f` + `ffd5e70c545449850900ec8ceaae68c18aaf17b0` remains failed artifact-closure evidence. Its launcher bytes were present without `src/cli.mjs`. A later qualification must use a new runner commit and a new combined one-shot identity. It must not rerun or relabel the failed identity.
 
 ## Approved seams
 

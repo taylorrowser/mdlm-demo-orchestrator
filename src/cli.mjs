@@ -54,10 +54,12 @@ async function main(args) {
   throw new Error(`usage: ${usage}`);
 }
 
-try {
-  const output = await main(process.argv.slice(2));
-  process.stdout.write(`${JSON.stringify(output)}\n`);
-} catch (error) {
-  process.stderr.write(`${JSON.stringify({ contract: 'mdlm-demo-error@1', error: error instanceof Error ? error.message : String(error) })}\n`);
-  process.exitCode = 1;
+export async function executeCli(args) {
+  try {
+    const output = await main(args);
+    process.stdout.write(`${JSON.stringify(output)}\n`);
+  } catch (error) {
+    process.stderr.write(`${JSON.stringify({ contract: 'mdlm-demo-error@1', error: error instanceof Error ? error.message : String(error) })}\n`);
+    process.exitCode = 1;
+  }
 }

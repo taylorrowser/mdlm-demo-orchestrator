@@ -10,13 +10,14 @@
     "bin/mdlm-demo-mdlm-shim.mjs",
     "bin/mdlm-demo-runner.mjs",
     "distribution-manifest.json",
+    "scripts/*.mjs",
     "src/*.mjs"
   ],
   "scripts": {
     "test": "node --test --test-concurrency=1",
     "manifest": "node scripts/create-distribution-manifest.mjs",
     "prepack": "node scripts/create-distribution-manifest.mjs --check",
-    "check": "node scripts/create-distribution-manifest.mjs --check && node --check bin/*.mjs && node --check src/*.mjs"
+    "check": "node scripts/create-distribution-manifest.mjs --check && node --check bin/*.mjs && node --check scripts/*.mjs && node --check src/*.mjs"
   },
   "engines": {
     "node": ">=24 <25"

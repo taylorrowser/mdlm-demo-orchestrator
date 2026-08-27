@@ -6,12 +6,12 @@ import { registerHooks } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-const expectedManifestSha256 = "aed7152131570a0292ed79108f7d15ff1598d8ce7237118694017c05a0208bb5";
-const launcherPath = "bin/mdlm-demo-mdlm-shim.mjs";
-const entrypoint = "src/shim-cli.mjs";
-const entryExport = "executeShim";
-const errorContract = "mdlm-demo-shim-error@1";
-const errorExitStatus = 98;
+const expectedManifestSha256 = '__MANIFEST_SHA256__';
+const launcherPath = '__LAUNCHER_PATH__';
+const entrypoint = '__ENTRYPOINT__';
+const entryExport = '__ENTRY_EXPORT__';
+const errorContract = '__ERROR_CONTRACT__';
+const errorExitStatus = __ERROR_EXIT_STATUS__;
 const manifestLimit = 64 * 1024;
 const payloadLimit = 4 * 1024 * 1024;
 

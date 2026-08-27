@@ -1,10 +1,47 @@
 {
-  "contract": "mdlm-demo-runner-distribution@1",
-  "files": [
+  "contract": "mdlm-demo-runner-distribution@2",
+  "authority": "external-release-and-install-manifest",
+  "package": {
+    "name": "mdlm-demo-orchestrator",
+    "version": "0.1.0",
+    "metadata": "package.json"
+  },
+  "launchers": [
     {
       "path": "bin/mdlm-demo-mdlm-shim.mjs",
-      "bytes": 5017,
-      "sha256": "7980f7cb917a2e06f73d52c8b9db55e6d841e8c4fbd4157332381cb254f33353"
+      "mode": 493,
+      "entrypoint": "src/shim-cli.mjs",
+      "export": "executeShim",
+      "integrity": "authenticated-launcher-embeds-distribution-manifest-sha256"
+    },
+    {
+      "path": "bin/mdlm-demo-runner.mjs",
+      "mode": 493,
+      "entrypoint": "src/cli.mjs",
+      "export": "executeCli",
+      "integrity": "authenticated-launcher-embeds-distribution-manifest-sha256"
+    }
+  ],
+  "files": [
+    {
+      "path": "package.json",
+      "bytes": 722,
+      "sha256": "008e008a6f82a42d3ea6f5e37ab2aa29d267b78305f3cb37f58b4c323a07a81b"
+    },
+    {
+      "path": "scripts/create-distribution-manifest.mjs",
+      "bytes": 3815,
+      "sha256": "bf4a3b04e0c777f0b06d9949d69d55bfec16fca2803677c60022a20c7b742375"
+    },
+    {
+      "path": "scripts/inspect-package.mjs",
+      "bytes": 4668,
+      "sha256": "67576a7076b8e7b4fadd9d4cb1b757b52bc237252a2239844db95229dd81153f"
+    },
+    {
+      "path": "scripts/launcher-template.mjs",
+      "bytes": 8209,
+      "sha256": "921060909f52efa9bdc4e4981073a29e66c74bcd83a9e1d2d3444e8dda5ff18d"
     },
     {
       "path": "src/adapter.mjs",
@@ -23,8 +60,8 @@
     },
     {
       "path": "src/cli.mjs",
-      "bytes": 2708,
-      "sha256": "705af44c1fb838671ee68b36a59e2c2e0f0f0cc7beb19fb38cbeead13ec23fbf"
+      "bytes": 2748,
+      "sha256": "dd109c07574039612bc48a58d562de8e13f16511410db19fd7266e78d113dd10"
     },
     {
       "path": "src/contracts.mjs",
@@ -50,6 +87,11 @@
       "path": "src/process-package.mjs",
       "bytes": 1734,
       "sha256": "c1a25a0e8b598dd07c5a293e173a0c599a368e9ae9ea71d2c950a457708d24d5"
+    },
+    {
+      "path": "src/shim-cli.mjs",
+      "bytes": 5141,
+      "sha256": "3d71386239b60739864775cc33c120fc404037e3e9bf7911159ea997f8fe9a2c"
     },
     {
       "path": "src/util.mjs",
