@@ -2658,11 +2658,47 @@ test('operational failure retry mode requires resume only for canonical Pi settl
 test('operational failure recovery requires complete current-attempt evidence', () => {
   assert.equal(operationalFailureHasCompleteAttemptEvidence(canonicalPiOperationalFailure()), true);
   assert.equal(operationalFailureHasCompleteAttemptEvidence(canonicalPiOperationalFailure({
+    telemetry: { providerError: { message: '[REDACTED]', truncated: false } },
+  })), true);
+  assert.equal(operationalFailureHasCompleteAttemptEvidence(canonicalPiOperationalFailure({
+    telemetry: { providerError: { message: '[REDACTED]', truncated: true } },
+  })), false);
+  assert.equal(operationalFailureHasCompleteAttemptEvidence(canonicalPiOperationalFailure({
     telemetry: { stopReason: null, provider: null, model: null },
   })), false);
   assert.equal(operationalFailureHasCompleteAttemptEvidence({
     contract: 'legacy-operational-failure',
   }), true);
+});
+
+test('truncated canonical provider error classifies but cannot recover or spawn on resume', async () => {
+  const failure = canonicalPiOperationalFailure({
+    telemetry: { providerError: { message: '[REDACTED]', truncated: true } },
+  });
+  const attemptsPath = path.join(os.tmpdir(), `mdlm-demo-truncated-provider-error-${process.pid}-${Date.now()}`);
+  const piScript = `#!/usr/bin/env node
+const fs=require('node:fs'); const attempts=fs.existsSync(${JSON.stringify(attemptsPath)})?Number(fs.readFileSync(${JSON.stringify(attemptsPath)},'utf8')):0; fs.writeFileSync(${JSON.stringify(attemptsPath)},String(attempts+1)); if(attempts===0){process.stdout.write('Assignment 44444444-4444-4444-8444-444444444444: ordinary@1\\n'); process.stderr.write(${JSON.stringify(`${JSON.stringify(failure, null, 2)}\n`)}); process.exit(1);} console.log('{"status":"lifecycle-complete"}');
+`;
+  const value = await fixture({ scenarioReference: 'ordinary@1', piScript });
+  value.request.signal = 'clean-interrupted-command';
+
+  const first = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
+
+  assert.equal(first.status, 0, first.stderr);
+  const stopped = JSON.parse(first.stdout);
+  assert.equal(stopped.reason, 'mdlm-pi-operational-failure');
+  assert.equal(stopped.recoverable, false);
+  assert.equal(stopped.operationalFailureRecovery.verified, false);
+  assert.equal(await readFile(attemptsPath, 'utf8'), '1');
+
+  const resumed = exec(process.execPath, [cli, 'resume'], root, JSON.stringify({
+    ...value.request,
+    contract: 'mdlm-demo-resume-request@1',
+  }));
+
+  assert.equal(resumed.status, 0, resumed.stderr);
+  assert.equal(JSON.parse(resumed.stdout).recoverable, false);
+  assert.equal(await readFile(attemptsPath, 'utf8'), '1');
 });
 
 test('canonical operational failures fail closed on arbitrary, malformed, or unauthenticated output', async () => {

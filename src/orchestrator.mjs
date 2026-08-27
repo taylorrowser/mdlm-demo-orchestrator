@@ -2139,7 +2139,8 @@ export function operationalFailureHasCompleteAttemptEvidence(document) {
   return document?.contract !== mdlmPiOperationalFailureContract ||
     (document.telemetry?.completeAssignmentObserved === false &&
       document.telemetry.stopReason !== null && document.telemetry.retriesConsumed !== null &&
-      document.telemetry.provider !== null && document.telemetry.model !== null);
+      document.telemetry.provider !== null && document.telemetry.model !== null &&
+      (document.telemetry.providerError === null || document.telemetry.providerError?.truncated === false));
 }
 
 export function operationalFailureRetryMode(document) {
