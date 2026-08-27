@@ -1,0 +1,66 @@
+{
+  "authorityRequirement": {
+    "mode": "attended",
+    "authority": "stakeholder",
+    "delegationAllowed": false
+  },
+  "attentionSchedule": {
+    "timing": "immediate",
+    "checkpoint": null,
+    "consolidationGroup": null
+  },
+  "explanation": "The question is technically ready, but its participation Policy requires explicit stakeholder authority.",
+  "attentionContext": {
+    "invocations": [
+      {
+        "inputs": [
+          {
+            "name": "question",
+            "values": [
+              {
+                "identity": {
+                  "id": "QST-QP1DJVHX90",
+                  "revision_id": "QST-QP1DJVHX90-r00001",
+                  "type": "QST",
+                  "revision": 1
+                },
+                "data": {
+                  "id": "QST-QP1DJVHX90",
+                  "revision": 1,
+                  "revision_id": "QST-QP1DJVHX90-r00001",
+                  "type": "QST",
+                  "payload": {
+                    "title": "Product intent",
+                    "kind": "preferential",
+                    "intent_scope": "product",
+                    "question": "What product do you currently intend to build?",
+                    "state": "open",
+                    "blocking_impact": "PSP compilation is blocked until the stakeholder answers this question."
+                  },
+                  "links": [],
+                  "created_by": {
+                    "scenario": "establish-initial-wayfinding-map@2",
+                    "prompt_ref": "prompts/establish-initial-wayfinding-map.md@2",
+                    "process_ref": "mdlm-bootstrap@0.74.0#sha256:e77a022a2cb2d6e7d78bccba753b5d117d4384dce5621d31a397a861edf8878f",
+                    "loaded_skill_refs": [
+                      "skills/lifecycle-data.md@1",
+                      "skills/wayfinding-map.md@1",
+                      "skills/clarification-protocol.md@1",
+                      "skills/scope-challenge.md@2",
+                      "skills/author-preflight.md@2"
+                    ],
+                    "policy_refs": [
+                      "review-applicability@1",
+                      "waiver-applicability@1"
+                    ]
+                  },
+                  "body": "# Product intent\n\n**Question:** What product do you currently intend to build?\n\n**State:** Open\n\nPSP compilation is blocked until the stakeholder answers this question."
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

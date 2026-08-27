@@ -23,6 +23,7 @@ const publicationClosureEvidence = Symbol('publicationClosureEvidence');
 const operationalFailureEvidence = Symbol('operationalFailureEvidence');
 const exhaustedBoundaryEvidence = Symbol('exhaustedBoundaryEvidence');
 const durableResultRepository = Symbol('durableResultRepository');
+const authenticatedCompletedDurableCommand = Symbol('authenticatedCompletedDurableCommand');
 const boundDecisionCatalog = Symbol('boundDecisionCatalog');
 const authoritativeDecisionUtf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
 const outerTimeoutSafetyReserveMs = 60_000;
@@ -73,7 +74,7 @@ export async function run(request, mode) {
     output = await finalizeExhaustedBoundary(output, postRunSnapshot);
     output = await finalizeAssignmentCheckpoint(output, postRunSnapshot, assignmentId);
     output = await finalizePublicationClosure(output, postRunSnapshot);
-    output = await finalizeOperationalFailure(output, initial, postRunSnapshot, context, assignmentDirectory, request);
+    output = await finalizeOperationalFailure(output, output.snapshot, postRunSnapshot, context, assignmentDirectory, request);
     output.postRunSnapshot = postRunSnapshot;
     await finishTrustedRun(context, assignmentDirectory, journalPath, assignmentId, output, postRunSnapshot);
     await recordDurableCommandConsumption(assignmentDirectory, output, postRunSnapshot);
@@ -511,11 +512,13 @@ async function executeRun(request, context, assignmentDirectory, journalPath, sn
   const assignment = captured.assignment;
   const status = captured.status;
   const existingTransaction = await optionalCanonicalJson(journalPath);
+  let trustedCompletedTransaction = false;
   try {
     const recovered = await recoverDurableAssignmentCommand({
       request, context, assignmentDirectory, snapshotResult, status, diagnosis: captured.diagnosis, mode,
     });
-    if (recovered !== null) return recovered;
+    if (recovered === authenticatedCompletedDurableCommand) trustedCompletedTransaction = true;
+    else if (recovered !== null) return recovered;
   } catch (error) {
     return stopped(
       'durable-command-uncertain',
@@ -560,6 +563,7 @@ async function executeRun(request, context, assignmentDirectory, journalPath, sn
 
   const recoveryGate = await inspectOperationalRecovery({
     request, mode, context, assignmentDirectory, captured, snapshotResult, processPackage, runIdentity,
+    trustedCompletedTransaction,
   });
   if (!recoveryGate.ok) {
     return stopped('operational-recovery-marker-invalid', recoveryGate.detail, snapshotResult, assignmentId);
@@ -756,7 +760,9 @@ async function executeRun(request, context, assignmentDirectory, journalPath, sn
     return withCheckpointRecovery(stopped('assignment-fingerprint-drift', 'prepared packet differs from the snapshotted Assignment', snapshotResult, assignmentId));
   }
   if (!externalScenarios.has(packet.scenario?.reference)) {
-    return withCheckpointRecovery(await runPiAssignment(request, context, assignmentDirectory, assignment, status, snapshotResult));
+    return withCheckpointRecovery(await runPiAssignment(
+      request, context, assignmentDirectory, assignment, status, snapshotResult, recoveryGate.transition,
+    ));
   }
   return withCheckpointRecovery(await runExternalAssignment(
     request, context, assignmentDirectory, journalPath, assignment, packet, prepare.stdout, snapshotResult, journal, runIdentity,
@@ -1371,7 +1377,7 @@ async function finalizePublicationClosure(output, postSnapshot) {
   }
 }
 
-async function runPiAssignment(request, context, assignmentDirectory, assignment, status, snapshotResult) {
+async function runPiAssignment(request, context, assignmentDirectory, assignment, status, snapshotResult, operationalRecoveryTransition = null) {
   const assignmentId = assignment.id;
   const outcome = status.currentOutcome;
   const attended = outcome.outcome === 'attention-required' &&
@@ -1420,17 +1426,18 @@ async function runPiAssignment(request, context, assignmentDirectory, assignment
       initialSnapshot: snapshotResult,
       privateEvidenceBefore,
       shimDirectory,
+      ...(operationalRecoveryTransition === null ? {} : { operationalRecoveryTransition }),
     },
   });
   return interpretPiAssignmentResult({
-    request, context, assignment, snapshotResult, processResult,
+    request, context, assignment, status, snapshotResult, processResult,
     decisionEvidence: decision?.evidence ?? null, privateEvidenceBefore, shimDirectory,
   });
 }
 
-async function interpretPiAssignmentResult({ request, context, assignment, snapshotResult, processResult, decisionEvidence, privateEvidenceBefore, shimDirectory }) {
+async function interpretPiAssignmentResult({ request, context, assignment, status, snapshotResult, processResult, decisionEvidence, privateEvidenceBefore, shimDirectory }) {
   const assignmentId = assignment.id;
-  const decoded = decodeMdlmPiResult(processResult);
+  const decoded = decodeMdlmPiResult(processResult, expectedOperationalStdout(assignment, status));
   const common = {
     assignmentId,
     process: commandRecord(processResult),
@@ -1597,7 +1604,11 @@ async function durableCommandConsumed(attempt, assignmentDirectory) {
 async function requireDurableConsumptionBoundary(authorization, processResult, output, snapshot, assignmentDirectory) {
   const assignment = authorization.context.assignment;
   const processPackage = normalizeProcessPackage(assignment.package, 'durable command Process Package');
-  const decoded = decodeMdlmPiResult(processResult);
+  const authorizedInitial = await authenticateDurableInitialSnapshot(authorization);
+  const decoded = decodeMdlmPiResult(
+    processResult,
+    expectedOperationalStdout(assignment, authorizedInitial.snapshot.status),
+  );
   requireResultDerivedDisposition(decoded, output);
   const failedCheckpoint = output.reason === 'assignment-checkpoint-authentication-failure' &&
     output.trustedRepositoryAdvance === false && output.nextAssignment === undefined &&
@@ -1682,7 +1693,8 @@ function requireResultDerivedDisposition(decoded, output) {
         output.outcome !== (verified ? 'pre-submission-operational-failure' : undefined) ||
         output.recoverable !== verified || output.trustedRepositoryAdvance === true ||
         !recovery || (verified
-          ? recovery.assignmentId !== output.assignmentId || recovery.retryCommand !== 'run' || recovery.resumeAllowed !== false || !recovery.marker
+          ? recovery.assignmentId !== output.assignmentId || !['run', 'resume'].includes(recovery.retryCommand) ||
+            recovery.resumeAllowed !== (recovery.retryCommand === 'resume') || !recovery.marker
           : recovery.verified !== false || typeof recovery.uncertainty !== 'string' || recovery.uncertainty.length === 0)) {
       throw new Error('durable command consumption disposition differs from its operational failure result');
     }
@@ -1730,6 +1742,7 @@ async function recoverDurableAssignmentCommand({ request, context, assignmentDir
       }
       return consumedOutput;
     }
+    if (consumedOutput.trustedRepositoryAdvance === true) return authenticatedCompletedDurableCommand;
     return null;
   }
   const authorizationPath = attempt.authorizationPath;
@@ -1751,9 +1764,8 @@ async function recoverDurableAssignmentCommand({ request, context, assignmentDir
   }
   const expectedShimDirectory = path.join(assignmentDirectory, 'shim');
   if (authorization.context.shimDirectory !== expectedShimDirectory ||
-      !sameJson(Object.keys(authorization.context).sort(), [
-        'assignment', 'decisionEvidence', 'decisionInputBase64', 'initialSnapshot', 'privateEvidenceBefore', 'shimDirectory',
-      ])) {
+      !sameJson(Object.keys(authorization.context).sort(), durableAuthorizationContextKeys(authorization.context)) ||
+      !validOperationalRecoveryTransition(authorization.context.operationalRecoveryTransition)) {
     throw new Error('durable command orchestration context is malformed');
   }
   const args = [
@@ -1793,8 +1805,21 @@ async function recoverDurableAssignmentCommand({ request, context, assignmentDir
   const processResult = await authenticateDurableCommandResult(
     authorization, authorizationEvidence, resultDocument, assignmentDirectory,
   );
+  const transitionMode = await authenticatedAuthorizationTransitionMode(
+    authorization.context.operationalRecoveryTransition, request.assignmentId,
+  );
+  if (transitionMode !== null && mode !== transitionMode) {
+    return stopped(
+      'wrong-recovery-mode',
+      `the authorized operational recovery attempt requires '${transitionMode}', not '${mode}'`,
+      snapshotResult,
+      request.assignmentId,
+      { recoverable: true, requiredNextMode: transitionMode },
+    );
+  }
   return interpretPiAssignmentResult({
-    request, context, assignment, snapshotResult: authorization.context.initialSnapshot, processResult,
+    request, context, assignment, status: initial.status,
+    snapshotResult: authorization.context.initialSnapshot, processResult,
     decisionEvidence: authorization.context.decisionEvidence,
     privateEvidenceBefore: authorization.context.privateEvidenceBefore,
     shimDirectory: authorization.context.shimDirectory,
@@ -1899,14 +1924,40 @@ function requireStoredDurableAuthorization(authorization, assignmentDirectory) {
       !sameJson([...command.environment.names].sort(), command.environment.names) || new Set(command.environment.names).size !== command.environment.names.length ||
       !/^sha256:[0-9a-f]{64}$/.test(command.environment.digest ?? '') ||
       !authorization.context || typeof authorization.context !== 'object' || Array.isArray(authorization.context) ||
-      !sameJson(Object.keys(authorization.context).sort(), [
-        'assignment', 'decisionEvidence', 'decisionInputBase64', 'initialSnapshot', 'privateEvidenceBefore', 'shimDirectory',
-      ]) || !validSnapshotReference(authorization.context.initialSnapshot) ||
+      !sameJson(Object.keys(authorization.context).sort(), durableAuthorizationContextKeys(authorization.context)) ||
+      !validOperationalRecoveryTransition(authorization.context.operationalRecoveryTransition) ||
+      !validSnapshotReference(authorization.context.initialSnapshot) ||
       !sameJson(Object.keys(compatibility ?? {}).sort(), ['index', 'prefix']) || !Number.isSafeInteger(compatibility.index) || compatibility.index < 1 ||
       compatibility.prefix !== path.join(assignmentDirectory, 'command-evidence', `command-${String(compatibility.index).padStart(6, '0')}`)) {
     throw new Error('durable command authorization is malformed');
   }
   requireDurableDecisionInput(authorization);
+}
+
+function durableAuthorizationContextKeys(context) {
+  return [
+    'assignment', 'decisionEvidence', 'decisionInputBase64', 'initialSnapshot', 'privateEvidenceBefore', 'shimDirectory',
+    ...('operationalRecoveryTransition' in context ? ['operationalRecoveryTransition'] : []),
+  ].sort();
+}
+
+function validOperationalRecoveryTransition(value) {
+  return value === undefined || (value && typeof value === 'object' && !Array.isArray(value) &&
+    sameJson(Object.keys(value).sort(), ['digest', 'path']) && path.isAbsolute(value.path) &&
+    /^sha256:[0-9a-f]{64}$/.test(value.digest ?? ''));
+}
+
+async function authenticatedAuthorizationTransitionMode(reference, assignmentId) {
+  if (reference === undefined) return null;
+  if (!validOperationalRecoveryTransition(reference)) throw new Error('durable command recovery transition is malformed');
+  const evidence = await immutableFileEvidence(reference.path);
+  if (evidence.digest !== reference.digest) throw new Error('durable command recovery transition digest differs');
+  const document = JSON.parse(evidence.bytes.toString('utf8'));
+  if (!document || document.contract !== 'mdlm-demo-operational-failure-retry@1' ||
+      document.assignmentId !== assignmentId || !['run', 'resume'].includes(document.mode)) {
+    throw new Error('durable command recovery transition document is malformed');
+  }
+  return document.mode;
 }
 
 function validSnapshotReference(reference) {
@@ -2043,7 +2094,7 @@ async function writeSyncedOrMatch(file, bytes) {
   await writeExclusiveSynced(file, bytes);
 }
 
-function decodeMdlmPiResult(processResult) {
+export function decodeMdlmPiResult(processResult, expectedStdout = null) {
   const stdout = trailingJson(processResult.stdout);
   const stderr = trailingJson(processResult.stderr);
   const reserved = processResult.exitStatus === 1 ? findReservedStop(stderr) : null;
@@ -2066,11 +2117,12 @@ function decodeMdlmPiResult(processResult) {
     return { kind: 'terminal', status, successful: false, document };
   }
   if (processResult.exitStatus === 5 && status === 'lock-conflict') return { kind: 'interruption', status, document };
-  if (isTypedOperationalFailure(processResult, stdout, stderr)) {
+  if (isTypedOperationalFailure(processResult, stderr, expectedStdout)) {
+    const code = typeof stderr.error === 'object' ? stderr.error.code : 'LEGACY_MDLM_COMMAND_FAILURE';
     return {
       kind: 'operational-failure', status: 'mdlm-pi-operational-failure',
-      detail: `mdlm-pi exit ${processResult.exitStatus} and result status '${status}' disagree`,
-      document,
+      detail: `mdlm-pi reported authenticated operational failure '${code}'`,
+      document: stderr,
     };
   }
   return {
@@ -2080,15 +2132,126 @@ function decodeMdlmPiResult(processResult) {
   };
 }
 
-function isTypedOperationalFailure(processResult, stdout, stderr) {
+const mdlmPiOperationalFailureContract = 'mdlm-pi-operational-failure@1';
+const maximumOperationalProgressBytes = 64 * 1024;
+
+export function operationalFailureHasCompleteAttemptEvidence(document) {
+  return document?.contract !== mdlmPiOperationalFailureContract ||
+    (document.telemetry?.completeAssignmentObserved === false &&
+      document.telemetry.stopReason !== null && document.telemetry.retriesConsumed !== null &&
+      document.telemetry.provider !== null && document.telemetry.model !== null &&
+      (document.telemetry.providerError === null || document.telemetry.providerError?.truncated === false));
+}
+
+export function operationalFailureRetryMode(document) {
+  return document?.contract === mdlmPiOperationalFailureContract &&
+      document?.error?.code === 'PI_SETTLED_WITHOUT_COMPLETION'
+    ? 'resume'
+    : 'run';
+}
+const piStopReasons = new Set(['stop', 'length', 'toolUse', 'error', 'aborted', 'deferred']);
+
+function isTypedOperationalFailure(processResult, stderr, expectedStdout) {
   if (processResult.exitStatus !== 1 || processResult.timedOut || processResult.signal !== null ||
-      processResult.outputLimitExceeded || processResult.spawnError !== null || processResult.stdout.length !== 0 ||
-      stdout !== null || stderr?.status !== 'operational-failure') return false;
-  if (!sameJson(Object.keys(stderr).sort(), ['details', 'error', 'status'])) return false;
-  if (typeof stderr.error !== 'string' || stderr.error.length === 0 || !stderr.details ||
-      typeof stderr.details !== 'object' || Array.isArray(stderr.details)) return false;
+      processResult.outputLimitExceeded || processResult.spawnError !== null ||
+      !isRecognizedOperationalStdout(processResult.stdout, expectedStdout) ||
+      stderr?.contract !== mdlmPiOperationalFailureContract || stderr.status !== 'operational-failure') return false;
+  if (!sameJson(Object.keys(stderr).sort(), ['contract', 'error', 'status', 'telemetry']) ||
+      !sameJson(Object.keys(stderr.error ?? {}).sort(), ['code', 'message']) ||
+      !sameJson(Object.keys(stderr.telemetry ?? {}).sort(), [
+        'completeAssignmentObserved', 'model', 'provider', 'providerError', 'retriesConsumed', 'stopReason',
+      ])) return false;
+  if (!/^[A-Z][A-Z0-9_]{0,63}$/.test(stderr.error.code ?? '') ||
+      !isBoundedText(stderr.error.message, 1, 256) ||
+      containsSecretLookingText(stderr.error.message) ||
+      containsSecretLookingText(processResult.stdout.toString('utf8')) ||
+      !isNullableIdentity(stderr.telemetry.provider) || !isNullableIdentity(stderr.telemetry.model) ||
+      !(stderr.telemetry.stopReason === null || piStopReasons.has(stderr.telemetry.stopReason)) ||
+      !(stderr.telemetry.retriesConsumed === null ||
+        (Number.isSafeInteger(stderr.telemetry.retriesConsumed) && stderr.telemetry.retriesConsumed >= 0 && stderr.telemetry.retriesConsumed <= 100)) ||
+      !(stderr.telemetry.completeAssignmentObserved === null ||
+        typeof stderr.telemetry.completeAssignmentObserved === 'boolean') ||
+      (stderr.error.code === 'PI_SETTLED_WITHOUT_COMPLETION' && stderr.telemetry.completeAssignmentObserved !== false) ||
+      !matchesCommandIdentity(processResult.argv, '--provider', stderr.telemetry.provider) ||
+      !matchesCommandIdentity(processResult.argv, '--model', stderr.telemetry.model) ||
+      !isRedactedProviderError(stderr.telemetry.providerError)) return false;
   try { return sameJson(JSON.parse(processResult.stderr.toString('utf8')), stderr); }
   catch { return false; }
+}
+
+function isLegacyQualifiedOperationalFailure(processResult, stderr) {
+  if (processResult.exitStatus !== 1 || processResult.timedOut || processResult.signal !== null ||
+      processResult.outputLimitExceeded || processResult.spawnError !== null || processResult.stdout.length !== 0 ||
+      stderr?.status !== 'operational-failure' ||
+      !sameJson(Object.keys(stderr).sort(), ['details', 'error', 'status']) ||
+      stderr.error !== 'MDLM command exceeded 30000ms' ||
+      !sameJson(Object.keys(stderr.details ?? {}).sort(), ['arguments']) ||
+      !sameJson(stderr.details.arguments, ['status', '--json'])) return false;
+  try { return sameJson(JSON.parse(processResult.stderr.toString('utf8')), stderr); }
+  catch { return false; }
+}
+
+function matchesCommandIdentity(argv, option, observed) {
+  if (observed === null) return true;
+  if (!Array.isArray(argv)) return false;
+  const index = argv.indexOf(option);
+  return index >= 0 && argv[index + 1] === observed;
+}
+
+function isNullableIdentity(value) {
+  return value === null || (isBoundedText(value, 1, 128) && /^[A-Za-z0-9._:/-]+$/.test(value));
+}
+
+function isRedactedProviderError(value) {
+  if (value === null) return true;
+  if (!value || typeof value !== 'object' || Array.isArray(value) ||
+      !sameJson(Object.keys(value).sort(), ['message', 'truncated']) ||
+      !isBoundedText(value.message, 0, 512) || typeof value.truncated !== 'boolean') return false;
+  return !containsSecretLookingText(value.message) &&
+    !/\b[A-Za-z0-9+/]{32,}={0,2}\b/u.test(value.message);
+}
+
+const secretLookingTextPattern = /(?:[A-Za-z][A-Za-z0-9+.-]*:\/\/[^\s/@]+:[^\s/@]+@|bearer\s+[^\s,;]+|["']?(?:x[-_ ]?api[-_ ]?key|api[-_ ]?key|access[-_ ]?token|refresh[-_ ]?token|client[-_ ]?secret|authorization|token|secret|password)["']?\s*[:=]\s*(?:"(?:\\.|[^"\\\r\n])*"|'(?:\\.|[^'\\\r\n])*'|[^\s,"';}]+)|(?:sk|rk|pk|ghp|github_pat|xox[baprs])[-_][A-Za-z0-9_-]{8,}|(?:AKIA|ASIA|AIDA|AROA|AIPA|ANPA|ANVA|A3T)[A-Z0-9]{16}|(?:glpat-|npm_|AIza)[A-Za-z0-9_-]{16,}|eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{8,})/iu;
+const maximumEscapedCredentialLayers = 6;
+
+function containsSecretLookingText(value) {
+  let candidate = value;
+  for (let layer = 0; layer <= maximumEscapedCredentialLayers; layer++) {
+    if (secretLookingTextPattern.test(candidate)) return true;
+    const unescaped = candidate.replace(/\\(["'\\])/gu, '$1');
+    if (unescaped === candidate) return false;
+    candidate = unescaped;
+  }
+  return false;
+}
+
+function isBoundedText(value, minimum, maximum) {
+  return typeof value === 'string' && value.length >= minimum && value.length <= maximum &&
+    !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(value);
+}
+
+function isRecognizedOperationalStdout(bytes, expected) {
+  if (!Buffer.isBuffer(bytes) || !Buffer.isBuffer(expected) ||
+      bytes.length > maximumOperationalProgressBytes || expected.length > maximumOperationalProgressBytes) return false;
+  const source = bytes.toString('utf8');
+  return Buffer.from(source).equals(bytes) && !source.includes('\r') && bytes.equals(expected);
+}
+
+function expectedOperationalStdout(assignment, status) {
+  const scenario = assignment?.scenario?.reference ?? assignment?.scenarioReference;
+  if (typeof assignment?.id !== 'string' || typeof scenario !== 'string') return null;
+  let source = `Assignment ${assignment.id}: ${scenario}\n`;
+  const outcome = status?.currentOutcome;
+  if (outcome?.outcome !== 'attention-required') return Buffer.from(source);
+  if (outcome.assignment?.allocation !== 'active' || outcome.assignment.id !== assignment.id ||
+      outcome.authorityRequirement?.mode !== 'attended') return null;
+  source += '\nMDLM requires attended authority.\n';
+  if (typeof outcome.explanation === 'string') source += `${outcome.explanation}\n`;
+  for (const name of ['authorityRequirement', 'attentionContext', 'checkpointConversation']) {
+    if (outcome[name] !== undefined) source += `${JSON.stringify(outcome[name], null, 2)}\n`;
+  }
+  source += 'Explicit conclusion from the named authority holder (not chat approval): ';
+  return Buffer.from(source);
 }
 
 function trailingJson(bytes) {
@@ -2210,6 +2373,9 @@ async function finalizeOperationalFailure(output, initialSnapshot, postSnapshot,
   if (evidence === undefined) return output;
   delete output[operationalFailureEvidence];
   try {
+    if (!operationalFailureHasCompleteAttemptEvidence(output.mdlmPi?.document)) {
+      throw new Error('worker failure lacks complete authenticated terminal and response-capture evidence');
+    }
     if (initialSnapshot.status !== 'complete' || postSnapshot.status !== 'complete') {
       throw new Error('initial or post-run snapshot is incomplete');
     }
@@ -2274,11 +2440,12 @@ async function finalizeOperationalFailure(output, initialSnapshot, postSnapshot,
     output.outcome = 'pre-submission-operational-failure';
     output.recoverable = true;
     output.trustedRepositoryAdvance = false;
+    const retryCommand = operationalFailureRetryMode(output.mdlmPi.document);
     output.operationalFailureRecovery = {
       verified: true,
       assignmentId: output.assignmentId,
-      retryCommand: 'run',
-      resumeAllowed: false,
+      retryCommand,
+      resumeAllowed: retryCommand === 'resume',
       marker,
     };
   } catch (error) {
@@ -2380,13 +2547,21 @@ async function operationalRecoveryHistoryExists(context, assignmentId) {
   catch (error) { if (error.code === 'ENOENT') return false; throw error; }
 }
 
-async function inspectOperationalRecovery({ request, mode, context, assignmentDirectory, captured, snapshotResult, processPackage, runIdentity }) {
+async function inspectOperationalRecovery({
+  request, mode, context, assignmentDirectory, captured, snapshotResult, processPackage, runIdentity,
+  trustedCompletedTransaction,
+}) {
   try {
     const directory = operationalRecoveryDirectory(context, request.assignmentId);
     await recoverPendingOperationalRecoveryWrites(directory);
     const history = await readOperationalRecoveryHistory({
       directory, request, context, assignmentDirectory, processPackage, runIdentity,
     });
+    if (history.markers.some(marker =>
+      (marker.document.source === 'verified-finalization') !==
+        (marker.typedContract === mdlmPiOperationalFailureContract))) {
+      throw new Error('operational failure marker source does not match its versioned failure contract');
+    }
     const active = history.markers.filter(marker => !history.transitions.has(marker.index));
     if (active.length > 1) throw new Error('more than one operational failure marker requires recovery');
     let pendingLegacyUpgrade = null;
@@ -2398,7 +2573,25 @@ async function inspectOperationalRecovery({ request, mode, context, assignmentDi
       }
     }
     if (active.length === 0) {
-      if (pendingLegacyUpgrade === null) return { ok: true, requiredNextMode: null };
+      if (pendingLegacyUpgrade === null) {
+        const transitioned = history.markers.filter(marker => history.transitions.has(marker.index)).at(-1);
+        if (transitioned === undefined) return { ok: true, requiredNextMode: null, transition: null };
+        if (!trustedCompletedTransaction) {
+          requireActiveOperationalBoundary(transitioned.document, captured, request.assignmentId);
+        }
+        const transition = history.transitions.get(transitioned.index);
+        if (mode !== transition.document.mode) {
+          return {
+            ok: true,
+            requiredNextMode: transition.document.mode,
+            recovery: {
+              marker: { path: transitioned.path, digest: transitioned.digest },
+              source: transitioned.document.source,
+            },
+          };
+        }
+        return { ok: true, requiredNextMode: null, transition: { path: transition.path, digest: transition.digest } };
+      }
       requireActiveOperationalBoundary(pendingLegacyUpgrade.document, captured, request.assignmentId);
       if (mode !== 'run') {
         return {
@@ -2411,7 +2604,7 @@ async function inspectOperationalRecovery({ request, mode, context, assignmentDi
         };
       }
       await upgradeLegacyRunIdentity(context, pendingLegacyUpgrade.document, runIdentity);
-      return { ok: true, requiredNextMode: null };
+      return { ok: true, requiredNextMode: null, transition: null };
     }
     const marker = active[0];
     requireActiveOperationalBoundary(marker.document, captured, request.assignmentId);
@@ -2434,10 +2627,15 @@ async function inspectOperationalRecovery({ request, mode, context, assignmentDi
     };
     const transitionPath = path.join(directory, `retry-${String(marker.index).padStart(6, '0')}.json`);
     await durableCreateJson(transitionPath, transition, 'operational-recovery-retry');
+    const transitionEvidence = await immutableFileEvidence(transitionPath);
     if (marker.document.source === 'legacy-command-evidence-migration') {
       await upgradeLegacyRunIdentity(context, marker.document, runIdentity);
     }
-    return { ok: true, requiredNextMode: null };
+    return {
+      ok: true,
+      requiredNextMode: null,
+      transition: { path: transitionEvidence.path, digest: transitionEvidence.digest },
+    };
   } catch (error) {
     return { ok: false, detail: error instanceof Error ? error.message : String(error) };
   }
@@ -2454,11 +2652,16 @@ async function writeOperationalFailureMarker({
   const runIdentityEvidence = await immutableFileEvidence(runIdentityPath);
   const command = await commandEvidenceManifest(commandEvidence.prefix, commandEvidence.index);
   const stored = await authenticateStoredCommand(path.dirname(commandEvidence.prefix), String(commandEvidence.index).padStart(6, '0'));
-  const document = requireTypedOperationalFailure(stored.record, stored.stdout, stored.stderr);
+  const document = requireTypedOperationalFailure(
+    stored.record,
+    stored.stdout,
+    stored.stderr,
+    expectedOperationalStdout(assignmentForOperationalStdout(assignmentId, initial), initial.status),
+  );
   const marker = {
     contract: 'mdlm-demo-operational-failure-marker@1',
     assignmentId,
-    requiredNextMode: 'run',
+    requiredNextMode: operationalFailureRetryMode(document),
     source,
     assignmentDirectory: path.resolve(assignmentDirectory),
     initialBoundary: await operationalBoundary(initialSnapshot, initial),
@@ -2477,11 +2680,7 @@ async function writeOperationalFailureMarker({
     failure: {
       commandIndex: commandEvidence.index,
       evidence: command,
-      document: {
-        digest: sha256(stored.stderr),
-        errorDigest: sha256(Buffer.from(document.error)),
-        detailsDigest: sha256(Buffer.from(JSON.stringify(document.details))),
-      },
+      document: operationalFailureDocumentEvidence(stored.stderr, document),
     },
   };
   const directory = operationalRecoveryDirectory(context, assignmentId);
@@ -2538,11 +2737,11 @@ async function readOperationalRecoveryHistory({ directory, request, context, ass
     const file = path.join(directory, item.entry.name);
     const evidence = await immutableFileEvidence(file);
     const document = JSON.parse(evidence.bytes.toString('utf8'));
-    await validateOperationalFailureMarker({
+    const typed = await validateOperationalFailureMarker({
       document, index: item.index, transitioned: retryEntries.has(item.index),
       request, context, assignmentDirectory, processPackage, runIdentity,
     });
-    markers.push({ index: item.index, path: evidence.path, digest: evidence.digest, document });
+    markers.push({ index: item.index, path: evidence.path, digest: evidence.digest, document, typedContract: typed.contract });
   }
   for (const [index, entry] of retryEntries) {
     const marker = markers.find(item => item.index === index);
@@ -2552,7 +2751,7 @@ async function readOperationalRecoveryHistory({ directory, request, context, ass
     const expected = {
       contract: 'mdlm-demo-operational-failure-retry@1',
       assignmentId: request.assignmentId,
-      mode: 'run',
+      mode: marker.document.requiredNextMode,
       marker: { path: marker.path, digest: marker.digest },
       lifecycleRepository: marker.document.postBoundary.lifecycleRepository,
       processPackage: marker.document.processPackage,
@@ -2560,6 +2759,7 @@ async function readOperationalRecoveryHistory({ directory, request, context, ass
       timeoutIdentity: marker.document.timeoutIdentity,
     };
     if (!sameJson(document, expected)) throw new Error('operational recovery retry transition is malformed or tampered');
+    retryEntries.set(index, { path: evidence.path, digest: evidence.digest, document });
   }
   return { markers, transitions: retryEntries };
 }
@@ -2572,7 +2772,7 @@ async function validateOperationalFailureMarker({ document, index, transitioned,
   if (!document || typeof document !== 'object' || Array.isArray(document) ||
       !sameJson(Object.keys(document).sort(), keys) ||
       document.contract !== 'mdlm-demo-operational-failure-marker@1' ||
-      document.assignmentId !== request.assignmentId || document.requiredNextMode !== 'run' ||
+      document.assignmentId !== request.assignmentId || !['run', 'resume'].includes(document.requiredNextMode) ||
       !['verified-finalization', 'legacy-command-evidence-migration'].includes(document.source) ||
       path.resolve(document.assignmentDirectory ?? '') !== path.resolve(assignmentDirectory) ||
       !sameProcessPackageIdentity(document.processPackage, processPackage)) {
@@ -2605,7 +2805,7 @@ async function validateOperationalFailureMarker({ document, index, transitioned,
       throw new Error('operational failure marker run identity differs');
     }
   }
-  await validateOperationalBoundary(document.initialBoundary, false);
+  const initialBoundary = await validateOperationalBoundary(document.initialBoundary, false);
   await validateOperationalBoundary(document.postBoundary, true);
   const failure = document.failure;
   if (!failure || !sameJson(Object.keys(failure).sort(), ['commandIndex', 'document', 'evidence']) || failure.commandIndex !== index) {
@@ -2626,13 +2826,22 @@ async function validateOperationalFailureMarker({ document, index, transitioned,
     '--provider', request.operator.provider, '--model', request.operator.model,
     '--thinking', request.operator.thinking,
   ], context.repository, request.timeoutMs, 1);
-  const typed = requireTypedOperationalFailure(stored.record, stored.stdout, stored.stderr);
-  const expectedDocument = {
-    digest: sha256(stored.stderr),
-    errorDigest: sha256(Buffer.from(typed.error)),
-    detailsDigest: sha256(Buffer.from(JSON.stringify(typed.details))),
-  };
+  const typed = requireTypedOperationalFailure(
+    stored.record,
+    stored.stdout,
+    stored.stderr,
+    expectedOperationalStdout(
+      assignmentForOperationalStdout(request.assignmentId, initialBoundary),
+      initialBoundary.status,
+    ),
+  );
+  const expectedDocument = operationalFailureDocumentEvidence(stored.stderr, typed);
+  const expectedMode = operationalFailureRetryMode(typed);
+  if (document.requiredNextMode !== expectedMode) {
+    throw new Error('operational failure marker recovery mode differs from its typed failure');
+  }
   if (!sameJson(failure.document, expectedDocument)) throw new Error('operational failure marker typed command document differs');
+  return typed;
 }
 
 function serializedRunIdentity(runIdentity) {
@@ -2680,6 +2889,14 @@ async function validateOperationalBoundary(boundary, expectedPostRun) {
       !sameJson(snapshot.assignmentRepository, boundary.assignmentRepository)) {
     throw new Error('operational failure marker snapshot boundary differs');
   }
+  return snapshot;
+}
+
+function assignmentForOperationalStdout(assignmentId, snapshot) {
+  return {
+    id: assignmentId,
+    scenarioReference: snapshot.assignment?.scenarioReference,
+  };
 }
 
 function requireActiveOperationalBoundary(marker, captured, assignmentId) {
@@ -2837,23 +3054,33 @@ async function migrateLegacyOperationalFailure({ request, context, assignmentDir
   });
 }
 
-function requireTypedOperationalFailure(record, stdout, stderr) {
-  if (stdout.length !== 0 || record.exitStatus !== 1 || record.timedOut !== false || record.signal !== null ||
+function requireTypedOperationalFailure(record, stdout, stderr, expectedStdout = null) {
+  if (record.exitStatus !== 1 || record.timedOut !== false || record.signal !== null ||
       record.outputLimitExceeded !== false || record.spawnError !== null || record.stdoutSha256 !== sha256(stdout) ||
-      record.stderrSha256 !== sha256(stderr) || record.observedOutputBytes !== stderr.length) {
+      record.stderrSha256 !== sha256(stderr) || record.observedOutputBytes !== stdout.length + stderr.length) {
     throw new Error('operational failure command termination evidence is not exact');
   }
   let document;
   try { document = JSON.parse(stderr.toString('utf8')); }
   catch { throw new Error('operational failure stderr is not one exact JSON document'); }
-  if (!document || typeof document !== 'object' || Array.isArray(document) ||
-      !sameJson(Object.keys(document).sort(), ['details', 'error', 'status']) ||
-      document.status !== 'operational-failure' || typeof document.error !== 'string' || document.error.length === 0 ||
-      !document.details || typeof document.details !== 'object' || Array.isArray(document.details) ||
-      !sameJson(JSON.parse(stderr.toString('utf8')), document)) {
+  const processResult = { ...record, stdout, stderr };
+  if (!isLegacyQualifiedOperationalFailure(processResult, document) &&
+      !isTypedOperationalFailure(processResult, document, expectedStdout)) {
     throw new Error('operational failure stderr is not a strictly typed operational failure');
   }
   return document;
+}
+
+function operationalFailureDocumentEvidence(stderr, document) {
+  const errorBytes = typeof document.error === 'string'
+    ? Buffer.from(document.error)
+    : Buffer.from(JSON.stringify(document.error));
+  const details = document.contract === mdlmPiOperationalFailureContract ? document.telemetry : document.details;
+  return {
+    digest: sha256(stderr),
+    errorDigest: sha256(errorBytes),
+    detailsDigest: sha256(Buffer.from(JSON.stringify(details))),
+  };
 }
 
 async function commandEvidenceManifest(prefix) {
@@ -3671,7 +3898,7 @@ async function authenticateOrphanedAssignmentCheckpoint({ request, context, sour
     throw new Error('operational recovery history is missing, extra, or ambiguous');
   }
   const [failureIndex, transitionEntry] = [...history.transitions.entries()][0];
-  if (failureIndex !== 2 || path.join(transitionDirectory, transitionEntry.name) !== transitionEvidence.path) {
+  if (failureIndex !== 2 || transitionEntry.path !== transitionEvidence.path) {
     throw new Error('operator-pinned retry transition is not the exact second-command durable transition');
   }
   const transition = JSON.parse(transitionEvidence.bytes.toString('utf8'));

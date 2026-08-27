@@ -6,6 +6,10 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
+import {
+  operationalFailureHasCompleteAttemptEvidence,
+  operationalFailureRetryMode,
+} from '../src/orchestrator.mjs';
 import { toolingTreeDigest } from './provenance-fixture.mjs';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -39,6 +43,9 @@ async function fixture({
   attentionRequired = false,
   assignmentSelected = true,
 } = {}) {
+  const attentionDetails = typeof attentionRequired === 'object' && attentionRequired !== null
+    ? attentionRequired
+    : {};
   const scratch = await mkdtemp(path.join(os.tmpdir(), 'issue-213-run-'));
   const repository = path.join(scratch, 'repository');
   await mkdir(repository);
@@ -65,6 +72,7 @@ async function fixture({
   const assignment = '44444444-4444-4444-8444-444444444444';
   const assignmentStatePath = path.join(scratch, 'assignment-id');
   const scenarioStatePath = path.join(scratch, 'scenario-reference');
+  const lifecycleCompletePath = path.join(scratch, 'lifecycle-complete');
   const malformedDigestPath = path.join(scratch, 'malformed-digest');
   const exhaustedDigestPath = path.join(scratch, 'exhausted-digest');
   const exhaustedStatePath = path.join(scratch, 'exhausted-state');
@@ -105,7 +113,7 @@ function repository(){const head=execFileSync('git',['rev-parse','HEAD^{commit}'
 const repo=repository();
 function out(x){process.stdout.write(JSON.stringify(x)+'\\n')}
 if(a[0]==='doctor') { if(exhausted&&exhaustedState==='snapshot-incomplete') process.stdout.write('{'); else out({ok:true,command:'doctor',package:doctorPackage,baselineRepositoryVerification:{verifiedBaselines:0,processDrift:0},index:{rebuilt:false,data:0,path:'.lifecycle/generated/indexes/data.json'},report:{rebuilt:false,data:0,path:'.lifecycle/generated/reports/lifecycle.json'},diagnostics:[]}); }
-else if(a[0]==='status') out({contract:'mdlm-status@1',ok:true,command:'status',package:statusPackage,currentOutcome:exhausted&&exhaustedState!=='status-active'?{outcome:'assignment',assignment:{allocation:'not-allocated'}}:${assignmentSelected ? (attentionRequired ? "{outcome:'attention-required',assignment:{allocation:'active',id:assignment},authorityRequirement:{mode:'attended',authority:'stakeholder',delegationAllowed:false}}" : "{outcome:'assignment',assignment:{allocation:'active',id:assignment}}") : "{outcome:'assignment',assignment:{allocation:'not-allocated'}}"},recentTransaction:${assignmentSelected ? "{available:false}" : "{available:true,id:'99999999-9999-4999-8999-999999999999',status:'completed',scenario:'ordinary@1'}"}});
+else if(a[0]==='status') out({contract:'mdlm-status@1',ok:true,command:'status',package:statusPackage,currentOutcome:fs.existsSync(${JSON.stringify(lifecycleCompletePath)})?{outcome:'lifecycle-complete'}:exhausted&&exhaustedState!=='status-active'?{outcome:'assignment',assignment:{allocation:'not-allocated'}}:${assignmentSelected ? (attentionRequired ? `{outcome:'attention-required',assignment:{allocation:'active',id:assignment},authorityRequirement:{mode:'attended',authority:'stakeholder',delegationAllowed:false},...${JSON.stringify(attentionDetails)}}` : "{outcome:'assignment',assignment:{allocation:'active',id:assignment}}") : "{outcome:'assignment',assignment:{allocation:'not-allocated'}}"},recentTransaction:${assignmentSelected ? "{available:false}" : "{available:true,id:'99999999-9999-4999-8999-999999999999',status:'completed',scenario:'ordinary@1'}"}});
 else if(a[0]==='assignment') { const requested=a[2]; if(requested!==assignment||!${assignmentSelected}) out({contract:'mdlm-assignment-state@1',ok:true,command:'assignment.show',assignment:{id:requested},selected:false,diagnostics:[]}); else out({contract:'mdlm-assignment-state@1',ok:true,command:'assignment.show',assignment:{id:assignment},selected:true,package:assignmentPackage,repository:repo,scenarioReference:scenario,disposition:exhausted&&exhaustedState!=='assignment-active'?'exhausted':'active',retryAvailability:exhausted?{malformedResponseCorrection:exhaustedState==='retry-one'?1:0}:{},malformedResponses,...(exhausted?{terminalDiagnostics:exhaustedState==='terminal-diagnostics-mismatch'?correctionDiagnostics:exhaustedDiagnostics}:{}),diagnostics:[]}); }
 else if(a[0]==='scenario'&&a[1]==='prepare') out({contract:'mdlm-assignment-packet@2',ok:true,command:'scenario.prepare',assignment:{id:assignment},package:packetPackage,repository:repo,scenario:{reference:scenario},responseSchema:{},exactInputs:[]});
 else if(a[0]==='scenario'&&a[1]==='submit') { let chunks=[]; process.stdin.on('data',x=>chunks.push(x)); process.stdin.on('end',()=>{const bytes=Buffer.concat(chunks); fs.appendFileSync(${JSON.stringify(path.join(scratch, 'submit-count'))},'1\\n'); const digest='sha256:'+crypto.createHash('sha256').update(bytes).digest('hex'); if(exhaustedSubmitMode!==null) { fs.writeFileSync(exhaustedPath,digest); if(${exhaustedRepositoryMutation}) fs.writeFileSync(path.join(root,'unexpected.txt'),'drift\\n'); const disposition={ok:false,command:'scenario.submit',contract:'mdlm-assignment-disposition@1',assignment:{id:assignment},disposition:'exhausted',orchestration:{action:'stop',automaticReplacement:false},malformedResponse:{attempt:exhaustedSubmitMode==='inconsistent'?1:2,correctionsRemaining:0,diagnostics:exhaustedDiagnostics},diagnostics:exhaustedDiagnostics}; if(exhaustedSubmitMode==='truncated') process.stdout.write(JSON.stringify(disposition).slice(0,-2)); else out(disposition); process.exitCode=exhaustedSubmitMode==='failed'?9:1; } else if(${correctionRequiredSubmit}&&!fs.existsSync(malformedPath)) { fs.writeFileSync(malformedPath,digest); out({ok:false,command:'scenario.submit',contract:'mdlm-assignment-disposition@1',assignment:{id:assignment},disposition:'correction-required',orchestration:{action:'correct-response',automaticReplacement:false},malformedResponse:{attempt:1,correctionsRemaining:${correctionsRemaining},diagnostics:correctionDiagnostics},diagnostics:correctionDiagnostics}); process.exitCode=1; } else { const id=${JSON.stringify(executionId)}; const dir=path.join(root,'.lifecycle/data/.transactions',id); fs.mkdirSync(dir,{recursive:true}); fs.writeFileSync(path.join(dir,'execution.json'),'execution\\n'); fs.writeFileSync(path.join(dir,'target.json'),'target\\n'); if(${uncertainSubmit}) process.exit(9); else out({contract:'mdlm-scenario-execution@4',ok:true,command:'scenario.submit',execution:{contract:'mdlm-scenario-execution@4',id,status:'completed',response:{assignment,digest},definition:{scenario},outputs:[{lifecycleDatum:{path:${publicationPath ? JSON.stringify(publicationPath) : "'.lifecycle/data/.transactions/'+id+'/target.json'"}}}]}}); } }); }
@@ -160,6 +168,7 @@ const run003CheckpointFixture = path.join(root, 'test', 'fixtures', 'calculator-
 const run008OperationalFailureDirectory = path.join(root, 'test', 'fixtures', 'calculator-run-008-operational-failure');
 const run008OperationalFailureFixture = path.join(run008OperationalFailureDirectory, 'result.json');
 const run009OrphanedCheckpointDirectory = path.join(root, 'test', 'fixtures', 'calculator-run-009-orphaned-checkpoint');
+const issue19OperationalFailureDirectory = path.join(root, 'test', 'fixtures', 'issue-19-operational-failures');
 const run008ResultDigest = '940cd1d5ee4d332907ff4d92af5b0d1789e66cb8687c60bb909324d71ad76523';
 const run009InitialManifestDigest = '5ee054a6c1b49a340e45e100f47378cbbb9b88c71072270a79a1f22ba536ed0b';
 const run009PostManifestDigest = '62e54259deb615c39530282ef66df299fa03ecfd569e4032814f08831350f348';
@@ -169,6 +178,47 @@ const run008InitialManifestDigest = 'fe25aabb438387d7a6828e1bf4c168b75bb0b8d517c
 const run008PostManifestDigest = 'e44d04e03e803736581ba95ecb4f95cae92d390de24921d76ce8c07a1225a817';
 const run003AssignmentA = '0110fb6b-5a0d-4228-9867-58ed3e27a4a4';
 const run003AssignmentB = '6db7bda7-7043-446b-a38a-2daab6c6df3e';
+
+function canonicalPiOperationalFailure(overrides = {}) {
+  const document = {
+    contract: 'mdlm-pi-operational-failure@1',
+    status: 'operational-failure',
+    error: {
+      code: 'PI_SETTLED_WITHOUT_COMPLETION',
+      message: 'Pi settled without calling complete_assignment',
+    },
+    telemetry: {
+      stopReason: 'stop',
+      providerError: null,
+      retriesConsumed: 0,
+      provider: 'openai-codex',
+      model: 'gpt-5.6-sol',
+      completeAssignmentObserved: false,
+    },
+  };
+  return {
+    ...document,
+    ...overrides,
+    error: { ...document.error, ...overrides.error },
+    telemetry: { ...document.telemetry, ...overrides.telemetry },
+  };
+}
+
+async function configureAttendedDecision(value, wording = 'Proceed with the named authority decision.') {
+  const decisionCatalogPath = path.join(value.scratch, 'decisions.json');
+  await writeFile(decisionCatalogPath, JSON.stringify({
+    contract: 'mdlm-demo-decision-catalog@1',
+    decisions: [{
+      assignment: value.assignment,
+      wording,
+      origin: 'operator-selected',
+      authorityBasis: 'The named authority holder supplied this exact conclusion.',
+      digest: `sha256:${createHash('sha256').update(wording).digest('hex')}`,
+    }],
+  }));
+  value.request.signal = 'attended-review-correction';
+  value.request.decisionCatalogPath = decisionCatalogPath;
+}
 
 function operationalRecoveryDirectoryForTest(value) {
   return path.join(
@@ -190,15 +240,19 @@ async function readAnchoredRun008Fixture() {
   return { resultBytes, run008: JSON.parse(resultBytes), initialManifestBytes, postManifestBytes };
 }
 
-async function operationalFailureFixture() {
-  const { run008 } = await readAnchoredRun008Fixture();
+async function operationalFailureFixture({ settledWithoutCompletion = false, mutateScenarioOnFailure = false, completeLifecycleOnSuccess = false } = {}) {
   const attemptsPath = path.join(os.tmpdir(), `mdlm-demo-operational-attempts-${process.pid}-${Date.now()}-${Math.random()}`);
+  const failure = settledWithoutCompletion
+    ? canonicalPiOperationalFailure()
+    : canonicalPiOperationalFailure({
+        error: { code: 'MDLM_COMMAND_FAILURE', message: 'MDLM command failed before response capture' },
+      });
   const piScript = `#!/usr/bin/env node
-const fs=require('node:fs'); const attempts=fs.existsSync(${JSON.stringify(attemptsPath)})?Number(fs.readFileSync(${JSON.stringify(attemptsPath)},'utf8')):0; fs.writeFileSync(${JSON.stringify(attemptsPath)},String(attempts+1)); if(attempts===0){process.stderr.write(Buffer.from(${JSON.stringify(run008.process.stderrBase64)},'base64')); process.exit(1);} console.log('{"status":"lifecycle-complete"}');
+const fs=require('node:fs'),path=require('node:path'); const attempts=fs.existsSync(${JSON.stringify(attemptsPath)})?Number(fs.readFileSync(${JSON.stringify(attemptsPath)},'utf8')):0; fs.writeFileSync(${JSON.stringify(attemptsPath)},String(attempts+1)); if(attempts===0){if(${mutateScenarioOnFailure})fs.writeFileSync(path.join(path.dirname(path.dirname(process.argv[1])),'scenario-reference'),'changed-scenario@1'); process.stdout.write('Assignment 44444444-4444-4444-8444-444444444444: ordinary@1\\n'); process.stderr.write(${JSON.stringify(`${JSON.stringify(failure, null, 2)}\n`)}); process.exit(1);} if(${completeLifecycleOnSuccess})fs.writeFileSync(path.join(path.dirname(path.dirname(process.argv[1])),'lifecycle-complete'),'complete\\n'); console.log('{"status":"lifecycle-complete"}');
 `;
   const value = await fixture({ scenarioReference: 'ordinary@1', piScript });
   value.request.signal = 'clean-interrupted-command';
-  return { ...value, attemptsPath, run008 };
+  return { ...value, attemptsPath };
 }
 
 function runIdentityFromSnapshot(snapshot, request) {
@@ -1016,7 +1070,7 @@ test('durable consumption cross-binds the authenticated process and complete pos
 test('unconsumed typed operational failure recovery reuses its authenticated marker', async () => {
   const value = await operationalFailureFixture();
   const crashed = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request), { ...process.env, MDLM_DEMO_TEST_CRASH: 'operational-recovery-marker:after-rename' });
-  assert.equal(crashed.status, 86, crashed.stderr);
+  assert.equal(crashed.status, 86, `${crashed.stderr}\n${crashed.stdout}`);
   assert.equal(await readFile(value.attemptsPath, 'utf8'), '1');
   const resumed = exec(process.execPath, [cli, 'resume'], root, JSON.stringify({ ...value.request, contract: 'mdlm-demo-resume-request@1' }));
   assert.equal(resumed.status, 0, resumed.stderr);
@@ -1117,7 +1171,7 @@ test('retry history authenticates every retained durable attempt before recovery
   assert.equal(first.status, 0, first.stderr);
   const second = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
   assert.equal(second.status, 0, second.stderr);
-  assert.equal(JSON.parse(second.stdout).status, 'completed');
+  assert.equal(JSON.parse(second.stdout).status, 'completed', second.stdout);
   assert.equal(await readFile(value.attemptsPath, 'utf8'), '2');
 
   const durableDirectory = path.join(assignmentDirectory(value.request), 'durable-command');
@@ -1195,9 +1249,11 @@ test('output-limited durable results fail closed instead of authenticating trunc
 });
 
 test('crash recovery compares an operational failure with its authorized pre-command snapshot', async () => {
-  const { run008 } = await readAnchoredRun008Fixture();
+  const failure = canonicalPiOperationalFailure({
+    error: { code: 'MDLM_COMMAND_FAILURE', message: 'MDLM command failed before response capture' },
+  });
   const attemptsPath = path.join(os.tmpdir(), `mdlm-demo-authorized-initial-${process.pid}-${Date.now()}`);
-  const piScript = `#!/usr/bin/env node\nconst fs=require('node:fs'); fs.appendFileSync(${JSON.stringify(attemptsPath)}, 'invoked\\n'); fs.writeFileSync('worker-change.txt', 'changed\\n'); process.stderr.write(Buffer.from('${run008.process.stderrBase64}','base64')); process.exit(1);\n`;
+  const piScript = `#!/usr/bin/env node\nconst fs=require('node:fs'); fs.appendFileSync(${JSON.stringify(attemptsPath)}, 'invoked\\n'); fs.writeFileSync('worker-change.txt', 'changed\\n'); process.stdout.write('Assignment 44444444-4444-4444-8444-444444444444: ordinary@1\\n'); process.stderr.write(${JSON.stringify(`${JSON.stringify(failure, null, 2)}\n`)}); process.exit(1);\n`;
   const value = await fixture({ scenarioReference: 'ordinary@1', piScript });
   value.request.signal = 'clean-interrupted-command';
 
@@ -1219,6 +1275,24 @@ test('crash recovery compares an operational failure with its authorized pre-com
   assert.equal(JSON.parse(repeated.stdout).reason, 'mdlm-pi-operational-failure');
   assert.equal(await readFile(attemptsPath, 'utf8'), 'invoked\n');
   assert.equal((await readdir(path.join(assignmentDirectory(value.request), 'durable-command'))).some(name => name.startsWith('attempt-')), false);
+});
+
+test('after-result recovery compares changed Assignment evidence with the authorized pre-worker snapshot', async () => {
+  const value = await operationalFailureFixture({ mutateScenarioOnFailure: true });
+  const crashed = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request), {
+    ...process.env,
+    MDLM_DEMO_TEST_CRASH: 'durable-command:after-result',
+  });
+  assert.equal(crashed.status, 86, crashed.stderr);
+
+  const recovered = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
+  assert.equal(recovered.status, 0, recovered.stderr);
+  const output = JSON.parse(recovered.stdout);
+  assert.equal(output.reason, 'mdlm-pi-operational-failure');
+  assert.equal(output.recoverable, false);
+  assert.equal(output.operationalFailureRecovery.verified, false);
+  assert.match(output.operationalFailureRecovery.uncertainty, /mdlm assignment bytes or command identity changed/);
+  assert.equal(await readFile(value.attemptsPath, 'utf8'), '1');
 });
 
 test('ordinary Assignments invoke mdlm-pi with exact argv and request-bound timeout environment', async () => {
@@ -1933,7 +2007,7 @@ test('ordinary mdlm-pi submitting journal resumes through its controller without
   assert.equal(await readFile(inputPath, 'utf8'), '');
 });
 
-test('exact run-008 typed operational failure becomes recoverable only after a clean unchanged post-run boundary', async () => {
+test('fresh legacy run-008-shaped output stays unauthenticated without operator-pinned migration evidence', async () => {
   const { run008, initialManifestBytes, postManifestBytes } = await readAnchoredRun008Fixture();
   assert.equal(run008.snapshot.digest, `sha256:${run008InitialManifestDigest}`);
   assert.equal(run008.postRunSnapshot.digest, `sha256:${run008PostManifestDigest}`);
@@ -1972,58 +2046,17 @@ const fs=require('node:fs'); let input=''; process.stdin.on('data',chunk=>input+
   const first = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
 
   assert.equal(first.status, 0, first.stderr);
-  const recovered = JSON.parse(first.stdout);
-  assert.equal(recovered.status, 'stopped');
-  assert.equal(recovered.reason, 'pre-submission-operational-failure');
-  assert.equal(recovered.outcome, 'pre-submission-operational-failure');
-  assert.equal(recovered.recoverable, true);
-  assert.equal(recovered.detail, run008.detail);
-  assert.deepEqual(recovered.mdlmPi.document, run008.mdlmPi.document);
-  assert.equal(recovered.operationalFailureRecovery.verified, true);
-  assert.match(recovered.operationalFailureRecovery.marker.path, /operational-failure-recoveries/);
-  const durableMarkerBytes = await readFile(recovered.operationalFailureRecovery.marker.path);
-  const durableMarker = JSON.parse(durableMarkerBytes);
-  assert.equal(durableMarker.contract, 'mdlm-demo-operational-failure-marker@1');
-  assert.equal(durableMarker.assignmentId, value.assignment);
-  assert.equal(durableMarker.requiredNextMode, 'run');
-  assert.equal(durableMarker.timeoutIdentity.timeoutMs, 900_000);
-  assert.equal(durableMarker.timeoutIdentity.mdlmPiCommandTimeoutMs, 600_000);
-  assert.equal(durableMarker.timeoutIdentity.mdlmPiAssignmentTimeoutMs, 840_000);
-  assert.equal(durableMarker.failure.document.digest, recovered.process.stderrSha256);
-  const initial = JSON.parse(await readFile(path.join(recovered.snapshot.snapshotDirectory, 'snapshot.json'), 'utf8'));
-  const post = JSON.parse(await readFile(path.join(recovered.postRunSnapshot.snapshotDirectory, 'snapshot.json'), 'utf8'));
-  assert.deepEqual(post.lifecycleRepository, initial.lifecycleRepository);
-  assert.equal(initial.journal.present, false);
-  assert.equal(post.journal.present, false);
-  assert.equal(initial.piJournal.present, false);
-  assert.equal(post.piJournal.present, false);
-
-  const refusedResume = exec(process.execPath, [cli, 'resume'], root, JSON.stringify({
-    ...value.request,
-    contract: 'mdlm-demo-resume-request@1',
-  }));
-  assert.equal(refusedResume.status, 0, refusedResume.stderr);
-  const wrongMode = JSON.parse(refusedResume.stdout);
-  assert.equal(wrongMode.status, 'stopped');
-  assert.equal(wrongMode.reason, 'wrong-recovery-mode');
-  assert.equal(wrongMode.requiredNextMode, 'run');
+  const stopped = JSON.parse(first.stdout);
+  assert.equal(stopped.status, 'stopped');
+  assert.equal(stopped.reason, 'mdlm-pi-contract-failure');
+  assert.equal(stopped.recoverable, false);
+  assert.equal(stopped.outcome, undefined);
+  assert.equal(stopped.operationalFailureRecovery, undefined);
   assert.equal(await readFile(attemptsPath, 'utf8'), '1');
-  let calls = (await readFile(path.join(value.scratch, 'calls.log'), 'utf8')).trim().split('\n').map(JSON.parse);
+  assert.equal(await readFile(inputPath, 'utf8'), `${wording}\n`);
+  await assert.rejects(stat(operationalRecoveryDirectoryForTest(value)), error => error.code === 'ENOENT');
+  const calls = (await readFile(path.join(value.scratch, 'calls.log'), 'utf8')).trim().split('\n').map(JSON.parse);
   assert.equal(calls.filter(args => args[0] === 'scenario' && args[1] === 'prepare' && args[2] === value.assignment).length, 1);
-
-  const second = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
-  assert.equal(second.status, 0, second.stderr);
-  assert.equal(JSON.parse(second.stdout).status, 'completed');
-  assert.equal(await readFile(attemptsPath, 'utf8'), '2');
-  assert.equal(await readFile(inputPath, 'utf8'), `${wording}\n${wording}\n`);
-  assert.deepEqual(await readFile(recovered.operationalFailureRecovery.marker.path), durableMarkerBytes);
-  const recoveryHistory = await readdir(path.dirname(recovered.operationalFailureRecovery.marker.path));
-  assert.deepEqual(recoveryHistory.sort(), ['failure-000002.json', 'retry-000002.json']);
-  const transition = JSON.parse(await readFile(path.join(path.dirname(recovered.operationalFailureRecovery.marker.path), 'retry-000002.json')));
-  assert.equal(transition.mode, 'run');
-  assert.equal(transition.marker.digest, recovered.operationalFailureRecovery.marker.digest);
-  calls = (await readFile(path.join(value.scratch, 'calls.log'), 'utf8')).trim().split('\n').map(JSON.parse);
-  assert.equal(calls.filter(args => args[0] === 'scenario' && args[1] === 'prepare' && args[2] === value.assignment).length, 2);
   assert.equal(calls.some(args => args[0] === 'scenario' && args[1] === 'submit'), false);
 });
 
@@ -2101,6 +2134,38 @@ test('the real run-008 evidence and run-009 request recover only through an oper
   assert.equal(migratedIdentity.contract, 'mdlm-demo-run-identity@5');
   assert.equal(migratedIdentity.mdlmPiCommandTimeoutMs, 600_000);
   assert.equal(migratedIdentity.mdlmPiAssignmentTimeoutMs, 840_000);
+});
+
+test('legacy command evidence cannot be relabeled as verified canonical finalization', async () => {
+  const value = await legacyRun009Fixture();
+  const first = exec(process.execPath, [cli, 'resume'], root, JSON.stringify({
+    ...value.request, contract: 'mdlm-demo-resume-request@1',
+  }));
+  assert.equal(first.status, 0, first.stderr);
+  const markerPath = JSON.parse(first.stdout).operationalFailureRecovery.marker.path;
+  const marker = JSON.parse(await readFile(markerPath, 'utf8'));
+  const initial = JSON.parse(await readFile(path.join(marker.initialBoundary.snapshotDirectory, 'snapshot.json'), 'utf8'));
+  const currentIdentity = runIdentityFromSnapshot(initial, value.request);
+  const identityBytes = Buffer.from(`${JSON.stringify(currentIdentity, null, 2)}\n`);
+  await writeFile(value.identityPath, identityBytes);
+  marker.source = 'verified-finalization';
+  marker.runIdentity = {
+    path: path.resolve(value.identityPath),
+    bytes: identityBytes.length,
+    digest: `sha256:${createHash('sha256').update(identityBytes).digest('hex')}`,
+  };
+  await chmod(markerPath, 0o600);
+  await writeFile(markerPath, `${JSON.stringify(marker, null, 2)}\n`);
+  await chmod(markerPath, 0o400);
+
+  const resumed = exec(process.execPath, [cli, 'resume'], root, JSON.stringify({
+    ...value.request, contract: 'mdlm-demo-resume-request@1',
+  }));
+  assert.equal(resumed.status, 0, resumed.stderr);
+  const output = JSON.parse(resumed.stdout);
+  assert.equal(output.reason, 'operational-recovery-marker-invalid');
+  assert.match(output.detail, /source does not match its versioned failure contract/);
+  await assert.rejects(readFile(value.workerLog), error => error.code === 'ENOENT');
 });
 
 test('a durable legacy marker rejects a missing, changed, extra, or symlinked @4 identity before prepare or worker invocation', async () => {
@@ -2258,26 +2323,91 @@ test('operational failure marker publication recovers after a synced pending-wri
   assert.equal((await readdir(operationalRecoveryDirectoryForTest(value))).some(name => name.endsWith('.pending')), false);
 });
 
-test('a synced retry transition survives a crash without deleting failure history', async () => {
-  const value = await operationalFailureFixture();
+test('a synced resume transition launches a new worker after a no-completion crash without deleting failure history', async () => {
+  const value = await operationalFailureFixture({ settledWithoutCompletion: true });
   const first = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
   assert.equal(first.status, 0, first.stderr);
-  const markerPath = JSON.parse(first.stdout).operationalFailureRecovery.marker.path;
+  const firstOutput = JSON.parse(first.stdout);
+  assert.equal(firstOutput.operationalFailureRecovery.retryCommand, 'resume');
+  const markerPath = firstOutput.operationalFailureRecovery.marker.path;
   const markerBytes = await readFile(markerPath);
+  const resumeRequest = { ...value.request, contract: 'mdlm-demo-resume-request@1' };
 
-  const crashed = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request), {
+  const crashed = exec(process.execPath, [cli, 'resume'], root, JSON.stringify(resumeRequest), {
     ...process.env,
-    MDLM_DEMO_TEST_CRASH: 'operational-recovery-retry:after-temp-sync',
+    MDLM_DEMO_TEST_CRASH: 'operational-recovery-retry:after-rename',
   });
   assert.equal(crashed.status, 86, crashed.stderr);
   assert.equal(await readFile(value.attemptsPath, 'utf8'), '1');
 
-  const retried = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
+  const bypass = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
+  assert.equal(bypass.status, 0, bypass.stderr);
+  assert.equal(JSON.parse(bypass.stdout).reason, 'wrong-recovery-mode');
+  assert.equal(await readFile(value.attemptsPath, 'utf8'), '1');
+
+  const crashedAfterResult = exec(process.execPath, [cli, 'resume'], root, JSON.stringify(resumeRequest), {
+    ...process.env,
+    MDLM_DEMO_TEST_CRASH: 'durable-command:after-result',
+  });
+  assert.equal(crashedAfterResult.status, 86, crashedAfterResult.stderr);
+  assert.equal(await readFile(value.attemptsPath, 'utf8'), '2');
+
+  const resultBypass = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
+  assert.equal(resultBypass.status, 0, resultBypass.stderr);
+  assert.equal(JSON.parse(resultBypass.stdout).reason, 'wrong-recovery-mode');
+  assert.equal(await readFile(value.attemptsPath, 'utf8'), '2');
+
+  const retried = exec(process.execPath, [cli, 'resume'], root, JSON.stringify(resumeRequest));
   assert.equal(retried.status, 0, retried.stderr);
   assert.equal(JSON.parse(retried.stdout).status, 'completed');
   assert.equal(await readFile(value.attemptsPath, 'utf8'), '2');
   assert.deepEqual(await readFile(markerPath), markerBytes);
   assert.deepEqual((await readdir(path.dirname(markerPath))).sort(), ['failure-000002.json', 'retry-000002.json']);
+  const retryPath = path.join(path.dirname(markerPath), 'retry-000002.json');
+  const authorization = JSON.parse(await readFile(path.join(
+    assignmentDirectory(value.request), 'durable-command', 'attempt-000002', 'authorization.json',
+  )));
+  assert.deepEqual(authorization.context.operationalRecoveryTransition, {
+    path: retryPath,
+    digest: `sha256:${createHash('sha256').update(await readFile(retryPath)).digest('hex')}`,
+  });
+});
+
+test('a completed authorized retry reconciles after lifecycle completion while tampered recovery history fails closed', async () => {
+  const value = await operationalFailureFixture({ settledWithoutCompletion: true, completeLifecycleOnSuccess: true });
+  const first = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
+  assert.equal(first.status, 0, first.stderr);
+  assert.equal(JSON.parse(first.stdout).reason, 'pre-submission-operational-failure');
+
+  const resumeRequest = { ...value.request, contract: 'mdlm-demo-resume-request@1' };
+  const retried = exec(process.execPath, [cli, 'resume'], root, JSON.stringify(resumeRequest));
+  assert.equal(retried.status, 0, retried.stderr);
+  assert.equal(JSON.parse(retried.stdout).reason, 'lifecycle-complete');
+  const transactionPath = path.join(assignmentDirectory(value.request), 'transaction.json');
+  const completedTransaction = await readFile(transactionPath);
+  assert.equal(await readFile(value.attemptsPath, 'utf8'), '2');
+  await assert.rejects(readFile(path.join(value.scratch, 'submit-count')), error => error.code === 'ENOENT');
+
+  const reconciled = exec(process.execPath, [cli, 'resume'], root, JSON.stringify(resumeRequest));
+
+  assert.equal(reconciled.status, 0, reconciled.stderr);
+  assert.equal(JSON.parse(reconciled.stdout).status, 'already-completed', reconciled.stdout);
+  assert.equal(await readFile(value.attemptsPath, 'utf8'), '2');
+  assert.deepEqual(await readFile(transactionPath), completedTransaction);
+  await assert.rejects(readFile(path.join(value.scratch, 'submit-count')), error => error.code === 'ENOENT');
+  assert.equal((await readdir(path.join(assignmentDirectory(value.request), 'durable-command')))
+    .some(name => name.startsWith('attempt-000003')), false);
+
+  const recoveryDirectory = operationalRecoveryDirectoryForTest(value);
+  const retryPath = path.join(recoveryDirectory, (await readdir(recoveryDirectory)).find(name => name.startsWith('retry-')));
+  await chmod(retryPath, 0o600);
+  const retry = JSON.parse(await readFile(retryPath));
+  retry.mode = 'run';
+  await writeFile(retryPath, `${JSON.stringify(retry, null, 2)}\n`);
+  const tampered = exec(process.execPath, [cli, 'resume'], root, JSON.stringify(resumeRequest));
+  assert.equal(tampered.status, 0, tampered.stderr);
+  assert.equal(JSON.parse(tampered.stdout).reason, 'operational-recovery-marker-invalid');
+  assert.equal(await readFile(value.attemptsPath, 'utf8'), '2');
 });
 
 test('tampered or ambiguous operational failure markers fail closed without worker or prepare side effects', async () => {
@@ -2316,8 +2446,11 @@ test('tampered or ambiguous operational failure markers fail closed without work
 });
 
 test('typed operational failure stays nonrecoverable when post-run evidence changed or became ambiguous', async () => {
-  const { run008 } = await readAnchoredRun008Fixture();
-  const failureBase64 = run008.process.stderrBase64;
+  const failure = canonicalPiOperationalFailure({
+    error: { code: 'MDLM_COMMAND_FAILURE', message: 'MDLM command failed before response capture' },
+  });
+  const failureSource = `${JSON.stringify(failure, null, 2)}\n`;
+  const progress = 'Assignment 44444444-4444-4444-8444-444444444444: ordinary@1\\n';
   const mutations = {
     'repository change': "fs.writeFileSync(path.join(process.cwd(),'untracked-publication.json'),'uncertain\\n');",
     'runner transaction journal': "fs.writeFileSync(path.join(path.dirname(configPath),'..','transaction.json'),'{}\\n');",
@@ -2326,7 +2459,7 @@ test('typed operational failure stays nonrecoverable when post-run evidence chan
   };
   for (const [name, mutation] of Object.entries(mutations)) {
     const piScript = `#!/usr/bin/env node
-const fs=require('node:fs'),path=require('node:path'); const configPath=process.env.MDLM_DEMO_SHIM_CONFIG; const config=JSON.parse(fs.readFileSync(configPath,'utf8')); ${mutation} process.stderr.write(Buffer.from('${failureBase64}','base64')); process.exit(1);
+const fs=require('node:fs'),path=require('node:path'); const configPath=process.env.MDLM_DEMO_SHIM_CONFIG; const config=JSON.parse(fs.readFileSync(configPath,'utf8')); ${mutation} process.stdout.write('${progress}'); process.stderr.write(${JSON.stringify(failureSource)}); process.exit(1);
 `;
     const value = await fixture({ scenarioReference: 'ordinary@1', piScript });
     value.request.signal = 'clean-interrupted-command';
@@ -2338,12 +2471,12 @@ const fs=require('node:fs'),path=require('node:path'); const configPath=process.
     assert.equal(output.status, 'stopped', name);
     assert.equal(output.reason, 'mdlm-pi-operational-failure', name);
     assert.equal(output.recoverable, false, name);
-    assert.deepEqual(output.mdlmPi.document, run008.mdlmPi.document, name);
+    assert.deepEqual(output.mdlmPi.document, failure, name);
     assert.equal(output.operationalFailureRecovery?.verified ?? false, false, name);
   }
 
   const attemptsPath = path.join(os.tmpdir(), `mdlm-demo-uncertain-private-evidence-${process.pid}-${Date.now()}`);
-  const piScript = `#!/usr/bin/env node\nrequire('node:fs').appendFileSync(${JSON.stringify(attemptsPath)}, 'invoked\\n'); process.stderr.write(Buffer.from('${failureBase64}','base64')); process.exit(1);\n`;
+  const piScript = `#!/usr/bin/env node\nrequire('node:fs').appendFileSync(${JSON.stringify(attemptsPath)}, 'invoked\\n'); process.stdout.write('${progress}'); process.stderr.write(${JSON.stringify(failureSource)}); process.exit(1);\n`;
   const value = await fixture({ scenarioReference: 'ordinary@1', piScript });
   value.request.signal = 'clean-interrupted-command';
   const preexistingStops = path.join(assignmentDirectory(value.request), 'shim', 'stops');
@@ -2377,6 +2510,302 @@ const fs=require('node:fs'),path=require('node:path'); const configPath=process.
   assert.equal(JSON.parse(adversarial.stdout).reason, 'durable-command-uncertain');
   assert.equal(await readFile(attemptsPath, 'utf8'), 'invoked\n');
   assert.equal((await readdir(durableDirectory)).some(name => name.startsWith('attempt-')), false);
+});
+
+test('byte-faithful IPv4 run021, URI run016, and SemVer run011 boundaries accept only the canonical issue 19 envelope', async () => {
+  const cases = JSON.parse(await readFile(path.join(issue19OperationalFailureDirectory, 'cases.json'), 'utf8'));
+  assert.deepEqual(cases.slice(0, 3).map(item => ({
+    name: item.name,
+    assignment: item.assignment,
+    scenario: item.scenario,
+    stdoutSha256: item.stdoutSha256,
+    attentionSha256: item.attentionSha256,
+  })), [
+    {
+      name: 'ipv4-021', assignment: 'd80b478b-34aa-49dd-bdc0-8bfa83c2c9a8',
+      scenario: 'review-datum-in-context@2',
+      stdoutSha256: 'sha256:e9e2ad0729fafd3a78787e06e54ae27efb4af765b7e65710e9b8afbb4c92ffd8',
+      attentionSha256: undefined,
+    },
+    {
+      name: 'uri-016', assignment: '8e63b0cd-92e0-4704-ac42-10fcde3f5090',
+      scenario: 'draft-stakeholder-requirements@2',
+      stdoutSha256: 'sha256:ed012fc3fc64c171a8d974a3a181d7f68d7c8b0317db9365091b2b96a724d335',
+      attentionSha256: undefined,
+    },
+    {
+      name: 'semver-011', assignment: '47ee5038-5461-41be-b495-eac22dc028c9',
+      scenario: 'resolve-question@2',
+      stdoutSha256: 'sha256:d5d159eb710328ccb6c96be0a76641c3ca9bae30a09f929a081ffa8939b6f1e2',
+      attentionSha256: 'sha256:47c9c93cd128faf7ad30b98c25114e1a92de74da52ef574ce1773f7ea9c4fc1f',
+    },
+  ]);
+  const legacyStderrPath = path.join(issue19OperationalFailureDirectory, 'legacy.stderr');
+  const legacyStderr = await readFile(legacyStderrPath);
+  assert.equal(`sha256:${createHash('sha256').update(legacyStderr).digest('hex')}`, cases[0].legacyStderrSha256);
+  for (const item of cases) {
+    const stdoutPath = path.join(issue19OperationalFailureDirectory, `${item.name}.stdout`);
+    const stdout = await readFile(stdoutPath);
+    assert.equal(`sha256:${createHash('sha256').update(stdout).digest('hex')}`, item.stdoutSha256, item.name);
+    assert.equal(legacyStderr.toString('base64'), item.legacyStderrBase64, item.name);
+    const attentionRequired = item.attentionFixture === undefined
+      ? false
+      : JSON.parse(await readFile(path.join(issue19OperationalFailureDirectory, item.attentionFixture), 'utf8'));
+    if (item.attentionFixture !== undefined) {
+      const attentionBytes = await readFile(path.join(issue19OperationalFailureDirectory, item.attentionFixture));
+      assert.equal(`sha256:${createHash('sha256').update(attentionBytes).digest('hex')}`, item.attentionSha256, item.name);
+    }
+    const legacyScript = `#!/usr/bin/env node\nconst fs=require('node:fs'); process.stdout.write(fs.readFileSync(${JSON.stringify(stdoutPath)})); process.stderr.write(fs.readFileSync(${JSON.stringify(legacyStderrPath)})); process.exit(1);\n`;
+    const legacy = await fixture({ scenarioReference: item.scenario, piScript: legacyScript, attentionRequired });
+    legacy.assignment = item.assignment;
+    legacy.request.assignmentId = item.assignment;
+    await writeFile(legacy.assignmentStatePath, item.assignment);
+    if (attentionRequired !== false) await configureAttendedDecision(legacy);
+
+    const legacyExecution = exec(process.execPath, [cli, 'run'], root, JSON.stringify(legacy.request));
+
+    assert.equal(legacyExecution.status, 0, `${item.name}: ${legacyExecution.stderr}`);
+    const rejected = JSON.parse(legacyExecution.stdout);
+    assert.equal(rejected.reason, 'mdlm-pi-contract-failure', item.name);
+    assert.equal(rejected.recoverable, false, item.name);
+    assert.equal(rejected.process.stdoutSha256, item.stdoutSha256, item.name);
+    assert.equal(rejected.process.stderrSha256, item.legacyStderrSha256, item.name);
+    assert.equal(await stat(operationalRecoveryDirectoryForTest(legacy)).then(() => true, () => false), false, item.name);
+
+    const failure = canonicalPiOperationalFailure();
+    const attemptsPath = path.join(os.tmpdir(), `issue-19-${item.name}-${process.pid}-${Date.now()}`);
+    const piScript = `#!/usr/bin/env node\nconst fs=require('node:fs'); fs.appendFileSync(${JSON.stringify(attemptsPath)}, 'invoked\\n'); process.stdout.write(fs.readFileSync(${JSON.stringify(stdoutPath)})); process.stderr.write(${JSON.stringify(`${JSON.stringify(failure, null, 2)}\n`)}); process.exit(1);\n`;
+    const value = await fixture({ scenarioReference: item.scenario, piScript, attentionRequired });
+    value.assignment = item.assignment;
+    value.request.assignmentId = item.assignment;
+    await writeFile(value.assignmentStatePath, item.assignment);
+    if (attentionRequired !== false) await configureAttendedDecision(value);
+    const before = {
+      head: git(['rev-parse', 'HEAD'], value.repository),
+      tree: git(['rev-parse', 'HEAD^{tree}'], value.repository),
+      status: git(['status', '--porcelain=v1'], value.repository),
+    };
+
+    const execution = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
+
+    assert.equal(execution.status, 0, `${item.name}: ${execution.stderr}`);
+    const output = JSON.parse(execution.stdout);
+    assert.equal(output.reason, 'pre-submission-operational-failure', item.name);
+    assert.equal(output.recoverable, true, item.name);
+    assert.equal(output.trustedRepositoryAdvance, false, item.name);
+    assert.deepEqual(output.mdlmPi.document, failure, item.name);
+    assert.equal(output.process.stdoutSha256, item.stdoutSha256, item.name);
+    assert.equal(output.operationalFailureRecovery.verified, true, item.name);
+    assert.equal(output.operationalFailureRecovery.retryCommand, 'resume', item.name);
+    assert.equal(output.operationalFailureRecovery.resumeAllowed, true, item.name);
+    const marker = JSON.parse(await readFile(output.operationalFailureRecovery.marker.path, 'utf8'));
+    assert.equal(marker.requiredNextMode, 'resume', item.name);
+    assert.equal(await readFile(value.assignmentStatePath, 'utf8'), item.assignment, item.name);
+    assert.equal(await stat(path.join(value.scratch, 'submit-count')).then(() => true, () => false), false, item.name);
+    assert.equal(await stat(path.join(assignmentDirectory(value.request), 'transaction.json')).then(() => true, () => false), false, item.name);
+    assert.equal(await stat(path.join(value.repository, '.lifecycle', 'data', '.transactions')).then(() => true, () => false), false, item.name);
+    assert.equal(await stat(path.join(value.repository, '.git', 'mdlm-pi', 'run.json')).then(() => true, () => false), false, item.name);
+    assert.deepEqual({
+      head: git(['rev-parse', 'HEAD'], value.repository),
+      tree: git(['rev-parse', 'HEAD^{tree}'], value.repository),
+      status: git(['status', '--porcelain=v1'], value.repository),
+    }, before, item.name);
+
+    if (item === cases[0]) {
+      const refusedRun = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
+      assert.equal(refusedRun.status, 0, refusedRun.stderr);
+      assert.equal(JSON.parse(refusedRun.stdout).requiredNextMode, 'resume');
+      assert.equal(await readFile(attemptsPath, 'utf8'), 'invoked\n');
+      const firstAuthorization = await readFile(path.join(assignmentDirectory(value.request), 'durable-command', 'authorization.json'));
+      const resumed = exec(process.execPath, [cli, 'resume'], root, JSON.stringify({
+        ...value.request,
+        contract: 'mdlm-demo-resume-request@1',
+      }));
+      assert.equal(resumed.status, 0, resumed.stderr);
+      const retried = JSON.parse(resumed.stdout);
+      assert.equal(retried.reason, 'pre-submission-operational-failure');
+      assert.equal(retried.recoverable, true);
+      assert.equal(await readFile(attemptsPath, 'utf8'), 'invoked\ninvoked\n');
+      const secondAuthorizationPath = path.join(
+        assignmentDirectory(value.request),
+        'durable-command',
+        'attempt-000002',
+        'authorization.json',
+      );
+      const secondAuthorization = await readFile(secondAuthorizationPath);
+      assert.notDeepEqual(secondAuthorization, firstAuthorization);
+      assert.equal(await stat(path.join(assignmentDirectory(value.request), 'transaction.json')).then(() => true, () => false), false);
+      assert.deepEqual({
+        head: git(['rev-parse', 'HEAD'], value.repository),
+        tree: git(['rev-parse', 'HEAD^{tree}'], value.repository),
+        status: git(['status', '--porcelain=v1'], value.repository),
+      }, before);
+    }
+  }
+});
+
+test('operational failure retry mode requires resume only for canonical Pi settlement', () => {
+  assert.equal(operationalFailureRetryMode(canonicalPiOperationalFailure()), 'resume');
+  assert.equal(operationalFailureRetryMode(canonicalPiOperationalFailure({
+    error: { code: 'PI_ASSIGNMENT_RUNNER_ERROR', message: 'Provider failed before settlement' },
+  })), 'run');
+  assert.equal(operationalFailureRetryMode({
+    contract: 'legacy-operational-failure',
+    error: { code: 'PI_SETTLED_WITHOUT_COMPLETION' },
+  }), 'run');
+});
+
+test('operational failure recovery requires complete current-attempt evidence', () => {
+  assert.equal(operationalFailureHasCompleteAttemptEvidence(canonicalPiOperationalFailure()), true);
+  assert.equal(operationalFailureHasCompleteAttemptEvidence(canonicalPiOperationalFailure({
+    telemetry: { providerError: { message: '[REDACTED]', truncated: false } },
+  })), true);
+  assert.equal(operationalFailureHasCompleteAttemptEvidence(canonicalPiOperationalFailure({
+    telemetry: { providerError: { message: '[REDACTED]', truncated: true } },
+  })), false);
+  assert.equal(operationalFailureHasCompleteAttemptEvidence(canonicalPiOperationalFailure({
+    telemetry: { stopReason: null, provider: null, model: null },
+  })), false);
+  assert.equal(operationalFailureHasCompleteAttemptEvidence({
+    contract: 'legacy-operational-failure',
+  }), true);
+});
+
+test('truncated canonical provider error classifies but cannot recover or spawn on resume', async () => {
+  const failure = canonicalPiOperationalFailure({
+    telemetry: { providerError: { message: '[REDACTED]', truncated: true } },
+  });
+  const attemptsPath = path.join(os.tmpdir(), `mdlm-demo-truncated-provider-error-${process.pid}-${Date.now()}`);
+  const piScript = `#!/usr/bin/env node
+const fs=require('node:fs'); const attempts=fs.existsSync(${JSON.stringify(attemptsPath)})?Number(fs.readFileSync(${JSON.stringify(attemptsPath)},'utf8')):0; fs.writeFileSync(${JSON.stringify(attemptsPath)},String(attempts+1)); if(attempts===0){process.stdout.write('Assignment 44444444-4444-4444-8444-444444444444: ordinary@1\\n'); process.stderr.write(${JSON.stringify(`${JSON.stringify(failure, null, 2)}\n`)}); process.exit(1);} console.log('{"status":"lifecycle-complete"}');
+`;
+  const value = await fixture({ scenarioReference: 'ordinary@1', piScript });
+  value.request.signal = 'clean-interrupted-command';
+
+  const first = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
+
+  assert.equal(first.status, 0, first.stderr);
+  const stopped = JSON.parse(first.stdout);
+  assert.equal(stopped.reason, 'mdlm-pi-operational-failure');
+  assert.equal(stopped.recoverable, false);
+  assert.equal(stopped.operationalFailureRecovery.verified, false);
+  assert.equal(await readFile(attemptsPath, 'utf8'), '1');
+
+  const resumed = exec(process.execPath, [cli, 'resume'], root, JSON.stringify({
+    ...value.request,
+    contract: 'mdlm-demo-resume-request@1',
+  }));
+
+  assert.equal(resumed.status, 0, resumed.stderr);
+  assert.equal(JSON.parse(resumed.stdout).recoverable, false);
+  assert.equal(await readFile(attemptsPath, 'utf8'), '1');
+});
+
+test('canonical operational failures fail closed on arbitrary, malformed, or unauthenticated output', async () => {
+  const assignment = '44444444-4444-4444-8444-444444444444';
+  const progress = `Assignment ${assignment}: ordinary@1\n`;
+  const canonical = canonicalPiOperationalFailure();
+  const attendedPreamble = `${progress}\nMDLM requires attended authority.\n`;
+  const authority = `${JSON.stringify({ mode: 'attended', authority: 'stakeholder', delegationAllowed: false }, null, 2)}\n`;
+  const context = `${JSON.stringify({ invocations: [] }, null, 2)}\n`;
+  const attendedPrompt = 'Explicit conclusion from the named authority holder (not chat approval): ';
+  const escapedCredentialCases = [
+    'apiKey', 'accessToken', 'x-api-key', 'clientSecret', 'password', 'authorization',
+  ].flatMap(key => [1, 2, 3, 4, 5, 6].flatMap(layers => {
+    let serializedMessage = JSON.stringify({ credentials: { [key]: 'nested-api-secret' } });
+    for (let layer = 0; layer < layers; layer++) {
+      serializedMessage = serializedMessage.replaceAll('\\', '\\\\').replaceAll('"', '\\"');
+    }
+    const quoteWidth = (2 ** layers) - 1;
+    const escapedQuote = `${'\\'.repeat(quoteWidth)}"`;
+    const shellMessage = `${key}=${escapedQuote}shell-api-secret${escapedQuote}`;
+    return [
+      [
+        `${key} credential escaped through ${layers} serialized layer${layers === 1 ? '' : 's'}`,
+        progress,
+        canonicalPiOperationalFailure({ telemetry: { providerError: { message: serializedMessage, truncated: false } } }),
+      ],
+      [
+        `${key} shell credential at escaped quote width ${quoteWidth}`,
+        progress,
+        canonicalPiOperationalFailure({ telemetry: { providerError: { message: shellMessage, truncated: false } } }),
+      ],
+    ];
+  }));
+  const adversarial = [
+    ['arbitrary stdout', `${progress}worker says continue\n`, canonical],
+    ['mismatched Assignment', 'Assignment aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa: ordinary@1\n', canonical],
+    ['carriage return', progress.replace('\n', '\r\n'), canonical],
+    ['oversized stdout', `${progress}${'x'.repeat(65_537)}`, canonical],
+    ['extra envelope key', progress, { ...canonical, extra: true }],
+    ['nonterminal pending stop reason', progress, canonicalPiOperationalFailure({ telemetry: { stopReason: 'pending' } })],
+    ['mismatched provider', progress, canonicalPiOperationalFailure({ telemetry: { provider: 'anthropic' } })],
+    ['secret-bearing provider error', progress, canonicalPiOperationalFailure({ telemetry: { providerError: { message: 'Authorization Bearer sk-secretvalue', truncated: false } } })],
+    ['quoted nested provider credential', progress, canonicalPiOperationalFailure({ telemetry: { providerError: { message: '{"headers":{"x-api-key":"nested-provider-secret"}}', truncated: false } } })],
+    ...escapedCredentialCases,
+    ['opaque provider credential', progress, canonicalPiOperationalFailure({ telemetry: { providerError: { message: Buffer.from('opaque provider credential value').toString('base64'), truncated: false } } })],
+    ['AWS provider credential', progress, canonicalPiOperationalFailure({ telemetry: { providerError: { message: 'AKIAIOSFODNN7EXAMPLE', truncated: false } } })],
+    ['JWT provider credential', progress, canonicalPiOperationalFailure({ telemetry: { providerError: { message: 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.signature-value', truncated: false } } })],
+    ['secret-bearing error message', progress, canonicalPiOperationalFailure({ error: { message: 'provider token=secret-token-value' } })],
+    ['namespaced secret-bearing error', progress, canonicalPiOperationalFailure({ error: { message: 'OPENAI_API_KEY=not-prefixed-secret' } })],
+    ['secret-bearing stdout', `${progress}token=secret-token-value\n`, canonical],
+    ['reordered attended documents', `${attendedPreamble}${context}${authority}${attendedPrompt}`, canonical],
+    ['duplicated authority document', `${attendedPreamble}${authority}${authority}${attendedPrompt}`, canonical],
+    ['scalar attended document', `${attendedPreamble}"stakeholder"\n${attendedPrompt}`, canonical],
+    ['completion contradiction', progress, canonicalPiOperationalFailure({ telemetry: { completeAssignmentObserved: true } })],
+    ['tool observation unavailable', progress, canonicalPiOperationalFailure({ telemetry: { completeAssignmentObserved: null } })],
+    ['legacy unversioned envelope', progress, { status: 'operational-failure', error: 'Pi settled without calling complete_assignment' }],
+  ];
+  for (const [name, stdout, document] of adversarial) {
+    const stderr = name === 'extra envelope key' ? `${JSON.stringify(document, null, 2)}\n` : `${JSON.stringify(document, null, 2)}\n`;
+    const piScript = `#!/usr/bin/env node\nprocess.stdout.write(${JSON.stringify(stdout)}); process.stderr.write(${JSON.stringify(stderr)}); process.exit(1);\n`;
+    const value = await fixture({ scenarioReference: 'ordinary@1', piScript });
+    value.request.signal = 'clean-interrupted-command';
+    const execution = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
+    assert.equal(execution.status, 0, `${name}: ${execution.stderr}`);
+    const output = JSON.parse(execution.stdout);
+    assert.equal(output.reason, 'mdlm-pi-contract-failure', name);
+    assert.equal(output.recoverable, false, name);
+  }
+
+  const trustedAttention = {
+    explanation: 'Trusted explanation.',
+    authorityRequirement: { mode: 'attended', authority: 'stakeholder', delegationAllowed: false },
+    attentionContext: { invocations: [] },
+  };
+  const exactAttended = `${progress}\nMDLM requires attended authority.\nTrusted explanation.\n${JSON.stringify(trustedAttention.authorityRequirement, null, 2)}\n${JSON.stringify(trustedAttention.attentionContext, null, 2)}\n${attendedPrompt}`;
+  const tamperedAttended = exactAttended.replace('Trusted explanation.', 'Unrecognized worker text.');
+  const attendedScript = `#!/usr/bin/env node\nprocess.stdout.write(${JSON.stringify(tamperedAttended)}); process.stderr.write(${JSON.stringify(`${JSON.stringify(canonical, null, 2)}\n`)}); process.exit(1);\n`;
+  const attended = await fixture({ scenarioReference: 'ordinary@1', piScript: attendedScript, attentionRequired: trustedAttention });
+  await configureAttendedDecision(attended);
+  const attendedExecution = exec(process.execPath, [cli, 'run'], root, JSON.stringify(attended.request));
+  assert.equal(attendedExecution.status, 0, attendedExecution.stderr);
+  assert.equal(JSON.parse(attendedExecution.stdout).reason, 'mdlm-pi-contract-failure');
+
+  for (const [name, document] of [
+    ['missing terminal stop reason', canonicalPiOperationalFailure({ telemetry: { stopReason: null } })],
+    ['response capture observed for another failure', canonicalPiOperationalFailure({
+      error: { code: 'PROVIDER_FAILURE', message: 'Provider failed after tool execution' },
+      telemetry: { completeAssignmentObserved: true },
+    })],
+  ]) {
+    const piScript = `#!/usr/bin/env node\nprocess.stdout.write(${JSON.stringify(progress)}); process.stderr.write(${JSON.stringify(`${JSON.stringify(document, null, 2)}\n`)}); process.exit(1);\n`;
+    const value = await fixture({ scenarioReference: 'ordinary@1', piScript });
+    value.request.signal = 'clean-interrupted-command';
+    const result = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
+    assert.equal(result.status, 0, `${name}: ${result.stderr}`);
+    const output = JSON.parse(result.stdout);
+    assert.equal(output.reason, 'mdlm-pi-operational-failure', name);
+    assert.equal(output.recoverable, false, name);
+    assert.match(output.operationalFailureRecovery.uncertainty, /terminal and response-capture evidence/, name);
+  }
+
+  const truncatedScript = `#!/usr/bin/env node\nprocess.stdout.write(${JSON.stringify(progress)}); process.stderr.write('{"contract":"mdlm-pi-operational-failure@1"'); process.exit(1);\n`;
+  const truncated = await fixture({ scenarioReference: 'ordinary@1', piScript: truncatedScript });
+  truncated.request.signal = 'clean-interrupted-command';
+  const execution = exec(process.execPath, [cli, 'run'], root, JSON.stringify(truncated.request));
+  assert.equal(execution.status, 0, execution.stderr);
+  assert.equal(JSON.parse(execution.stdout).reason, 'mdlm-pi-contract-failure');
 });
 
 test('mdlm-pi exit codes and typed results distinguish lifecycle outcomes from operational failures', async () => {
