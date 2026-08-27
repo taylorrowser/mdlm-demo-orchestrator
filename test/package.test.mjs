@@ -57,6 +57,18 @@ const expectedHelp = `${JSON.stringify({
   commands: publicCommands,
 })}\n`;
 
+test('npm test selects supported top-level tests and preserves historical red evidence', async () => {
+  const packageMetadata = JSON.parse(await readFile(path.join(repository, 'package.json'), 'utf8'));
+  assert.equal(packageMetadata.scripts.test, 'node --test --test-concurrency=1 test/*.test.mjs');
+  const historicalEvidence = new Map([
+    ['test/evidence/issue-24-parent-red-invalid/preflight.test.mjs', '08784062b897b86ca5c913a09f03d8643747169a57018e700621a54f4bda52a8'],
+    ['test/evidence/issue-24-parent-red/preflight.test.mjs', '2e98c3e2a2de487eaff9139213b7d62544dcd5bbae3860df7837998e46131088'],
+  ]);
+  for (const [file, expectedDigest] of historicalEvidence) {
+    assert.equal(digest('sha256', await readFile(path.join(repository, file))), expectedDigest, file);
+  }
+});
+
 function digest(algorithm, bytes, encoding = 'hex') {
   return createHash(algorithm).update(bytes).digest(encoding);
 }
@@ -180,7 +192,8 @@ async function verificationImportSwap(executable, packageRoot, cwd) {
     const interval = setInterval(async () => {
       if (swapped) return;
       try {
-        if ((await stat(orchestrator)).atimeMs !== beforeAtime) {
+        const currentAtime = (await stat(orchestrator)).atimeMs;
+        if (!swapped && currentAtime !== beforeAtime) {
           swapped = true;
           await rename(malicious, cli);
         }

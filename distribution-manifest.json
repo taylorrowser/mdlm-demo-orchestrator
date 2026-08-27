@@ -25,8 +25,8 @@
   "files": [
     {
       "path": "package.json",
-      "bytes": 722,
-      "sha256": "008e008a6f82a42d3ea6f5e37ab2aa29d267b78305f3cb37f58b4c323a07a81b"
+      "bytes": 738,
+      "sha256": "19ccc204709112214b4469fd78f2acf9bdd8ab9342513de466982c3e9345b906"
     },
     {
       "path": "scripts/create-distribution-manifest.mjs",
@@ -80,8 +80,8 @@
     },
     {
       "path": "src/orchestrator.mjs",
-      "bytes": 324683,
-      "sha256": "bf60642ea69b2878c0a32b36c74a36b5d9ac18eb7458dedd5046da3d76f2e30b"
+      "bytes": 326176,
+      "sha256": "80dc06e828833c8d5aa8a86ed4ac699dad7df46f478336b8285a4851a1306fee"
     },
     {
       "path": "src/preflight.mjs",
@@ -95,8 +95,8 @@
     },
     {
       "path": "src/run-request.mjs",
-      "bytes": 11368,
-      "sha256": "e0cc06d2e9c0fe8c41f74f3fb634ef6cc46eacd34249702b7732d011edabfe92"
+      "bytes": 11390,
+      "sha256": "c036c56b1e8bbca6dfa5c842cef6bdebff55a7bdfeeafaa89f7e0554a7eef4fd"
     },
     {
       "path": "src/shim-cli.mjs",

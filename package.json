@@ -14,7 +14,7 @@
     "src/*.mjs"
   ],
   "scripts": {
-    "test": "node --test --test-concurrency=1",
+    "test": "node --test --test-concurrency=1 test/*.test.mjs",
     "manifest": "node scripts/create-distribution-manifest.mjs",
     "prepack": "node scripts/create-distribution-manifest.mjs --check",
     "check": "node scripts/create-distribution-manifest.mjs --check && node --check bin/*.mjs && node --check scripts/*.mjs && node --check src/*.mjs"

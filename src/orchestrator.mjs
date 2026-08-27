@@ -3751,6 +3751,17 @@ async function completeMaterializedNextReconciliation({ journalPath, journal, gl
     contract: 'mdlm-demo-repository-identity@1', lifecycleRepository: journal.completedRepository,
     lastAssignment: { id: journal.acceptedAssignment, outcome: 'accepted-publication', completed: true },
   };
+  const pendingJournalCandidates = [canonicalJsonBytes(journal)];
+  if (journal.phase === 'authenticated') {
+    pendingJournalCandidates.push(canonicalJsonBytes({ ...journal, phase: 'boundary-advanced' }));
+  } else if (journal.phase === 'boundary-advanced') {
+    pendingJournalCandidates.push(canonicalJsonBytes({ ...journal, phase: 'completed' }));
+  }
+  const pendingJournal = await matchPendingDurableJsonReplacement(journalPath, pendingJournalCandidates);
+  if (pendingJournal !== null) {
+    await recoverDurableJsonReplacement(journalPath, pendingJournal);
+    journal = JSON.parse(pendingJournal.toString('utf8'));
+  }
   if (journal.phase === 'completed') {
     if (!sameJson(global, advancedIdentity)) throw new Error('completed materialized next repository identity differs');
     return journal;
@@ -3758,7 +3769,9 @@ async function completeMaterializedNextReconciliation({ journalPath, journal, gl
   if (journal.phase === 'authenticated') {
     if (sameJson(global.lifecycleRepository, journal.priorRepository)) {
       await durableWriteJson(globalPath, advancedIdentity, 'materialized-next-reconciliation-global');
-    } else if (!sameJson(global, advancedIdentity)) {
+    } else if (sameJson(global, advancedIdentity)) {
+      await recoverDurableJsonReplacement(globalPath, canonicalJsonBytes(advancedIdentity));
+    } else {
       throw new Error('repository identity advanced to an unrelated materialized next boundary');
     }
     journal = { ...journal, phase: 'boundary-advanced' };
@@ -5384,6 +5397,21 @@ function validateReconcileRequest(value) {
     }
     for (const name of ['record', 'stdout', 'stderr']) validatePinnedFile(triplet[name], `evidence.commands[${index}].${name}`);
   }
+}
+function validatePinnedFile(value, label) {
+  if (!value || typeof value !== 'object' || Array.isArray(value) ||
+      !sameJson(Object.keys(value).sort(), ['digest', 'path'])) {
+    throw new Error(`${label} must contain exactly path and digest`);
+  }
+  required(value.path, `${label}.path`);
+  if (!path.isAbsolute(value.path)) throw new Error(`${label}.path must be an absolute path`);
+  requireSha256(value.digest, `${label}.digest`);
+}
+function requireSha256(value, label) {
+  if (!/^sha256:[0-9a-f]{64}$/.test(value ?? '')) throw new Error(`${label} must be sha256:<64 lowercase hex>`);
+}
+function requirePositiveSafeInteger(value, label) {
+  if (!Number.isSafeInteger(value) || value < 1) throw new Error(`${label} must be a positive safe integer`);
 }
 function assignmentKey(value) { return `${value.replace(/[^A-Za-z0-9._-]/g, '_')}-${sha256(Buffer.from(value)).slice(-12)}`; }
 function sameJson(left, right) { return JSON.stringify(left) === JSON.stringify(right); }

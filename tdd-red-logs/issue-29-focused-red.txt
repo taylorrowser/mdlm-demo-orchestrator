@@ -1,0 +1,37 @@
+Node: v24.19.0
+
+Command: node --test --test-concurrency=1 test/evidence/issue-24-parent-red/preflight.test.mjs
+Exit status: 1
+
+The nested historical evidence file was executable under Node's default test
+discovery. It failed with ERR_MODULE_NOT_FOUND. Its SHA-256 remains
+2e98c3e2a2de487eaff9139213b7d62544dcd5bbae3860df7837998e46131088.
+
+Command: node --test --test-concurrency=1 --test-name-pattern='npm test selects supported top-level tests' test/package.test.mjs
+Exit status: 1
+
+Expected: node --test --test-concurrency=1 test/*.test.mjs
+Actual:   node --test --test-concurrency=1
+
+Command: node --test --test-concurrency=1 --test-name-pattern='public reconcile consumes non-timeout A without invoking A or B' test/non-timeout-reconcile.test.mjs
+Exit status: 1
+
+The public command returned mdlm-demo-error@1 with
+"requirePositiveSafeInteger is not defined" instead of reconciling.
+
+Command: node --test --test-concurrency=1 --test-name-pattern='snapshot records exact lifecycle' test/remediation.test.mjs
+Exit status: 1
+
+The fixture expected a symlink-resolved mdlm-pi path after the reviewed
+provenance contract started rejecting symlinked tool paths.
+
+Command: node --test --test-concurrency=1 --test-name-pattern='materialized next reconciliation resumes' test/run.test.mjs
+Exit status: 1
+
+The after-rename boundary-advanced crash left a pending journal replacement.
+Resume requested completed bytes before settling the authenticated pending
+boundary-advanced bytes and returned materialized-next-reconciliation-failure.
+
+The release preflight also preserved the package tamper test's asynchronous
+double-rename failure at:
+/home/ubuntu/git/mdlm-successor-demos/operations/integration/e3166b724aa25d6fb7a3d41a66f817de5cfff00c-b4c315f113853da987de00dffa13098bd0dc1577/preflight/20260827T213825Z/commands/runner-full-test-heavy/command/stdout.log
