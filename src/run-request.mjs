@@ -9,6 +9,7 @@ const signals = new Set([
   'attended-review-correction',
   'clean-interrupted-command',
   'correction-session-lost',
+  'fresh-assignment',
   'reserved-shim-stop',
 ]);
 const topLevelKeys = new Set([

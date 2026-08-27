@@ -1,0 +1,35 @@
+Node: v24.19.0
+
+Command: node --test --test-concurrency=1 test/non-timeout-reconcile.test.mjs
+Exit status: 0
+Tests: 30 passed, 0 failed
+
+Command: node --test --test-concurrency=1 test/reconcile.test.mjs
+Exit status: 0
+Tests: 18 passed, 0 failed
+
+Command: node --test --test-concurrency=1 test/remediation.test.mjs
+Exit status: 0
+Tests: 4 passed, 0 failed
+
+Command: node --test --test-concurrency=1 --test-name-pattern='materialized next reconciliation resumes' test/run.test.mjs
+Exit status: 0
+Tests: 1 passed, 0 failed
+
+Command: node --test --test-concurrency=1 test/package.test.mjs
+Exit status: 0
+Tests: 4 passed, 0 failed
+
+Command repeated eight times: node --test --test-concurrency=1 --test-name-pattern='launcher rejects source and manifest mutation' test/package.test.mjs
+Exit status: 0 for 8 of 8 runs
+
+The supported-suite regression also authenticates the exact SHA-256 bytes of
+both issue #24 historical red-evidence test files.
+
+Command: timeout --signal=TERM --kill-after=30s 900s /usr/bin/time -v npm test
+Exit status: 0
+Tests: 248 passed, 0 failed
+Elapsed: 6:56.21
+Maximum resident set: 794704 KiB
+stdout SHA-256: 5cba51f7aa4ce958de77d4c6388ea532f76cd6b5e4b72e9d4c28dc7184b8e934
+stderr SHA-256: 1638d656e826a36fbad0224dd297b338fd8d04642ae8c6cd6c215e9dd38c80f5

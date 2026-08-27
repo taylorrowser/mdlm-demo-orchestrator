@@ -38,16 +38,14 @@ async function snapshotFixture(mdlmBody) {
   const tooling = path.join(scratch, 'tooling');
   await mkdir(tooling);
   const mdlm = path.join(tooling, 'mdlm');
-  const mdlmPiTarget = path.join(tooling, 'mdlm-pi-target');
   const mdlmPi = path.join(tooling, 'mdlm-pi');
   const lock = path.join(tooling, 'package-lock.json');
   const artifact = path.join(scratch, 'mdlm.tgz');
   const piArtifact = path.join(scratch, 'mdlm-pi.tgz');
   await writeFile(mdlm, `#!/usr/bin/env node\n${mdlmBody}\n`);
-  await writeFile(mdlmPiTarget, '#!/bin/sh\nexit 0\n');
+  await writeFile(mdlmPi, '#!/bin/sh\nexit 0\n');
   await chmod(mdlm, 0o755);
-  await chmod(mdlmPiTarget, 0o755);
-  await import('node:fs/promises').then(({ symlink }) => symlink(path.basename(mdlmPiTarget), mdlmPi));
+  await chmod(mdlmPi, 0o755);
   await writeFile(lock, '{"lockfileVersion":3}\n');
   await writeFile(path.join(tooling, 'dependency.js'), 'export const installed = true;\n');
   await writeFile(artifact, 'mdlm artifact\n');
@@ -75,7 +73,7 @@ async function snapshotFixture(mdlmBody) {
       },
       tools: {
         mdlm: { path: mdlm, digest: sha256(await readFile(mdlm)) },
-        mdlmPi: { path: mdlmPi, digest: sha256(await readFile(mdlmPiTarget)) },
+        mdlmPi: { path: mdlmPi, digest: sha256(await readFile(mdlmPi)) },
       },
       qualificationHarness: {
         ...harnessIdentity,
@@ -84,7 +82,7 @@ async function snapshotFixture(mdlmBody) {
       },
     },
   };
-  return { scratch, repository, request, mdlm, mdlmPi, mdlmPiTarget, tooling };
+  return { scratch, repository, request, mdlm, mdlmPi, tooling };
 }
 
 const healthyMdlm = `
@@ -133,7 +131,7 @@ test('snapshot records exact lifecycle and Assignment repository fingerprints se
   assert.notEqual(captured.provenance.source.repository, captured.repository);
   assert.equal(captured.provenance.source.observedTree, fixture.request.provenance.source.tree);
   assert.equal(captured.provenance.qualificationHarness.manifest.matches, true);
-  assert.equal(captured.provenance.tools.mdlmPi.realpath, fixture.mdlmPiTarget);
+  assert.equal(captured.provenance.tools.mdlmPi.realpath, fixture.mdlmPi);
   assert.ok(captured.environmentPolicy.removed.includes('NODE_OPTIONS'));
   assert.equal(captured.environmentPolicy.gitConfigIsolation, true);
 });

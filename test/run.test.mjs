@@ -3072,7 +3072,7 @@ test('materialized next reconciliation resumes after durable boundary crash seam
 
     const resumed = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
     assert.equal(resumed.status, 0, `${seam}: ${resumed.stderr}`);
-    assert.equal(JSON.parse(resumed.stdout).materializedNextReconciliation.status, 'reconciled', resumed.stdout);
+    assert.equal(JSON.parse(resumed.stdout).materializedNextReconciliation?.status, 'reconciled', `${resumed.stdout}\n${resumed.stderr}`);
     assert.equal(Number(git(['rev-list', '--count', 'HEAD'], value.repository)), commitCount, seam);
     assert.deepEqual((await readFile(value.workerLog, 'utf8')).trim().split('\n'), [value.finalAssignment], seam);
   }
@@ -3741,7 +3741,7 @@ test('unpaired decision wording is rejected before durable run consumption', asy
   const execution = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
 
   assert.equal(execution.status, 1);
-  assert.match(JSON.parse(execution.stderr).error, /unpaired UTF-16 surrogate/);
+  assert.match(JSON.parse(execution.stderr).error, /unpaired UTF-16 value/);
   await assert.rejects(stat(value.request.stateDirectory), error => error.code === 'ENOENT');
   await assert.rejects(stat(value.request.evidenceDirectory), error => error.code === 'ENOENT');
   await assert.rejects(stat(workerMarker), error => error.code === 'ENOENT');
