@@ -1,4 +1,6 @@
 import { open } from 'node:fs/promises';
+import { readCanonicalFile } from './canonical-file.mjs';
+import { parseStrictJson } from './strict-json.mjs';
 import { sha256 } from './util.mjs';
 
 const catalogContract = 'mdlm-demo-decision-catalog@1';
@@ -48,16 +50,19 @@ export function buildDecisionCatalog(decisions) {
 }
 
 export function validateDecisionCatalog(catalog) {
-  if (!catalog || typeof catalog !== 'object' || Array.isArray(catalog) || catalog.contract !== catalogContract) {
-    throw new Error('invalid decision catalog contract');
-  }
+  exactRequest(catalog, catalogContract, ['contract', 'decisions'], 'decision catalog');
   if (!Array.isArray(catalog.decisions)) throw new Error('decision catalog decisions must be an array');
   if (catalog.decisions.length > decisionCatalogLimits.decisions) {
     throw new Error(`decisions must not contain more than ${decisionCatalogLimits.decisions} entries`);
   }
   const assignments = new Set();
   const decisions = catalog.decisions.map((decision, index) => {
-    if (!decision || typeof decision !== 'object' || Array.isArray(decision)) throw new Error(`decision ${index} must be an object`);
+    exactRequest(
+      decision,
+      undefined,
+      ['assignment', 'authorityBasis', 'digest', 'origin', 'wording'],
+      `decision ${index}`,
+    );
     requireNonempty(decision.assignment, `decision ${index} assignment`);
     if (assignments.has(decision.assignment)) throw new Error(`decision catalog contains duplicate assignment ${decision.assignment}`);
     assignments.add(decision.assignment);
@@ -106,13 +111,14 @@ export async function validateDecisionCatalogRequest(request) {
   return validateDecisionCatalog(catalog);
 }
 
-export async function bindDecisionCatalogFile(file) {
+export async function bindDecisionCatalogFile(file, options = {}) {
   if (file === undefined) return null;
   requireNonempty(file, 'decisionCatalogPath');
-  const { bytes, catalog } = await readCatalog(file);
+  const { path: catalogPath, bytes, catalog } = await readCatalog(file, options);
   validateDecisionCatalog(catalog);
   return Object.freeze({
     contract: 'mdlm-demo-bound-decision-catalog@1',
+    path: catalogPath,
     bytes: bytes.length,
     bytesBase64: bytes.toString('base64'),
     digest: sha256(bytes),
@@ -135,9 +141,14 @@ export async function readFileWithinLimit(file, maxBytes, label) {
   }
 }
 
-async function readCatalog(file) {
-  const bytes = await readFileWithinLimit(file, decisionCatalogLimits.catalogBytes, 'decision catalog');
-  return { bytes, catalog: JSON.parse(decodeUtf8(bytes, 'decision catalog')) };
+async function readCatalog(file, options = {}) {
+  const { path: catalogPath, bytes } = await readCanonicalFile(
+    file,
+    'decision catalog',
+    options.openFile,
+    { maxBytes: decisionCatalogLimits.catalogBytes },
+  );
+  return { path: catalogPath, bytes, catalog: parseStrictJson(decodeUtf8(bytes, 'decision catalog'), 'decision catalog') };
 }
 
 function decodeUtf8(bytes, label) {

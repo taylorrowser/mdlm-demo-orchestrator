@@ -1,0 +1,15 @@
+Command: node --test --test-name-pattern='worktree-scoped clean filter' test/preflight.test.mjs
+Exit status: 1
+
+✖ preflight never executes a worktree-scoped clean filter
+ℹ tests 1
+ℹ suites 0
+ℹ pass 0
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+
+With extensions.worktreeConfig enabled, the candidate missed
+.git/config.worktree and git status executed the tracked-attribute-selected
+clean filter, creating its marker.

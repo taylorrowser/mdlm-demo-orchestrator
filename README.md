@@ -2,9 +2,10 @@
 
 This public repository contains the issue #213 recovery runner. It does not yet contain a successful public demonstration and has not run a real lifecycle repository.
 
-The runner uses seven JSON commands:
+The runner uses eight JSON commands:
 
 ```text
+mdlm-demo-runner preflight [--input FILE]
 mdlm-demo-runner snapshot [--input FILE]
 mdlm-demo-runner classify [--input FILE]
 mdlm-demo-runner decision-catalog-build [--input FILE]
@@ -14,7 +15,7 @@ mdlm-demo-runner resume [--input FILE]
 mdlm-demo-runner reconcile [--input FILE]
 ```
 
-Without `--input`, each command reads one JSON value from standard input. It writes one JSON result to standard output. Errors go to standard error and return exit status 1. `mdlm-demo-runner --help` and `<command> --help` return the machine-readable command catalog without reading standard input.
+Without `--input`, each command reads one JSON value from standard input. It writes one JSON result to standard output. Errors go to standard error and return exit status 1. `preflight` is the exception for failures: it writes one `mdlm-demo-preflight-result@1` with `status: "FAIL"` to standard output, writes no standard error, and returns exit status 1. `mdlm-demo-runner --help` and `<command> --help` return the machine-readable command catalog without reading standard input.
 
 ## Runner package and release integration
 
@@ -43,11 +44,49 @@ After applying read-only permissions, make the source checkout unavailable and i
 
 The combined identity `89230a0747ac5a701ba3929f5ec0345701ae387f` + `ffd5e70c545449850900ec8ceaae68c18aaf17b0` remains failed artifact-closure evidence. Its launcher bytes were present without `src/cli.mjs`. A later qualification must use a new runner commit and a new combined one-shot identity. It must not rerun or relabel the failed identity.
 
+## Request preflight
+
+`preflight` accepts exactly this request from standard input or `--input FILE`:
+
+```json
+{
+  "contract": "mdlm-demo-preflight-request@1",
+  "input": {
+    "path": "/absolute/path/to/run-request.json",
+    "digest": "sha256:RUN_REQUEST_SHA256"
+  },
+  "invocation": {
+    "executable": {
+      "path": "/absolute/path/to/node",
+      "digest": "sha256:NODE_EXECUTABLE_SHA256"
+    },
+    "script": {
+      "path": "/absolute/path/to/mdlm-demo-runner.mjs",
+      "digest": "sha256:RUNNER_SCRIPT_SHA256"
+    }
+  },
+  "argv": [
+    "/absolute/path/to/node",
+    "/absolute/path/to/mdlm-demo-runner.mjs",
+    "run",
+    "--input",
+    "/absolute/path/to/run-request.json"
+  ]
+}
+```
+
+The command reads the run or resume request through a bounded no-follow descriptor and uses the same read for each catalog, package, tool, lock, and manifest file. Its strict JSON decoder rejects duplicate object members, malformed UTF-8, and unpaired UTF-16 values before ordinary JSON parsing can collapse or reinterpret them. One closed run-request schema is shared with `run` and `resume`, including optional paths, recovery objects, bounded safe integers, and the stop-signal enum. The leading executable and runner script must match the separate invocation pins and the current runner bytes.
+
+Git provenance runs an authenticated absolute `/usr/bin/git` by retained descriptor, never by `PATH`. A request may additionally pin it as `provenance.git` with exact `path` and `digest` members. The result records its configured path, real path, mode, size, and SHA-256 digest. Git receives a credential-free environment with system and global configuration, hooks, filesystem monitoring, credential helpers, external diffs, and optional locks disabled. Preflight does not call `git status`: it compares HEAD, index, raw no-follow worktree blob identities, modes, and untracked paths without attribute conversion, so repository clean/process filters are never invoked. Each repository path must have no symbolic-link component. One retained no-follow root descriptor anchors the pre-commit, pre-tree, raw cleanliness, post-commit, and post-tree reads. Raw cleanliness opens every descendant through no-follow parent descriptors, records and revalidates descendant identities, rereads the index and untracked set after hashing, and limits tracked blobs to 16 MiB each and 256 MiB total per repository. The result requires stable object IDs and records the repository inode identity. Tooling traversal likewise retains directory ownership, opens descendants no-follow relative to those descriptors, rejects aliases and replacement, and enforces entry, file, depth, per-file, and total-byte limits while reading directory entries incrementally.
+
+The command is read-only. It has no filesystem output option: it writes only its single result to standard output and does not create evidence. A `PASS` authenticates only supplied bytes against supplied pins. It neither proves nor authorizes invocation, Assignment, publication, lifecycle transition, Review, or qualification.
+
+
 ## Approved seams
 
 Tests use the approved public seams.
 
-1. The JSON CLI is the operator boundary. Its seven commands do not require imports from MDLM.
+1. The JSON CLI is the operator boundary. Its eight commands do not require imports from MDLM.
 2. `src/adapter.mjs` consumes exact `mdlm-assignment-packet@2` bytes. It returns exact `mdlm-assignment-response@1` bytes or `mdlm-demo-reserved-stop@1` before submission.
 3. Process tests run fake `mdlm` and `mdlm-pi` executables in scratch Git repositories. They check raw process evidence, transaction counts, and Git commit counts.
 4. Deterministic integrations authenticate the pinned MDLM source commit and tree, build `mdlm-pi` from that worktree, authenticate the complete build and exact CLI bytes, and then import the controller and Assignment runner. A focused producer/consumer check executes that CLI before passing its canonical operational-failure envelope to the runner contract. These checks do not replace the separate one-shot release qualification gate.

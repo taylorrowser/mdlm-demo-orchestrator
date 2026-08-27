@@ -1,4 +1,6 @@
-import { chmod, lstat, mkdir, readFile, readdir, realpath, writeFile } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { chmod, lstat, mkdir, open, readFile, readdir, readlink, realpath, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { readCanonicalFile } from './canonical-file.mjs';
 import { validateDoctor } from './contracts.mjs';
@@ -256,25 +258,53 @@ function commandFailures(invocations) {
   return failures;
 }
 
-async function inspectProvenance(provenance, timeoutMs) {
-  const source = await gitIdentity(provenance?.source, timeoutMs, 'source');
-  const qualificationHarness = await gitIdentity(provenance?.qualificationHarness, timeoutMs, 'qualificationHarness');
+export const provenanceLimits = Object.freeze({
+  packageBytes: 16_777_216,
+  toolBytes: 16_777_216,
+  lockBytes: 4_194_304,
+  manifestBytes: 4_194_304,
+  worktreeFileBytes: 16_777_216,
+  worktreeTotalBytes: 268_435_456,
+});
+
+export async function inspectProvenance(provenance, timeoutMs, options = {}) {
+  const gitBinding = await openGitExecutable(provenance?.git, options);
+  let source;
+  let qualificationHarness;
+  try {
+    source = await gitIdentity(provenance?.source, timeoutMs, 'source', gitBinding, options);
+    qualificationHarness = await gitIdentity(provenance?.qualificationHarness, timeoutMs, 'qualificationHarness', gitBinding, options);
+    await verifyGitExecutable(gitBinding);
+  } finally {
+    await gitBinding.handle.close();
+  }
   qualificationHarness.manifest = await expectedFileRecord(
     provenance?.qualificationHarness?.manifest?.path,
     provenance?.qualificationHarness?.manifest?.digest,
     'qualification harness manifest',
+    provenanceLimits.manifestBytes,
+    options,
   );
   qualificationHarness.matches &&= qualificationHarness.manifest.matches;
   qualificationHarness.repositoryLocator = typeof provenance?.qualificationHarness?.repositoryLocator === 'string'
     ? provenance.qualificationHarness.repositoryLocator
     : null;
   qualificationHarness.matches &&= qualificationHarness.repositoryLocator !== null && qualificationHarness.repositoryLocator.length > 0;
-  const packageIdentity = await expectedFileRecord(provenance?.package?.artifact, provenance?.package?.digest, 'mdlm package artifact');
-  const piPackageIdentity = await expectedFileRecord(provenance?.piPackage?.artifact, provenance?.piPackage?.digest, 'mdlm-pi package artifact');
-  const mdlm = await expectedFileRecord(provenance?.tools?.mdlm?.path, provenance?.tools?.mdlm?.digest, 'mdlm');
-  const mdlmPi = await expectedFileRecord(provenance?.tools?.mdlmPi?.path, provenance?.tools?.mdlmPi?.digest, 'mdlm-pi');
-  const tooling = await expectedToolingRecord(provenance?.tooling, { mdlm, mdlmPi });
+  const packageIdentity = await expectedFileRecord(
+    provenance?.package?.artifact, provenance?.package?.digest, 'mdlm package artifact', provenanceLimits.packageBytes, options,
+  );
+  const piPackageIdentity = await expectedFileRecord(
+    provenance?.piPackage?.artifact, provenance?.piPackage?.digest, 'mdlm-pi package artifact', provenanceLimits.packageBytes, options,
+  );
+  const mdlm = await expectedFileRecord(
+    provenance?.tools?.mdlm?.path, provenance?.tools?.mdlm?.digest, 'mdlm', provenanceLimits.toolBytes, options,
+  );
+  const mdlmPi = await expectedFileRecord(
+    provenance?.tools?.mdlmPi?.path, provenance?.tools?.mdlmPi?.digest, 'mdlm-pi', provenanceLimits.toolBytes, options,
+  );
+  const tooling = await expectedToolingRecord(provenance?.tooling, { mdlm, mdlmPi }, options);
   return {
+    git: gitBinding.identity,
     source,
     package: packageIdentity,
     piPackage: piPackageIdentity,
@@ -285,39 +315,435 @@ async function inspectProvenance(provenance, timeoutMs) {
   };
 }
 
-async function gitIdentity(value, timeoutMs, label) {
+async function gitIdentity(value, timeoutMs, label, gitBinding, options = {}) {
   let repository;
   let expectedCommit;
   let expectedTree;
+  let repositoryHandle;
   try {
     repository = path.resolve(requiredString(value?.repository, `provenance.${label}.repository`));
     expectedCommit = requiredObjectId(value?.commit, `provenance.${label}.commit`);
     expectedTree = requiredObjectId(value?.tree, `provenance.${label}.tree`);
+    repositoryHandle = await (options.openRepository ?? open)(
+      repository,
+      constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+    );
+    const opened = await repositoryHandle.stat({ bigint: true });
+    if (!opened.isDirectory()) throw new Error(`provenance.${label}.repository is not a real directory`);
+    const descriptorPath = `/proc/self/fd/${repositoryHandle.fd}`;
+    const descriptorTarget = await realpath(descriptorPath);
+    if (descriptorTarget !== repository) throw new Error(`provenance.${label}.repository has a symbolic-link path component`);
+    const current = await lstat(repository, { bigint: true });
+    if (!current.isDirectory() || current.isSymbolicLink() || !sameIdentity(opened, current)) {
+      throw new Error(`provenance.${label}.repository changed while it was opened`);
+    }
+    const processOptions = {
+      cwd: descriptorPath,
+      recordedCwd: repository,
+      recordedProgram: gitBinding.identity.path,
+      timeoutMs,
+      env: gitEnvironment(),
+    };
+    const args = name => ['--no-optional-locks', ...name];
+    const preCommit = await runProcess(gitBinding.program, args(['rev-parse', 'HEAD^{commit}']), processOptions);
+    const preTree = await runProcess(gitBinding.program, args(['rev-parse', 'HEAD^{tree}']), processOptions);
+    await options.afterGitPreIdentity?.({ label, repository, repositoryHandle });
+    const status = await filterFreeStatus(gitBinding, args, processOptions, repositoryHandle, label, options);
+    const postCommit = await runProcess(gitBinding.program, args(['rev-parse', 'HEAD^{commit}']), processOptions);
+    const postTree = await runProcess(gitBinding.program, args(['rev-parse', 'HEAD^{tree}']), processOptions);
+    const observedCommit = commandSucceeded(preCommit) ? preCommit.stdout.toString('utf8').trim() : null;
+    const observedTree = commandSucceeded(preTree) ? preTree.stdout.toString('utf8').trim() : null;
+    const postObservedCommit = commandSucceeded(postCommit) ? postCommit.stdout.toString('utf8').trim() : null;
+    const postObservedTree = commandSucceeded(postTree) ? postTree.stdout.toString('utf8').trim() : null;
+    const clean = status.clean;
+    const descriptorAfter = await repositoryHandle.stat({ bigint: true });
+    let pathAfter;
+    try {
+      pathAfter = await lstat(repository, { bigint: true });
+    } catch (error) {
+      if (error.code === 'ENOENT') throw new Error(`provenance.${label}.repository changed while Git inspected it`);
+      throw error;
+    }
+    if (!sameIdentity(opened, descriptorAfter) || !sameIdentity(opened, pathAfter)) {
+      throw new Error(`provenance.${label}.repository changed while Git inspected it`);
+    }
+    const stable = observedCommit === postObservedCommit && observedTree === postObservedTree;
+    return {
+      repository,
+      repositoryIdentity: statIdentity(opened),
+      git: gitBinding.identity,
+      expectedCommit,
+      expectedTree,
+      observedCommit,
+      observedTree,
+      postObservedCommit,
+      postObservedTree,
+      clean,
+      stable,
+      matches: observedCommit === expectedCommit && observedTree === expectedTree && clean === true && stable,
+      commands: {
+        preCommit: commandRecord(preCommit), preTree: commandRecord(preTree), status: commandRecord(status.command),
+        postCommit: commandRecord(postCommit), postTree: commandRecord(postTree),
+      },
+    };
   } catch (error) {
-    return { repository: value?.repository ?? null, expectedCommit: value?.commit ?? null, expectedTree: value?.tree ?? null, observedCommit: null, observedTree: null, clean: null, matches: false, error: error.message, commands: {} };
+    return {
+      repository: value?.repository ?? null,
+      repositoryIdentity: null,
+      git: gitBinding.identity,
+      expectedCommit: value?.commit ?? null,
+      expectedTree: value?.tree ?? null,
+      observedCommit: null,
+      observedTree: null,
+      postObservedCommit: null,
+      postObservedTree: null,
+      clean: null,
+      stable: false,
+      matches: false,
+      error: error.message,
+      commands: {},
+    };
+  } finally {
+    await repositoryHandle?.close();
   }
-  const options = { cwd: repository, timeoutMs, env: gitEnvironment() };
-  const commit = await runProcess('git', ['rev-parse', 'HEAD^{commit}'], options);
-  const tree = await runProcess('git', ['rev-parse', 'HEAD^{tree}'], options);
-  const status = await runProcess('git', ['status', '--porcelain=v1', '-z', '--untracked-files=all'], options);
-  const observedCommit = commandSucceeded(commit) ? commit.stdout.toString('utf8').trim() : null;
-  const observedTree = commandSucceeded(tree) ? tree.stdout.toString('utf8').trim() : null;
-  const clean = commandSucceeded(status) ? status.stdout.length === 0 : null;
+}
+
+async function filterFreeStatus(gitBinding, args, processOptions, repositoryHandle, label, options) {
+  const head = await runProcess(gitBinding.program, args(['ls-tree', '-rz', '--full-tree', 'HEAD']), processOptions);
+  const index = await runProcess(gitBinding.program, args(['ls-files', '--stage', '-z']), processOptions);
+  const untracked = await runProcess(
+    gitBinding.program,
+    args(['ls-files', '--others', '--exclude-standard', '-z']),
+    processOptions,
+  );
+  for (const [name, result] of [['HEAD tree', head], ['index', index], ['untracked files', untracked]]) {
+    if (!commandSucceeded(result)) throw new Error(`provenance.${label}.repository ${name} could not be authenticated`);
+  }
+  const headEntries = parseTreeEntries(head.stdout, label);
+  const indexEntries = parseIndexEntries(index.stdout, label);
+  const limits = boundedWorktreeLimits(options.worktreeLimits);
+  const state = { bytes: 0, directories: new Map(), leaves: new Map() };
+  let clean = untracked.stdout.length === 0 && headEntries.size === indexEntries.size;
+  for (const [name, entry] of indexEntries) {
+    const expected = headEntries.get(name);
+    if (entry.stage !== '0' || expected?.mode !== entry.mode || expected?.oid !== entry.oid) clean = false;
+    if (!await worktreeEntryMatches(repositoryHandle, name, entry, label, state, limits, options)) clean = false;
+  }
+  await options.afterWorktreeHashing?.({ label });
+  await verifyWorktreeIdentities(repositoryHandle, state, label);
+  const postIndex = await runProcess(gitBinding.program, args(['ls-files', '--stage', '-z']), processOptions);
+  const postUntracked = await runProcess(
+    gitBinding.program,
+    args(['ls-files', '--others', '--exclude-standard', '-z']),
+    processOptions,
+  );
+  for (const [name, result] of [['post-hash index', postIndex], ['post-hash untracked files', postUntracked]]) {
+    if (!commandSucceeded(result)) throw new Error(`provenance.${label}.repository ${name} could not be authenticated`);
+  }
+  if (!index.stdout.equals(postIndex.stdout) || !untracked.stdout.equals(postUntracked.stdout)) clean = false;
+  return { clean, command: untracked };
+}
+
+function boundedWorktreeLimits(overrides = {}) {
+  const configured = {
+    fileBytes: overrides.fileBytes ?? provenanceLimits.worktreeFileBytes,
+    totalBytes: overrides.totalBytes ?? provenanceLimits.worktreeTotalBytes,
+  };
+  for (const [name, value] of Object.entries(configured)) {
+    if (!Number.isSafeInteger(value) || value < 0) {
+      throw new Error(`tracked worktree ${name} limit must be a nonnegative safe integer`);
+    }
+  }
   return {
-    repository,
-    expectedCommit,
-    expectedTree,
-    observedCommit,
-    observedTree,
-    clean,
-    matches: observedCommit === expectedCommit && observedTree === expectedTree && clean === true,
-    commands: { commit: commandRecord(commit), tree: commandRecord(tree), status: commandRecord(status) },
+    fileBytes: Math.min(configured.fileBytes, provenanceLimits.worktreeFileBytes),
+    totalBytes: Math.min(configured.totalBytes, provenanceLimits.worktreeTotalBytes),
   };
 }
 
-async function expectedFileRecord(file, expectedDigest, label) {
+function parseTreeEntries(bytes, label) {
+  return parseNulRecords(bytes, `provenance.${label}.repository HEAD tree`, record => {
+    const match = /^(\d{6}) (?:blob|commit) ([0-9a-f]{40}|[0-9a-f]{64})\t(.+)$/s.exec(record);
+    if (match === null) throw new Error(`provenance.${label}.repository HEAD tree has invalid output`);
+    return { name: match[3], mode: match[1], oid: match[2] };
+  });
+}
+
+function parseIndexEntries(bytes, label) {
+  return parseNulRecords(bytes, `provenance.${label}.repository index`, record => {
+    const match = /^(\d{6}) ([0-9a-f]{40}|[0-9a-f]{64}) ([0-3])\t(.+)$/s.exec(record);
+    if (match === null) throw new Error(`provenance.${label}.repository index has invalid output`);
+    return { name: match[4], mode: match[1], oid: match[2], stage: match[3] };
+  });
+}
+
+function parseNulRecords(bytes, label, parse) {
+  if (bytes.length > 16 * 1024 * 1024) throw new Error(`${label} exceeds 16777216-byte limit`);
+  const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  const records = text.length === 0 ? [] : text.split('\0');
+  if (records.at(-1) === '') records.pop();
+  const entries = new Map();
+  for (const record of records) {
+    const entry = parse(record);
+    if (entries.has(entry.name)) throw new Error(`${label} contains duplicate paths`);
+    entries.set(entry.name, entry);
+  }
+  return entries;
+}
+
+async function worktreeEntryMatches(repositoryHandle, relative, entry, label, state, limits, options) {
+  if (relative.includes('\0') || path.isAbsolute(relative) || relative.split('/').some(name => name === '' || name === '.' || name === '..')) {
+    throw new Error(`provenance.${label}.repository index path is unsafe`);
+  }
+  const components = relative.split('/');
+  const name = components.pop();
+  const chain = await openWorktreeDirectoryChain(repositoryHandle, components, state.directories, label, options);
+  const parent = chain.at(-1) ?? { handle: repositoryHandle };
+  const file = `/proc/self/fd/${parent.handle.fd}/${name}`;
+  let handle;
   try {
-    const identity = await fileIdentity(requiredString(file, label));
+    if (entry.mode === '120000') return await symlinkBlobMatches(file, relative, entry, label, state, limits);
+    if (entry.mode !== '100644' && entry.mode !== '100755') return false;
+    handle = await open(file, constants.O_RDONLY | constants.O_NOFOLLOW);
+    const opened = await handle.stat({ bigint: true });
+    const before = await lstat(file, { bigint: true });
+    if (!opened.isFile() || !sameIdentity(opened, before)) return false;
+    rememberWorktreeIdentity(state.leaves, relative, opened, label, 'entry');
+    const actualMode = (Number(opened.mode) & 0o111) === 0 ? '100644' : '100755';
+    if (actualMode !== entry.mode) return false;
+    if (opened.size > BigInt(limits.fileBytes)) {
+      throw new Error(`provenance.${label}.repository tracked file '${relative}' exceeds ${limits.fileBytes}-byte limit`);
+    }
+    await options.afterWorktreeFileStat?.({ label, relative, handle, information: opened });
+    const algorithm = entry.oid.length === 64 ? 'sha256' : 'sha1';
+    const hash = createHash(algorithm).update(`blob ${opened.size}\0`);
+    let bytes = 0n;
+    for (;;) {
+      const fileRemaining = limits.fileBytes + 1 - Number(bytes);
+      const aggregateRemaining = limits.totalBytes + 1 - state.bytes;
+      const buffer = Buffer.allocUnsafe(Math.min(64 * 1024, fileRemaining, aggregateRemaining));
+      const { bytesRead } = await handle.read(buffer, 0, buffer.length, null);
+      if (bytesRead === 0) break;
+      bytes += BigInt(bytesRead);
+      state.bytes += bytesRead;
+      if (bytes > BigInt(limits.fileBytes)) {
+        throw new Error(`provenance.${label}.repository tracked file '${relative}' exceeds ${limits.fileBytes}-byte limit`);
+      }
+      if (state.bytes > limits.totalBytes) {
+        throw new Error(`provenance.${label}.repository tracked files exceed ${limits.totalBytes}-byte aggregate limit`);
+      }
+      hash.update(buffer.subarray(0, bytesRead));
+    }
+    const after = await handle.stat({ bigint: true });
+    const current = await lstat(file, { bigint: true });
+    return bytes === opened.size && sameIdentity(opened, after) && sameIdentity(opened, current) && hash.digest('hex') === entry.oid;
+  } catch (error) {
+    if (error.code === 'ENOENT' || error.code === 'ELOOP') return false;
+    throw error;
+  } finally {
+    await handle?.close();
+    await closeWorktreeDirectoryChain(chain, label);
+  }
+}
+
+async function openWorktreeDirectoryChain(repositoryHandle, components, identities, label, options = {}) {
+  const chain = [];
+  let relative = '';
+  let parent = { handle: repositoryHandle };
+  try {
+    for (const name of components) {
+      const childRelative = relative === '' ? name : `${relative}/${name}`;
+      const anchoredPath = `/proc/self/fd/${parent.handle.fd}/${name}`;
+      const before = await lstat(anchoredPath, { bigint: true });
+      let handle;
+      try {
+        handle = await open(anchoredPath, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
+        const opened = await handle.stat({ bigint: true });
+        if (!before.isDirectory() || before.isSymbolicLink() || !sameIdentity(before, opened)) {
+          throw new Error(`provenance.${label}.repository directory '${childRelative}' changed while opened`);
+        }
+        const child = { handle, information: opened, parent, name, relative: childRelative };
+        chain.push(child);
+        handle = undefined;
+        rememberWorktreeIdentity(identities, childRelative, opened, label, 'directory');
+        await options.afterWorktreeDirectoryOpen?.({ label, relative: childRelative, handle: child.handle });
+        relative = childRelative;
+        parent = child;
+      } finally {
+        await handle?.close();
+      }
+    }
+    return chain;
+  } catch (error) {
+    await closeWorktreeDirectoryChain(chain, label, false);
+    throw error;
+  }
+}
+
+async function closeWorktreeDirectoryChain(chain, label, verify = true) {
+  let failure;
+  for (const directory of [...chain].reverse()) {
+    try {
+      if (verify) {
+        const descriptor = await directory.handle.stat({ bigint: true });
+        const current = await lstat(`/proc/self/fd/${directory.parent.handle.fd}/${directory.name}`, { bigint: true });
+        if (!current.isDirectory() || current.isSymbolicLink() ||
+            !sameIdentity(directory.information, descriptor) || !sameIdentity(directory.information, current)) {
+          throw new Error(`provenance.${label}.repository directory '${directory.relative}' changed while inspected`);
+        }
+      }
+    } catch (error) {
+      failure ??= error;
+    } finally {
+      await directory.handle.close().catch(error => { failure ??= error; });
+    }
+  }
+  if (failure !== undefined) throw failure;
+}
+
+function rememberWorktreeIdentity(identities, relative, information, label, kind) {
+  const expected = identities.get(relative);
+  if (expected !== undefined && !sameIdentity(expected, information)) {
+    throw new Error(`provenance.${label}.repository ${kind} '${relative}' changed while inspected`);
+  }
+  identities.set(relative, information);
+}
+
+async function verifyWorktreeIdentities(repositoryHandle, state, label) {
+  for (const [relative, expected] of state.leaves) {
+    const components = relative.split('/');
+    const name = components.pop();
+    const chain = await openWorktreeDirectoryChain(repositoryHandle, components, state.directories, label);
+    const parent = chain.at(-1) ?? { handle: repositoryHandle };
+    try {
+      const current = await lstat(`/proc/self/fd/${parent.handle.fd}/${name}`, { bigint: true });
+      if (!sameIdentity(expected, current)) {
+        throw new Error(`provenance.${label}.repository entry '${relative}' changed while inspected`);
+      }
+    } finally {
+      await closeWorktreeDirectoryChain(chain, label);
+    }
+  }
+}
+
+async function symlinkBlobMatches(file, relative, entry, label, state, limits) {
+  try {
+    const before = await lstat(file, { bigint: true });
+    if (!before.isSymbolicLink()) return false;
+    rememberWorktreeIdentity(state.leaves, relative, before, label, 'entry');
+    const target = await readlink(file, { encoding: 'buffer' });
+    if (target.length > limits.fileBytes) {
+      throw new Error(`provenance.${label}.repository tracked file '${relative}' exceeds ${limits.fileBytes}-byte limit`);
+    }
+    state.bytes += target.length;
+    if (state.bytes > limits.totalBytes) {
+      throw new Error(`provenance.${label}.repository tracked files exceed ${limits.totalBytes}-byte aggregate limit`);
+    }
+    const after = await lstat(file, { bigint: true });
+    if (!sameIdentity(before, after)) throw new Error(`provenance.${label}.repository symlink changed while read`);
+    const algorithm = entry.oid.length === 64 ? 'sha256' : 'sha1';
+    return createHash(algorithm).update(`blob ${target.length}\0`).update(target).digest('hex') === entry.oid;
+  } catch (error) {
+    if (error.code === 'ENOENT') return false;
+    throw error;
+  }
+}
+
+async function openGitExecutable(expected, options = {}) {
+  const requestedPath = options.gitPath ?? '/usr/bin/git';
+  if (!path.isAbsolute(requestedPath)) throw new Error('Git executable path must be absolute');
+  const configuredPath = path.resolve(requestedPath);
+  if (expected?.path !== undefined && expected.path !== configuredPath) {
+    throw new Error(`Git executable path must be ${configuredPath}`);
+  }
+  const maximumBytes = options.gitExecutableMaxBytes ?? 67_108_864;
+  if (!Number.isSafeInteger(maximumBytes) || maximumBytes < 0) throw new Error('Git executable byte limit is invalid');
+  let handle;
+  try {
+    handle = await (options.openGit ?? open)(configuredPath, constants.O_RDONLY | constants.O_NOFOLLOW);
+    const opened = await handle.stat({ bigint: true });
+    if (!opened.isFile()) throw new Error(`Git executable is not a regular file: ${configuredPath}`);
+    if ((Number(opened.mode) & 0o111) === 0) throw new Error(`Git executable is not executable: ${configuredPath}`);
+    if (opened.size > BigInt(maximumBytes)) throw new Error(`Git executable exceeds ${maximumBytes}-byte limit`);
+    const descriptorTarget = await realpath(`/proc/self/fd/${handle.fd}`);
+    if (descriptorTarget !== configuredPath) throw new Error(`Git executable has a symbolic-link path component: ${configuredPath}`);
+    const current = await lstat(configuredPath, { bigint: true });
+    if (!sameIdentity(opened, current)) throw new Error(`Git executable changed while it was opened: ${configuredPath}`);
+    await options.afterGitExecutableStat?.({ handle, path: configuredPath, information: opened });
+    const bytes = await readGitExecutableWithinLimit(handle, maximumBytes);
+    const digest = sha256(bytes);
+    if (expected?.digest !== undefined && digest !== expected.digest) throw new Error('Git executable differs from provenance.git.digest');
+    const after = await handle.stat({ bigint: true });
+    if (!sameIdentity(opened, after)) throw new Error(`Git executable changed while it was read: ${configuredPath}`);
+    return {
+      handle,
+      information: opened,
+      program: `/proc/self/fd/${handle.fd}`,
+      identity: {
+        path: configuredPath,
+        realpath: descriptorTarget,
+        mode: fileMode(opened),
+        size: Number(opened.size),
+        digest,
+        ...(expected?.digest === undefined ? {} : { expectedDigest: expected.digest }),
+      },
+    };
+  } catch (error) {
+    await handle?.close();
+    throw error;
+  }
+}
+
+async function readGitExecutableWithinLimit(handle, maximumBytes) {
+  const chunks = [];
+  let total = 0;
+  for (;;) {
+    const remaining = maximumBytes + 1 - total;
+    const buffer = Buffer.allocUnsafe(Math.min(64 * 1024, remaining));
+    const { bytesRead } = await handle.read(buffer, 0, buffer.length, null);
+    if (bytesRead === 0) return Buffer.concat(chunks, total);
+    total += bytesRead;
+    if (total > maximumBytes) throw new Error(`Git executable exceeds ${maximumBytes}-byte limit`);
+    chunks.push(Buffer.from(buffer.subarray(0, bytesRead)));
+  }
+}
+
+async function verifyGitExecutable(binding) {
+  const descriptor = await binding.handle.stat({ bigint: true });
+  let current;
+  try {
+    current = await lstat(binding.identity.path, { bigint: true });
+  } catch (error) {
+    if (error.code === 'ENOENT') throw new Error(`Git executable changed while it was used: ${binding.identity.path}`);
+    throw error;
+  }
+  if (!sameIdentity(binding.information, descriptor) || !sameIdentity(binding.information, current)) {
+    throw new Error(`Git executable changed while it was used: ${binding.identity.path}`);
+  }
+}
+
+function sameIdentity(left, right) {
+  return left.dev === right.dev && left.ino === right.ino && left.mode === right.mode && left.size === right.size &&
+    left.mtimeNs === right.mtimeNs && left.ctimeNs === right.ctimeNs;
+}
+
+function statIdentity(value) {
+  return {
+    device: value.dev.toString(), inode: value.ino.toString(), mode: fileMode(value), size: Number(value.size),
+    modifiedNanoseconds: value.mtimeNs.toString(), changedNanoseconds: value.ctimeNs.toString(),
+  };
+}
+
+function fileMode(value) {
+  return (Number(value.mode) & 0o7777).toString(8).padStart(4, '0');
+}
+
+async function expectedFileRecord(file, expectedDigest, label, maxBytes, options) {
+  try {
+    const identity = await fileIdentity(requiredString(file, label), {
+      label,
+      maxBytes,
+      openFile: options?.openFile,
+    });
     const digest = requiredDigest(expectedDigest, `${label} digest`);
     return { ...identity, expectedDigest: digest, matches: identity.digest === digest };
   } catch (error) {
@@ -325,12 +751,14 @@ async function expectedFileRecord(file, expectedDigest, label) {
   }
 }
 
-async function expectedToolingRecord(value, tools) {
+async function expectedToolingRecord(value, tools, options) {
   try {
     const expectedDigest = requiredDigest(value?.digest, 'tooling closure digest');
-    const identity = await toolingTreeIdentity(requiredString(value?.root, 'tooling closure root'));
+    const identity = await toolingTreeIdentity(requiredString(value?.root, 'tooling closure root'), options);
     const canonicalRoot = await realpath(identity.root);
-    const lock = await expectedFileRecord(value?.lock?.path, value?.lock?.digest, 'tooling lock');
+    const lock = await expectedFileRecord(
+      value?.lock?.path, value?.lock?.digest, 'tooling lock', provenanceLimits.lockBytes, options,
+    );
     const containedTools = [tools.mdlm, tools.mdlmPi].every(tool =>
       typeof tool.realpath === 'string' && isPathWithin(canonicalRoot, tool.realpath)
     );

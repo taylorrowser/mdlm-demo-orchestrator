@@ -1,0 +1,580 @@
+✖ preflight rejects run 036 wrong harness commit even when every harness asset digest matches (404.44574ms)
+✖ preflight rejects the run 032 helper argv shape that omits --input (417.541581ms)
+✖ preflight PASS is identical through stdin and --input and creates no lifecycle state (414.270929ms)
+✖ preflight rejects extra keys, digest drift, and duplicate pin disagreements (257.390773ms)
+✖ preflight emits a typed stdout-only failure for omitted and empty input (64.341693ms)
+✖ preflight rejects symlinked and oversized run-request inputs (253.088851ms)
+✖ preflight rejects malformed UTF-8 in its wrapper and run request (67.39569ms)
+✖ preflight closes every nested run-request and catalog object (259.005499ms)
+✖ preflight authenticates the complete executable and script identities (245.070644ms)
+▶ preflight rejects symlinked provenance, package, tool, lock, and catalog files
+  ✖ package (256.858768ms)
+  ✖ pi package (252.774163ms)
+  ✖ mdlm tool (243.008056ms)
+  ✖ mdlm-pi tool (246.818074ms)
+  ✖ tooling lock (261.620463ms)
+  ✖ harness manifest (265.576155ms)
+  ✖ decision catalog (271.773791ms)
+✖ preflight rejects symlinked provenance, package, tool, lock, and catalog files (1800.501168ms)
+▶ preflight rejects oversized provenance, package, tool, lock, and catalog files
+  ✖ package (267.340496ms)
+  ✖ pi package (268.591021ms)
+  ✖ mdlm tool (266.994465ms)
+  ✖ mdlm-pi tool (252.179496ms)
+  ✖ tooling lock (259.121393ms)
+  ✖ harness manifest (251.559258ms)
+  ✖ decision catalog (277.927315ms)
+✖ preflight rejects oversized provenance, package, tool, lock, and catalog files (1845.367ms)
+▶ provenance inspection rejects deterministic rename substitutions
+  ✖ package (189.342205ms)
+  ✖ tool (192.812493ms)
+  ✖ lock (194.629045ms)
+  ✖ manifest (193.549835ms)
+✖ provenance inspection rejects deterministic rename substitutions (771.523981ms)
+✖ decision catalog binding rejects rename substitution and records exact bytes (204.597907ms)
+ℹ tests 31
+ℹ suites 0
+ℹ pass 0
+ℹ fail 31
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 7247.835622
+
+✖ failing tests:
+
+test at test/preflight.test.mjs:162:1
+✖ preflight rejects run 036 wrong harness commit even when every harness asset digest matches (404.44574ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + '{"contract":"mdlm-demo-error@1","error":"usage: mdlm-demo-runner snapshot|classify|decision-catalog-build|decision-catalog-validate|run|resume|reconcile [--input file]"}\n'
+  - ''
+  
+      at resultOf (file:///tmp/mdlm-issue-24-parent-red/test/preflight.test.mjs:153:10)
+      at TestContext.<anonymous> (file:///tmp/mdlm-issue-24-parent-red/test/preflight.test.mjs:172:18)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '{"contract":"mdlm-demo-error@1","error":"usage: mdlm-demo-runner snapshot|classify|decision-catalog-build|decision-catalog-validate|run|resume|reconcile [--input file]"}\n',
+    expected: '',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/preflight.test.mjs:180:1
+✖ preflight rejects the run 032 helper argv shape that omits --input (417.541581ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + '{"contract":"mdlm-demo-error@1","error":"usage: mdlm-demo-runner snapshot|classify|decision-catalog-build|decision-catalog-validate|run|resume|reconcile [--input file]"}\n'
+  - ''
+  
+      at resultOf (file:///tmp/mdlm-issue-24-parent-red/test/preflight.test.mjs:153:10)
+      at TestContext.<anonymous> (file:///tmp/mdlm-issue-24-parent-red/test/preflight.test.mjs:187:18)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '{"contract":"mdlm-demo-error@1","error":"usage: mdlm-demo-runner snapshot|classify|decision-catalog-build|decision-catalog-validate|run|resume|reconcile [--input file]"}\n',
+    expected: '',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/preflight.test.mjs:194:1
+✖ preflight PASS is identical through stdin and --input and creates no lifecycle state (414.270929ms)
+  AssertionError [ERR_ASSERTION]: {"contract":"mdlm-demo-error@1","error":"usage: mdlm-demo-runner snapshot|classify|decision-catalog-build|decision-catalog-validate|run|resume|reconcile [--input file]"}
+  
+  
+  1 !== 0
+  
+      at TestContext.<anonymous> (file:///tmp/mdlm-issue-24-parent-red/test/preflight.test.mjs:200:10)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 1,
+    expected: 0,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/preflight.test.mjs:220:1
+✖ preflight rejects extra keys, digest drift, and duplicate pin disagreements (257.390773ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + '{"contract":"mdlm-demo-error@1","error":"usage: mdlm-demo-runner snapshot|classify|decision-catalog-build|decision-catalog-validate|run|resume|reconcile [--input file]"}\n'
+  - ''
+  
+      at resultOf (file:///tmp/mdlm-issue-24-parent-red/test/preflight.test.mjs:153:10)
+      at TestContext.<anonymous> (file:///tmp/mdlm-issue-24-parent-red/test/preflight.test.mjs:228:16)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '{"contract":"mdlm-demo-error@1","error":"usage: mdlm-demo-runner snapshot|classify|decision-catalog-build|decision-catalog-validate|run|resume|reconcile [--input file]"}\n',
+    expected: '',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/preflight.test.mjs:252:1
+✖ preflight emits a typed stdout-only failure for omitted and empty input (64.341693ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + '{"contract":"mdlm-demo-error@1","error":"Unexpected end of JSON input"}\n'
+  - ''
+  
+      at resultOf (file:///tmp/mdlm-issue-24-parent-red/test/preflight.test.mjs:153:10)
+      at TestContext.<anonymous> (file:///tmp/mdlm-issue-24-parent-red/test/preflight.test.mjs:258:16)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '{"contract":"mdlm-demo-error@1","error":"Unexpected end of JSON input"}\n',
+    expected: '',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/preflight.test.mjs:272:1
+✖ preflight rejects symlinked and oversized run-request inputs (253.088851ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + '{"contract":"mdlm-demo-error@1","error":"usage: mdlm-demo-runner snapshot|classify|decision-catalog-build|decision-catalog-validate|run|resume|reconcile [--input file]"}\n'
+  - ''
+  
+      at resultOf (file:///tmp/mdlm-issue-24-parent-red/test/preflight.test.mjs:153:10)
+      at TestContext.<anonymous> (file:///tmp/mdlm-issue-24-parent-red/test/preflight.test.mjs:283:16)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '{"contract":"mdlm-demo-error@1","error":"usage: mdlm-demo-runner snapshot|classify|decision-catalog-build|decision-catalog-validate|run|resume|reconcile [--input file]"}\n',
+    expected: '',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/preflight.test.mjs:296:1
+✖ preflight rejects malformed UTF-8 in its wrapper and run request (67.39569ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + '{"contract":"mdlm-demo-error@1","error":"usage: mdlm-demo-runner snapshot|classify|decision-catalog-build|decision-catalog-validate|run|resume|reconcile [--input file]"}\n'
+  - ''
+  
+      at resultOf (file:///tmp/mdlm-issue-24-parent-red/test/preflight.test.mjs:153:10)
+      at TestContext.<anonymous> (file:///tmp/mdlm-issue-24-parent-red/test/preflight.test.mjs:305:16)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '{"contract":"mdlm-demo-error@1","error":"usage: mdlm-demo-runner snapshot|classify|decision-catalog-build|decision-catalog-validate|run|resume|reconcile [--input file]"}\n',
+    expected: '',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/preflight.test.mjs:319:1
+✖ preflight closes every nested run-request and catalog object (259.005499ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + '{"contract":"mdlm-demo-error@1","error":"usage: mdlm-demo-runner snapshot|classify|decision-catalog-build|decision-catalog-validate|run|resume|reconcile [--input file]"}\n'
+  - ''
+  
+      at resultOf (file:///tmp/mdlm-issue-24-parent-red/test/preflight.test.mjs:153:10)
+      at TestContext.<anonymous> (file:///tmp/mdlm-issue-24-parent-red/test/preflight.test.mjs:343:18)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '{"contract":"mdlm-demo-error@1","error":"usage: mdlm-demo-runner snapshot|classify|decision-catalog-build|decision-catalog-validate|run|resume|reconcile [--input file]"}\n',
+    expected: '',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/preflight.test.mjs:360:1
+✖ preflight authenticates the complete executable and script identities (245.070644ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + '{"contract":"mdlm-demo-error@1","error":"usage: mdlm-demo-runner snapshot|classify|decision-catalog-build|decision-catalog-validate|run|resume|reconcile [--input file]"}\n'
+  - ''
+  
+      at resultOf (file:///tmp/mdlm-issue-24-parent-red/test/preflight.test.mjs:153:10)
+      at TestContext.<anonymous> (file:///tmp/mdlm-issue-24-parent-red/test/preflight.test.mjs:368:16)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '{"contract":"mdlm-demo-error@1","error":"usage: mdlm-demo-runner snapshot|classify|decision-catalog-build|decision-catalog-validate|run|resume|reconcile [--input file]"}\n',
+    expected: '',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/preflight.test.mjs:407:13
+✖ package (256.858768ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + '{"contract":"mdlm-demo-error@1","error":"usage: mdlm-demo-runner snapshot|classify|decision-catalog-build|decision-catalog-validate|run|resume|reconcile [--input file]"}\n'
+  - ''
+  
+      at resultOf (file:///tmp/mdlm-issue-24-parent-red/test/preflight.test.mjs:153:10)
+      at TestContext.<anonymous> (file:///tmp/mdlm-issue-24-parent-red/test/preflight.test.mjs:416:20)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async TestContext.<anonymous> (file:///tmp/mdlm-issue-24-parent-red/test/preflight.test.mjs:407:5)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '{"contract":"mdlm-demo-error@1","error":"usage: mdlm-demo-runner snapshot|classify|decision-catalog-build|decision-catalog-validate|run|resume|reconcile [--input file]"}\n',
+    expected: '',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/preflight.test.mjs:407:13
+✖ pi package (252.774163ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + '{"contract":"mdlm-demo-error@1","error":"usage: mdlm-demo-runner snapshot|classify|decision-catalog-build|decision-catalog-validate|run|resume|reconcile [--input file]"}\n'
+  - ''
+  
+      at resultOf (file:///tmp/mdlm-issue-24-parent-red/test/preflight.test.mjs:153:10)
+      at TestContext.<anonymous> (file:///tmp/mdlm-issue-24-parent-red/test/preflight.test.mjs:416:20)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async TestContext.<anonymous> (file:///tmp/mdlm-issue-24-parent-red/test/preflight.test.mjs:407:5)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '{"contract":"mdlm-demo-error@1","error":"usage: mdlm-demo-runner snapshot|classify|decision-catalog-build|decision-catalog-validate|run|resume|reconcile [--input file]"}\n',
+    expected: '',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/preflight.test.mjs:407:13
+✖ mdlm tool (243.008056ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + '{"contract":"mdlm-demo-error@1","error":"usage: mdlm-demo-runner snapshot|classify|decision-catalog-build|decision-catalog-validate|run|resume|reconcile [--input file]"}\n'
+  - ''
+  
+      at resultOf (file:///tmp/mdlm-issue-24-parent-red/test/preflight.test.mjs:153:10)
+      at TestContext.<anonymous> (file:///tmp/mdlm-issue-24-parent-red/test/preflight.test.mjs:416:20)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async TestContext.<anonymous> (file:///tmp/mdlm-issue-24-parent-red/test/preflight.test.mjs:407:5)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '{"contract":"mdlm-demo-error@1","error":"usage: mdlm-demo-runner snapshot|classify|decision-catalog-build|decision-catalog-validate|run|resume|reconcile [--input file]"}\n',
+    expected: '',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/preflight.test.mjs:407:13
+✖ mdlm-pi tool (246.818074ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + '{"contract":"mdlm-demo-error@1","error":"usage: mdlm-demo-runner snapshot|classify|decision-catalog-build|decision-catalog-validate|run|resume|reconcile [--input file]"}\n'
+  - ''
+  
+      at resultOf (file:///tmp/mdlm-issue-24-parent-red/test/preflight.test.mjs:153:10)
+      at TestContext.<anonymous> (file:///tmp/mdlm-issue-24-parent-red/test/preflight.test.mjs:416:20)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async TestContext.<anonymous> (file:///tmp/mdlm-issue-24-parent-red/test/preflight.test.mjs:407:5)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '{"contract":"mdlm-demo-error@1","error":"usage: mdlm-demo-runner snapshot|classify|decision-catalog-build|decision-catalog-validate|run|resume|reconcile [--input file]"}\n',
+    expected: '',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/preflight.test.mjs:407:13
+✖ tooling lock (261.620463ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + '{"contract":"mdlm-demo-error@1","error":"usage: mdlm-demo-runner snapshot|classify|decision-catalog-build|decision-catalog-validate|run|resume|reconcile [--input file]"}\n'
+  - ''
+  
+      at resultOf (file:///tmp/mdlm-issue-24-parent-red/test/preflight.test.mjs:153:10)
+      at TestContext.<anonymous> (file:///tmp/mdlm-issue-24-parent-red/test/preflight.test.mjs:416:20)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async TestContext.<anonymous> (file:///tmp/mdlm-issue-24-parent-red/test/preflight.test.mjs:407:5)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '{"contract":"mdlm-demo-error@1","error":"usage: mdlm-demo-runner snapshot|classify|decision-catalog-build|decision-catalog-validate|run|resume|reconcile [--input file]"}\n',
+    expected: '',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/preflight.test.mjs:407:13
+✖ harness manifest (265.576155ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + '{"contract":"mdlm-demo-error@1","error":"usage: mdlm-demo-runner snapshot|classify|decision-catalog-build|decision-catalog-validate|run|resume|reconcile [--input file]"}\n'
+  - ''
+  
+      at resultOf (file:///tmp/mdlm-issue-24-parent-red/test/preflight.test.mjs:153:10)
+      at TestContext.<anonymous> (file:///tmp/mdlm-issue-24-parent-red/test/preflight.test.mjs:416:20)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async TestContext.<anonymous> (file:///tmp/mdlm-issue-24-parent-red/test/preflight.test.mjs:407:5)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '{"contract":"mdlm-demo-error@1","error":"usage: mdlm-demo-runner snapshot|classify|decision-catalog-build|decision-catalog-validate|run|resume|reconcile [--input file]"}\n',
+    expected: '',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/preflight.test.mjs:407:13
+✖ decision catalog (271.773791ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + '{"contract":"mdlm-demo-error@1","error":"usage: mdlm-demo-runner snapshot|classify|decision-catalog-build|decision-catalog-validate|run|resume|reconcile [--input file]"}\n'
+  - ''
+  
+      at resultOf (file:///tmp/mdlm-issue-24-parent-red/test/preflight.test.mjs:153:10)
+      at TestContext.<anonymous> (file:///tmp/mdlm-issue-24-parent-red/test/preflight.test.mjs:416:20)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async TestContext.<anonymous> (file:///tmp/mdlm-issue-24-parent-red/test/preflight.test.mjs:407:5)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '{"contract":"mdlm-demo-error@1","error":"usage: mdlm-demo-runner snapshot|classify|decision-catalog-build|decision-catalog-validate|run|resume|reconcile [--input file]"}\n',
+    expected: '',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/preflight.test.mjs:423:13
+✖ package (267.340496ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + '{"contract":"mdlm-demo-error@1","error":"usage: mdlm-demo-runner snapshot|classify|decision-catalog-build|decision-catalog-validate|run|resume|reconcile [--input file]"}\n'
+  - ''
+  
+      at resultOf (file:///tmp/mdlm-issue-24-parent-red/test/preflight.test.mjs:153:10)
+      at TestContext.<anonymous> (file:///tmp/mdlm-issue-24-parent-red/test/preflight.test.mjs:429:20)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async TestContext.<anonymous> (file:///tmp/mdlm-issue-24-parent-red/test/preflight.test.mjs:423:5)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '{"contract":"mdlm-demo-error@1","error":"usage: mdlm-demo-runner snapshot|classify|decision-catalog-build|decision-catalog-validate|run|resume|reconcile [--input file]"}\n',
+    expected: '',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/preflight.test.mjs:423:13
+✖ pi package (268.591021ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + '{"contract":"mdlm-demo-error@1","error":"usage: mdlm-demo-runner snapshot|classify|decision-catalog-build|decision-catalog-validate|run|resume|reconcile [--input file]"}\n'
+  - ''
+  
+      at resultOf (file:///tmp/mdlm-issue-24-parent-red/test/preflight.test.mjs:153:10)
+      at TestContext.<anonymous> (file:///tmp/mdlm-issue-24-parent-red/test/preflight.test.mjs:429:20)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async TestContext.<anonymous> (file:///tmp/mdlm-issue-24-parent-red/test/preflight.test.mjs:423:5)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '{"contract":"mdlm-demo-error@1","error":"usage: mdlm-demo-runner snapshot|classify|decision-catalog-build|decision-catalog-validate|run|resume|reconcile [--input file]"}\n',
+    expected: '',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/preflight.test.mjs:423:13
+✖ mdlm tool (266.994465ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + '{"contract":"mdlm-demo-error@1","error":"usage: mdlm-demo-runner snapshot|classify|decision-catalog-build|decision-catalog-validate|run|resume|reconcile [--input file]"}\n'
+  - ''
+  
+      at resultOf (file:///tmp/mdlm-issue-24-parent-red/test/preflight.test.mjs:153:10)
+      at TestContext.<anonymous> (file:///tmp/mdlm-issue-24-parent-red/test/preflight.test.mjs:429:20)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async TestContext.<anonymous> (file:///tmp/mdlm-issue-24-parent-red/test/preflight.test.mjs:423:5)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '{"contract":"mdlm-demo-error@1","error":"usage: mdlm-demo-runner snapshot|classify|decision-catalog-build|decision-catalog-validate|run|resume|reconcile [--input file]"}\n',
+    expected: '',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/preflight.test.mjs:423:13
+✖ mdlm-pi tool (252.179496ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + '{"contract":"mdlm-demo-error@1","error":"usage: mdlm-demo-runner snapshot|classify|decision-catalog-build|decision-catalog-validate|run|resume|reconcile [--input file]"}\n'
+  - ''
+  
+      at resultOf (file:///tmp/mdlm-issue-24-parent-red/test/preflight.test.mjs:153:10)
+      at TestContext.<anonymous> (file:///tmp/mdlm-issue-24-parent-red/test/preflight.test.mjs:429:20)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async TestContext.<anonymous> (file:///tmp/mdlm-issue-24-parent-red/test/preflight.test.mjs:423:5)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '{"contract":"mdlm-demo-error@1","error":"usage: mdlm-demo-runner snapshot|classify|decision-catalog-build|decision-catalog-validate|run|resume|reconcile [--input file]"}\n',
+    expected: '',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/preflight.test.mjs:423:13
+✖ tooling lock (259.121393ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + '{"contract":"mdlm-demo-error@1","error":"usage: mdlm-demo-runner snapshot|classify|decision-catalog-build|decision-catalog-validate|run|resume|reconcile [--input file]"}\n'
+  - ''
+  
+      at resultOf (file:///tmp/mdlm-issue-24-parent-red/test/preflight.test.mjs:153:10)
+      at TestContext.<anonymous> (file:///tmp/mdlm-issue-24-parent-red/test/preflight.test.mjs:429:20)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async TestContext.<anonymous> (file:///tmp/mdlm-issue-24-parent-red/test/preflight.test.mjs:423:5)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '{"contract":"mdlm-demo-error@1","error":"usage: mdlm-demo-runner snapshot|classify|decision-catalog-build|decision-catalog-validate|run|resume|reconcile [--input file]"}\n',
+    expected: '',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/preflight.test.mjs:423:13
+✖ harness manifest (251.559258ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + '{"contract":"mdlm-demo-error@1","error":"usage: mdlm-demo-runner snapshot|classify|decision-catalog-build|decision-catalog-validate|run|resume|reconcile [--input file]"}\n'
+  - ''
+  
+      at resultOf (file:///tmp/mdlm-issue-24-parent-red/test/preflight.test.mjs:153:10)
+      at TestContext.<anonymous> (file:///tmp/mdlm-issue-24-parent-red/test/preflight.test.mjs:429:20)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async TestContext.<anonymous> (file:///tmp/mdlm-issue-24-parent-red/test/preflight.test.mjs:423:5)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '{"contract":"mdlm-demo-error@1","error":"usage: mdlm-demo-runner snapshot|classify|decision-catalog-build|decision-catalog-validate|run|resume|reconcile [--input file]"}\n',
+    expected: '',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/preflight.test.mjs:423:13
+✖ decision catalog (277.927315ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + '{"contract":"mdlm-demo-error@1","error":"usage: mdlm-demo-runner snapshot|classify|decision-catalog-build|decision-catalog-validate|run|resume|reconcile [--input file]"}\n'
+  - ''
+  
+      at resultOf (file:///tmp/mdlm-issue-24-parent-red/test/preflight.test.mjs:153:10)
+      at TestContext.<anonymous> (file:///tmp/mdlm-issue-24-parent-red/test/preflight.test.mjs:429:20)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async TestContext.<anonymous> (file:///tmp/mdlm-issue-24-parent-red/test/preflight.test.mjs:423:5)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '{"contract":"mdlm-demo-error@1","error":"usage: mdlm-demo-runner snapshot|classify|decision-catalog-build|decision-catalog-validate|run|resume|reconcile [--input file]"}\n',
+    expected: '',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at test/preflight.test.mjs:455:13
+✖ package (189.342205ms)
+  TypeError: inspectProvenance is not a function
+      at TestContext.<anonymous> (file:///tmp/mdlm-issue-24-parent-red/test/preflight.test.mjs:459:32)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async TestContext.<anonymous> (file:///tmp/mdlm-issue-24-parent-red/test/preflight.test.mjs:455:5)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7)
+
+test at test/preflight.test.mjs:455:13
+✖ tool (192.812493ms)
+  TypeError: inspectProvenance is not a function
+      at TestContext.<anonymous> (file:///tmp/mdlm-issue-24-parent-red/test/preflight.test.mjs:459:32)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async TestContext.<anonymous> (file:///tmp/mdlm-issue-24-parent-red/test/preflight.test.mjs:455:5)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7)
+
+test at test/preflight.test.mjs:455:13
+✖ lock (194.629045ms)
+  TypeError: inspectProvenance is not a function
+      at TestContext.<anonymous> (file:///tmp/mdlm-issue-24-parent-red/test/preflight.test.mjs:459:32)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async TestContext.<anonymous> (file:///tmp/mdlm-issue-24-parent-red/test/preflight.test.mjs:455:5)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7)
+
+test at test/preflight.test.mjs:455:13
+✖ manifest (193.549835ms)
+  TypeError: inspectProvenance is not a function
+      at TestContext.<anonymous> (file:///tmp/mdlm-issue-24-parent-red/test/preflight.test.mjs:459:32)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async TestContext.<anonymous> (file:///tmp/mdlm-issue-24-parent-red/test/preflight.test.mjs:455:5)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7)
+
+test at test/preflight.test.mjs:468:1
+✖ decision catalog binding rejects rename substitution and records exact bytes (204.597907ms)
+  AssertionError [ERR_ASSERTION]: Missing expected rejection.
+      at async TestContext.<anonymous> (file:///tmp/mdlm-issue-24-parent-red/test/preflight.test.mjs:472:3)
+      at async Test.run (node:internal/test_runner/test:1389:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:960:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: /changed while it was being read/,
+    operator: 'rejects',
+    diff: 'simple'
+  }

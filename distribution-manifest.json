@@ -30,8 +30,8 @@
     },
     {
       "path": "scripts/create-distribution-manifest.mjs",
-      "bytes": 3815,
-      "sha256": "bf4a3b04e0c777f0b06d9949d69d55bfec16fca2803677c60022a20c7b742375"
+      "bytes": 3888,
+      "sha256": "aee11d5dabe49f52cb11e1d996386e0f791e7821defcbe45b1b5eef09ddee15e"
     },
     {
       "path": "scripts/inspect-package.mjs",
@@ -50,8 +50,8 @@
     },
     {
       "path": "src/canonical-file.mjs",
-      "bytes": 1853,
-      "sha256": "3b4fcb52bffad913db84f03be6025cb9b442606182a64898c3ae502e19646638"
+      "bytes": 5301,
+      "sha256": "74794f4a33b9bba3398489c5e794c66313fb5eb3ea3a337a01ebfdebefd64d5e"
     },
     {
       "path": "src/classify.mjs",
@@ -60,8 +60,8 @@
     },
     {
       "path": "src/cli.mjs",
-      "bytes": 2748,
-      "sha256": "dd109c07574039612bc48a58d562de8e13f16511410db19fd7266e78d113dd10"
+      "bytes": 3764,
+      "sha256": "3c3e3353d96e3cacca67cb79f36be1b8f3d1f3cf359f4331220bb21769e464a8"
     },
     {
       "path": "src/contracts.mjs",
@@ -70,18 +70,23 @@
     },
     {
       "path": "src/decision-catalog.mjs",
-      "bytes": 8430,
-      "sha256": "0d43a5721baa9b901c7ef803a5ea36a2edbeef79196afdd7666ae8c3a987a12b"
+      "bytes": 8672,
+      "sha256": "bc6941ced4ac290863ebb3ba975348bf9b6a3f7413a1cc6adfedeb4227fb728c"
     },
     {
       "path": "src/evidence.mjs",
-      "bytes": 25783,
-      "sha256": "c149813a149f1736a331ef398485da181c09098b367ee4038f0bea1f393ab5c2"
+      "bytes": 45542,
+      "sha256": "2c2b0973c280e7649b387975d7be1478dcdd7cd73b687efdfd08e1eefbfd0a61"
     },
     {
       "path": "src/orchestrator.mjs",
-      "bytes": 332949,
-      "sha256": "b3cff5246bae9ad16075198ee502c7e4b36f8bd2b75b9d96a00c5562d5c9b86a"
+      "bytes": 324683,
+      "sha256": "bf60642ea69b2878c0a32b36c74a36b5d9ac18eb7458dedd5046da3d76f2e30b"
+    },
+    {
+      "path": "src/preflight.mjs",
+      "bytes": 11196,
+      "sha256": "c80852b3c2429bea9d63d6c15e0d299e8a910099742e8e243078576e5586af50"
     },
     {
       "path": "src/process-package.mjs",
@@ -89,14 +94,24 @@
       "sha256": "c1a25a0e8b598dd07c5a293e173a0c599a368e9ae9ea71d2c950a457708d24d5"
     },
     {
+      "path": "src/run-request.mjs",
+      "bytes": 11368,
+      "sha256": "e0cc06d2e9c0fe8c41f74f3fb634ef6cc46eacd34249702b7732d011edabfe92"
+    },
+    {
       "path": "src/shim-cli.mjs",
       "bytes": 5141,
       "sha256": "3d71386239b60739864775cc33c120fc404037e3e9bf7911159ea997f8fe9a2c"
     },
     {
+      "path": "src/strict-json.mjs",
+      "bytes": 3085,
+      "sha256": "d721e53705808ed490700501cf5d0f1e7e61b380bcd651d5e4c632b3f3c15765"
+    },
+    {
       "path": "src/util.mjs",
-      "bytes": 9016,
-      "sha256": "00eb4dd10e42b5668c3304d337ee85e127ab6104f52e5160bf57a6c8a81ceb6f"
+      "bytes": 17265,
+      "sha256": "da09784c02523c73ef37a3eda5370b783c9dc13febb59129866f56178d17794c"
     }
   ]
 }

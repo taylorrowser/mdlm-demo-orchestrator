@@ -1,7 +1,9 @@
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { lstat, readFile, readlink, realpath, readdir } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { lstat, open, opendir, readlink, realpath } from 'node:fs/promises';
 import path from 'node:path';
+import { readCanonicalFile } from './canonical-file.mjs';
 
 export const sha256 = bytes => `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
 
@@ -48,65 +50,238 @@ export function controlledEnvironment(extra = {}, options = {}) {
 }
 
 export function gitEnvironment(extra = {}) {
-  return controlledEnvironment(extra, { git: true });
+  const entries = [
+    ['core.fsmonitor', 'false'],
+    ['core.hooksPath', '/dev/null'],
+    ['credential.helper', ''],
+    ['core.askPass', '/bin/false'],
+    ['core.attributesFile', '/dev/null'],
+    ['core.excludesFile', '/dev/null'],
+  ];
+  const environment = {
+    HOME: '/', LANG: 'C.UTF-8', LC_ALL: 'C.UTF-8',
+    GIT_ATTR_NOSYSTEM: '1', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_SYSTEM: '/dev/null',
+    GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_COUNT: String(entries.length),
+    GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0', GIT_ASKPASS: '/bin/false',
+    SSH_ASKPASS: '/bin/false', GIT_PAGER: '/bin/false',
+  };
+  entries.forEach(([key, value], index) => {
+    environment[`GIT_CONFIG_KEY_${index}`] = key;
+    environment[`GIT_CONFIG_VALUE_${index}`] = value;
+  });
+  if (extra.GIT_OPTIONAL_LOCKS === '0') environment.GIT_OPTIONAL_LOCKS = '0';
+  return environment;
 }
 
-export async function fileIdentity(file) {
+export const toolingTreeLimits = Object.freeze({
+  fileBytes: 16_777_216,
+  totalBytes: 268_435_456,
+  entries: 100_000,
+  files: 100_000,
+  depth: 64,
+  symlinkBytes: 4096,
+});
+
+export async function fileIdentity(file, options = {}) {
   const configuredPath = path.resolve(file);
-  const information = await lstat(configuredPath);
-  const target = await realpath(configuredPath);
-  const bytes = await readFile(target);
+  const evidence = await readCanonicalFile(
+    configuredPath,
+    options.label ?? 'file',
+    options.openFile,
+    { maxBytes: options.maxBytes ?? toolingTreeLimits.fileBytes },
+  );
   return {
     path: configuredPath,
-    realpath: target,
-    pathKind: information.isSymbolicLink() ? 'symbolic-link' : 'file',
-    digest: sha256(bytes),
-    bytes: bytes.length,
+    realpath: evidence.path,
+    pathKind: 'file',
+    digest: sha256(evidence.bytes),
+    bytes: evidence.bytes.length,
   };
 }
 
-export async function toolingTreeIdentity(root) {
+export async function toolingTreeIdentity(root, options = {}) {
   const configuredRoot = path.resolve(root);
-  const rootInformation = await lstat(configuredRoot);
-  if (!rootInformation.isDirectory() || rootInformation.isSymbolicLink()) throw new Error('tooling closure root must be a real directory');
-  const canonicalRoot = await realpath(configuredRoot);
   const entries = [];
-  await visitToolingEntry(configuredRoot, canonicalRoot, '.', entries);
+  const limits = boundedToolingLimits(options.limits);
+  const state = { aliases: new Set(), bytes: 0, files: 0 };
+  let rootHandle;
+  try {
+    rootHandle = await openAnchoredDirectory(configuredRoot, "tooling closure directory '.'", options.openDirectory);
+    const rootInformation = await rootHandle.stat({ bigint: true });
+    if (!rootInformation.isDirectory()) throw new Error(`tooling closure root is not a directory: ${configuredRoot}`);
+    const descriptorRoot = await realpath(`/proc/self/fd/${rootHandle.fd}`);
+    if (descriptorRoot !== configuredRoot) throw new Error(`tooling closure root has a symbolic-link path component: ${configuredRoot}`);
+    await visitToolingDirectory(rootHandle, configuredRoot, '.', 0, rootInformation, entries, state, options, limits);
+    await verifyConfiguredRoot(rootHandle, configuredRoot, rootInformation);
+  } finally {
+    await rootHandle?.close();
+  }
   const manifest = Buffer.from(`${JSON.stringify({ contract: 'mdlm-demo-tooling-tree@1', entries })}\n`);
   return {
     root: configuredRoot,
     contract: 'mdlm-demo-tooling-tree@1',
     digest: sha256(manifest),
     entries: entries.length,
-    files: entries.filter(entry => entry.type === 'file').length,
+    files: state.files,
     symlinks: entries.filter(entry => entry.type === 'symlink').length,
-    bytes: entries.reduce((total, entry) => total + (entry.bytes ?? 0), 0),
+    bytes: state.bytes,
   };
 }
 
-async function visitToolingEntry(root, canonicalRoot, relative, entries) {
-  const absolute = relative === '.' ? root : path.join(root, ...relative.split('/'));
-  const information = await lstat(absolute);
-  const mode = (information.mode & 0o7777).toString(8).padStart(4, '0');
-  if (information.isSymbolicLink()) {
-    const resolvedTarget = await realpath(absolute);
-    const targetRelative = path.relative(canonicalRoot, resolvedTarget);
-    if (targetRelative === '..' || targetRelative.startsWith(`..${path.sep}`) || path.isAbsolute(targetRelative)) {
-      throw new Error(`tooling closure symlink escapes its root: '${relative}'`);
+function boundedToolingLimits(overrides = {}) {
+  const limits = {};
+  for (const [name, maximum] of Object.entries(toolingTreeLimits)) {
+    const value = overrides[name] ?? maximum;
+    if (!Number.isSafeInteger(value) || value < 0) throw new Error(`tooling closure ${name} limit must be a nonnegative safe integer`);
+    limits[name] = Math.min(value, maximum);
+  }
+  return limits;
+}
+
+async function visitToolingDirectory(handle, configuredRoot, relative, depth, information, entries, state, options, limits) {
+  if (depth > limits.depth) throw new Error(`tooling closure exceeds ${limits.depth}-level depth limit`);
+  registerEntry(information, relative, state, limits);
+  const mode = fileMode(information);
+  entries.push({ path: relative, type: 'directory', mode });
+  const names = [];
+  const directory = await (options.openDirectoryStream ?? opendir)(`/proc/self/fd/${handle.fd}`);
+  try {
+    for await (const entry of directory) {
+      if (entries.length + names.length >= limits.entries) {
+        throw new Error(`tooling closure exceeds ${limits.entries}-entry limit`);
+      }
+      names.push(entry.name);
     }
-    entries.push({ path: relative, type: 'symlink', mode, targetBase64: Buffer.from(await readlink(absolute)).toString('base64') });
+  } finally {
+    await directory.close().catch(() => {});
+  }
+  names.sort();
+  for (const name of names) {
+    await visitToolingChild(handle, configuredRoot, relative === '.' ? name : `${relative}/${name}`, depth + 1, entries, state, options, limits);
+  }
+  const after = await handle.stat({ bigint: true });
+  if (!sameStat(information, after)) throw new Error(`tooling closure directory '${relative}' changed while it was being read`);
+}
+
+async function visitToolingChild(parentHandle, configuredRoot, relative, depth, entries, state, options, limits) {
+  if (depth > limits.depth) throw new Error(`tooling closure exceeds ${limits.depth}-level depth limit`);
+  const name = relative.slice(relative.lastIndexOf('/') + 1);
+  const anchoredPath = `/proc/self/fd/${parentHandle.fd}/${name}`;
+  const before = await lstat(anchoredPath, { bigint: true });
+  if (before.isSymbolicLink()) {
+    registerEntry(before, relative, state, limits);
+    if (before.size > BigInt(limits.symlinkBytes)) throw new Error(`tooling closure symlink '${relative}' exceeds ${limits.symlinkBytes}-byte limit`);
+    const target = await readlink(anchoredPath);
+    const targetBytes = Buffer.byteLength(target);
+    if (targetBytes > limits.symlinkBytes) throw new Error(`tooling closure symlink '${relative}' exceeds ${limits.symlinkBytes}-byte limit`);
+    state.bytes += targetBytes;
+    if (state.bytes > limits.totalBytes) throw new Error(`tooling closure exceeds ${limits.totalBytes}-byte limit`);
+    const resolved = await realpath(anchoredPath);
+    if (!isWithin(configuredRoot, resolved)) throw new Error(`tooling closure symlink '${relative}' escapes its root`);
+    const after = await lstat(anchoredPath, { bigint: true });
+    if (!sameStat(before, after)) throw new Error(`tooling closure symlink '${relative}' changed while it was being read`);
+    entries.push({ path: relative, type: 'symlink', mode: fileMode(before), targetBase64: Buffer.from(target).toString('base64') });
     return;
   }
-  if (information.isDirectory()) {
-    entries.push({ path: relative, type: 'directory', mode });
-    const names = await readdir(absolute);
-    names.sort();
-    for (const name of names) await visitToolingEntry(root, canonicalRoot, relative === '.' ? name : `${relative}/${name}`, entries);
+  if (before.isDirectory()) {
+    let child;
+    try {
+      child = await openAnchoredDirectory(anchoredPath, `tooling closure directory '${relative}'`, options.openDirectory);
+      const opened = await child.stat({ bigint: true });
+      if (!sameStat(before, opened)) throw new Error(`tooling closure directory '${relative}' changed while it was opened`);
+      await visitToolingDirectory(child, configuredRoot, relative, depth, opened, entries, state, options, limits);
+    } finally {
+      await child?.close();
+    }
+    await verifyAnchoredChild(anchoredPath, before, relative);
     return;
   }
-  if (!information.isFile()) throw new Error(`tooling closure contains unsupported entry '${relative}'`);
-  const bytes = await readFile(absolute);
-  entries.push({ path: relative, type: 'file', mode, bytes: bytes.length, digest: sha256(bytes) });
+  if (!before.isFile()) throw new Error(`tooling closure contains unsupported entry '${relative}'`);
+  registerEntry(before, relative, state, limits);
+  state.files += 1;
+  if (state.files > limits.files) throw new Error(`tooling closure exceeds ${limits.files}-file limit`);
+  let child;
+  try {
+    child = await (options.openFile ?? open)(anchoredPath, constants.O_RDONLY | constants.O_NOFOLLOW);
+    const opened = await child.stat({ bigint: true });
+    if (!opened.isFile() || !sameStat(before, opened)) throw new Error(`tooling closure file '${relative}' changed while it was opened`);
+    const bytes = await readDescriptorWithinLimit(child, opened, limits.fileBytes, `tooling closure file '${relative}'`);
+    const after = await child.stat({ bigint: true });
+    if (!sameStat(opened, after)) throw new Error(`tooling closure file '${relative}' changed while it was being read`);
+    state.bytes += bytes.length;
+    if (state.bytes > limits.totalBytes) throw new Error(`tooling closure exceeds ${limits.totalBytes}-byte limit`);
+    entries.push({ path: relative, type: 'file', mode: fileMode(opened), bytes: bytes.length, digest: sha256(bytes) });
+  } finally {
+    await child?.close();
+  }
+  await verifyAnchoredChild(anchoredPath, before, relative);
+}
+
+async function openAnchoredDirectory(directory, label, openDirectoryFunction = open) {
+  try {
+    return await openDirectoryFunction(directory, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
+  } catch (error) {
+    if (error.code === 'ELOOP') throw new Error(`${label} is not a real directory`);
+    throw error;
+  }
+}
+
+async function readDescriptorWithinLimit(handle, information, maximum, label) {
+  if (information.size > BigInt(maximum)) throw new Error(`${label} exceeds ${maximum}-byte limit`);
+  const bytes = Buffer.allocUnsafe(Math.min(maximum + 1, Number(information.size) + 1));
+  let offset = 0;
+  for (;;) {
+    const { bytesRead } = await handle.read(bytes, offset, bytes.length - offset, null);
+    offset += bytesRead;
+    if (offset > maximum) throw new Error(`${label} exceeds ${maximum}-byte limit`);
+    if (bytesRead === 0) return bytes.subarray(0, offset);
+  }
+}
+
+function registerEntry(information, relative, state, limits) {
+  if (state.aliases.size >= limits.entries) throw new Error(`tooling closure exceeds ${limits.entries}-entry limit`);
+  const identity = `${information.dev}:${information.ino}`;
+  if (state.aliases.has(identity)) throw new Error(`tooling closure entry '${relative}' aliases another entry`);
+  state.aliases.add(identity);
+}
+
+async function verifyConfiguredRoot(handle, configuredRoot, expected) {
+  const descriptor = await handle.stat({ bigint: true });
+  let current;
+  try {
+    current = await lstat(configuredRoot, { bigint: true });
+  } catch (error) {
+    if (error.code === 'ENOENT') throw new Error(`tooling closure root changed while it was being read: ${configuredRoot}`);
+    throw error;
+  }
+  if (!current.isDirectory() || current.isSymbolicLink() || !sameStat(expected, descriptor) || !sameStat(expected, current)) {
+    throw new Error(`tooling closure root changed while it was being read: ${configuredRoot}`);
+  }
+}
+
+async function verifyAnchoredChild(anchoredPath, expected, relative) {
+  let current;
+  try {
+    current = await lstat(anchoredPath, { bigint: true });
+  } catch (error) {
+    if (error.code === 'ENOENT') throw new Error(`tooling closure entry '${relative}' changed while it was being read`);
+    throw error;
+  }
+  if (!sameStat(expected, current)) throw new Error(`tooling closure entry '${relative}' changed while it was being read`);
+}
+
+function sameStat(left, right) {
+  return left.dev === right.dev && left.ino === right.ino && left.mode === right.mode && left.size === right.size &&
+    left.mtimeNs === right.mtimeNs && left.ctimeNs === right.ctimeNs;
+}
+
+function fileMode(information) {
+  return (Number(information.mode) & 0o7777).toString(8).padStart(4, '0');
+}
+
+function isWithin(root, candidate) {
+  const relative = path.relative(root, candidate);
+  return relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
 }
 
 export async function runProcess(program, args, options = {}) {
@@ -160,8 +335,8 @@ export async function runProcess(program, args, options = {}) {
       settled = true;
       clearTimeout(timer);
       resolve({
-        argv: [program, ...args],
-        cwd: options.cwd ?? process.cwd(),
+        argv: [options.recordedProgram ?? program, ...args],
+        cwd: options.recordedCwd ?? options.cwd ?? process.cwd(),
         startedAt,
         completedAt: new Date().toISOString(),
         timeoutMs,
@@ -183,7 +358,7 @@ export async function runProcess(program, args, options = {}) {
 
 function failedProcess(program, args, options, startedAt, timeoutMs, error) {
   return {
-    argv: [program, ...args], cwd: options.cwd ?? process.cwd(), startedAt,
+    argv: [options.recordedProgram ?? program, ...args], cwd: options.recordedCwd ?? options.cwd ?? process.cwd(), startedAt,
     completedAt: new Date().toISOString(), timeoutMs, timedOut: false,
     outputLimitExceeded: false, observedOutputBytes: 0, exitStatus: null, signal: null,
     spawnError: error instanceof Error ? error.message : String(error),

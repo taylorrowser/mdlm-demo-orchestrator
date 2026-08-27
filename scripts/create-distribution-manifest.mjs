@@ -19,8 +19,11 @@ const runtimeFiles = [
   'src/decision-catalog.mjs',
   'src/evidence.mjs',
   'src/orchestrator.mjs',
+  'src/preflight.mjs',
   'src/process-package.mjs',
+  'src/run-request.mjs',
   'src/shim-cli.mjs',
+  'src/strict-json.mjs',
   'src/util.mjs',
 ];
 const launchers = [
