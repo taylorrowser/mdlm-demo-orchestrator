@@ -4593,6 +4593,12 @@ async function authenticateOuterControllerEvidence(pins, targetBinding, recovery
 }
 
 async function authenticateOuterCommandRecord(record, recoveryShape, originalRequest, timeoutMs) {
+  const legacyRunnerIdentity = {
+    commit: 'ffd5e70c545449850900ec8ceaae68c18aaf17b0',
+    tree: '5d018ceadb2fafefcb464e1ceb5418f2d0d80c3e',
+    launcherDigest: 'sha256:f1eb8d6f296af4850fac82266a5740ff1a4b2fdd7198904d6bb2712125637820',
+    closureDigest: 'sha256:7b9cea3e0b15e21fc17cee64ef55ec53fc4c300719420017258182532ab2c7da',
+  };
   const runner = record?.runner;
   const runtime = record?.runtime;
   const launcherPath = runner && path.join(runner.repository, runner.launcher?.path ?? '');
@@ -4601,8 +4607,11 @@ async function authenticateOuterCommandRecord(record, recoveryShape, originalReq
       !sameJson(Object.keys(record).sort(), ['argv', 'contract', 'cwd', 'runner', 'runtime']) ||
       !sameJson(record.argv, expectedArgv) || record.cwd !== '/home/ubuntu/git/mdlm' ||
       runtime?.name !== 'node' || typeof runtime.version !== 'string' ||
-      !runner || runner.clean !== true || runner.porcelainSha256 !== sha256(Buffer.alloc(0)) ||
+      !runner || runner.commit !== legacyRunnerIdentity.commit || runner.tree !== legacyRunnerIdentity.tree ||
+      runner.clean !== true || runner.porcelainSha256 !== sha256(Buffer.alloc(0)) ||
       runner.launcher?.path !== 'bin/mdlm-demo-runner.mjs' ||
+      runner.launcher.digest !== legacyRunnerIdentity.launcherDigest ||
+      runner.dependencyClosure?.digest !== legacyRunnerIdentity.closureDigest ||
       originalRequest.repository !== '/home/ubuntu/git/mdlm-successor-demos/operations/json-max-depth-ops-002/repository') {
     throw new Error('outer command record does not bind the exact run-001 argv, cwd, runtime, and runner launcher');
   }
@@ -4630,48 +4639,28 @@ async function authenticateOuterCommandRecord(record, recoveryShape, originalReq
       status.stdout.length !== 0 || sha256(status.stdout) !== runner.porcelainSha256) {
     throw new Error('outer command runner Git commit, tree, or clean worktree differs');
   }
-  await authenticateRunnerSourceClosure(runner.repository, runner.launcher, runner.dependencyClosure);
+  await authenticateLegacyRunnerClosureRecord(runner.repository, runner.launcher, runner.dependencyClosure);
 }
 
-async function authenticateRunnerSourceClosure(repository, launcher, closure) {
+// Run 001 predates distribution@2; its exact clean Git identity is authoritative and this record is compatibility evidence.
+async function authenticateLegacyRunnerClosureRecord(repository, launcher, closure) {
   const entries = closure?.entries;
   if (closure?.contract !== 'mdlm-demo-runner-source-closure@1' || !Array.isArray(entries) || entries.length === 0 ||
       sha256(Buffer.from(JSON.stringify(entries))) !== closure.digest || !sameJson(entries[0], launcher)) {
-    throw new Error('outer command runner dependency closure record is malformed');
+    throw new Error('outer command legacy runner closure record is malformed');
   }
-  const files = new Map();
+  const paths = new Set();
   for (const entry of entries) {
     if (!entry || !sameJson(Object.keys(entry).sort(), ['bytes', 'digest', 'path']) ||
         typeof entry.path !== 'string' || path.posix.normalize(entry.path) !== entry.path || path.posix.isAbsolute(entry.path) ||
-        entry.path === '..' || entry.path.startsWith('../') || files.has(entry.path)) {
-      throw new Error('outer command runner dependency closure contains an invalid or duplicate path');
+        entry.path === '..' || entry.path.startsWith('../') || paths.has(entry.path)) {
+      throw new Error('outer command legacy runner closure contains an invalid or duplicate path');
     }
     const evidence = await readCanonicalEvidenceFile(path.join(repository, entry.path));
     if (evidence.bytes.length !== entry.bytes || sha256(evidence.bytes) !== entry.digest) {
-      throw new Error(`outer command runner dependency differs: ${entry.path}`);
+      throw new Error(`outer command legacy runner dependency differs: ${entry.path}`);
     }
-    files.set(entry.path, evidence.bytes.toString('utf8'));
-  }
-
-  const reached = new Set();
-  const pending = [launcher.path];
-  while (pending.length > 0) {
-    const relative = pending.pop();
-    if (reached.has(relative)) continue;
-    const source = files.get(relative);
-    if (source === undefined) throw new Error(`outer command runner dependency closure omits ${relative}`);
-    reached.add(relative);
-    const patterns = [/(?:\bfrom\s*|\bimport\s*)['"](\.[^'"]+)['"]/g, /\bimport\s*\(\s*['"](\.[^'"]+)['"]\s*\)/g];
-    for (const pattern of patterns) {
-      for (const match of source.matchAll(pattern)) {
-        const dependency = path.posix.normalize(path.posix.join(path.posix.dirname(relative), match[1]));
-        if (!files.has(dependency)) throw new Error(`outer command runner dependency closure omits ${dependency}`);
-        pending.push(dependency);
-      }
-    }
-  }
-  if (!sameJson([...reached].sort(), [...files.keys()].sort())) {
-    throw new Error('outer command runner dependency closure contains unreferenced or substituted files');
+    paths.add(entry.path);
   }
 }
 

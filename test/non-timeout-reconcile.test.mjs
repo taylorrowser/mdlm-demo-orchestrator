@@ -328,7 +328,7 @@ test('non-timeout recovery rejects repinned outer command and runner substitutio
     ['runner commit', record => { record.runner.commit = '1'.repeat(40); }],
     ['runner tree', record => { record.runner.tree = '2'.repeat(40); }],
     ['launcher digest', record => { record.runner.launcher.digest = `sha256:${'3'.repeat(64)}`; }],
-    ['dependency closure', record => {
+    ['legacy source closure compatibility record', record => {
       record.runner.dependencyClosure.entries.find(entry => entry.path === 'src/cli.mjs').digest = `sha256:${'4'.repeat(64)}`;
       record.runner.dependencyClosure.digest = digestBytes(Buffer.from(JSON.stringify(record.runner.dependencyClosure.entries)));
     }],
@@ -343,7 +343,7 @@ test('non-timeout recovery rejects repinned outer command and runner substitutio
       const execution = exec(process.execPath, [cli, 'reconcile'], root, JSON.stringify(value.request));
 
       assert.equal(execution.status, 1, `${name}: ${execution.stdout}\n${execution.stderr}`);
-      assert.match(execution.stderr, /outer command|runner|runtime|dependency closure/, name);
+      assert.match(execution.stderr, /outer command|runner|runtime|legacy runner closure/, name);
       assert.doesNotMatch(execution.stderr, /must contain exactly stdout, stderr, and exit/, name);
       assert.deepEqual(await readFile(identityPath), before, name);
       assert.equal(await stat(path.join(value.sourceDirectory, 'transaction.json')).then(() => true, () => false), false, name);
