@@ -4,7 +4,7 @@ import {
   buildDecisionCatalogRequest, decisionCatalogLimits, readFileWithinLimit, validateDecisionCatalogRequest,
 } from './decision-catalog.mjs';
 import { snapshot } from './evidence.mjs';
-import { run } from './orchestrator.mjs';
+import { reconcile, run } from './orchestrator.mjs';
 
 async function readRequest(args, maxBytes) {
   if (args.length === 0) {
@@ -35,7 +35,8 @@ async function main(args) {
   if (command === 'decision-catalog-validate') return validateDecisionCatalogRequest(request);
   if (command === 'snapshot') return snapshot(request);
   if (command === 'run' || command === 'resume') return run(request, command);
-  throw new Error('usage: mdlm-demo-runner snapshot|classify|decision-catalog-build|decision-catalog-validate|run|resume [--input file]');
+  if (command === 'reconcile') return reconcile(request);
+  throw new Error('usage: mdlm-demo-runner snapshot|classify|decision-catalog-build|decision-catalog-validate|run|resume|reconcile [--input file]');
 }
 
 try {

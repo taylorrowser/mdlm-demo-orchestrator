@@ -1,0 +1,21 @@
+{
+  "argv": [
+    "git",
+    "rev-parse",
+    "HEAD^{commit}"
+  ],
+  "cwd": "/home/ubuntu/git/mdlm-successor-demos/operations/iso-date-weekday-ops-001/repository",
+  "startedAt": "2026-08-27T12:04:14.411Z",
+  "completedAt": "2026-08-27T12:04:14.424Z",
+  "timeoutMs": 900000,
+  "timedOut": false,
+  "outputLimitExceeded": false,
+  "observedOutputBytes": 41,
+  "exitStatus": 0,
+  "signal": null,
+  "spawnError": null,
+  "stdoutBase64": "YWQ1ZGI0MTM3ODQ3MzgyMmQzM2Q5ODRlOTBkYTNlMTY1OGJkYjEyYgo=",
+  "stderrBase64": "",
+  "stdoutSha256": "sha256:984d0e1f6f93692fd07ad03ffa251950324918eaeb17ba95e144389d454cfd3c",
+  "stderrSha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

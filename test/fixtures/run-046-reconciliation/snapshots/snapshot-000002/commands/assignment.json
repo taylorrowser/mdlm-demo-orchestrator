@@ -1,0 +1,23 @@
+{
+  "argv": [
+    "/home/ubuntu/git/mdlm-successor-demos/.tooling-edf5ed73d38d032e93c38f0d2d568c5be43e305c-c0977b67f91fdc8bdee8f202066f8c971d436bce/node_modules/.bin/mdlm",
+    "assignment",
+    "show",
+    "95d3eb26-17c5-4e03-b1f5-fc07bd0cafc3",
+    "--json"
+  ],
+  "cwd": "/home/ubuntu/git/mdlm-successor-demos/operations/iso-date-weekday-ops-001/repository",
+  "startedAt": "2026-08-27T12:04:19.139Z",
+  "completedAt": "2026-08-27T12:04:19.313Z",
+  "timeoutMs": 900000,
+  "timedOut": false,
+  "outputLimitExceeded": false,
+  "observedOutputBytes": 204,
+  "exitStatus": 0,
+  "signal": null,
+  "spawnError": null,
+  "stdoutBase64": "ewogICJvayI6IHRydWUsCiAgImNvbW1hbmQiOiAiYXNzaWdubWVudC5zaG93IiwKICAiY29udHJhY3QiOiAibWRsbS1hc3NpZ25tZW50LXN0YXRlQDEiLAogICJhc3NpZ25tZW50IjogewogICAgImlkIjogIjk1ZDNlYjI2LTE3YzUtNGUwMy1iMWY1LWZjMDdiZDBjYWZjMyIKICB9LAogICJzZWxlY3RlZCI6IGZhbHNlLAogICJkaWFnbm9zdGljcyI6IFtdCn0K",
+  "stderrBase64": "",
+  "stdoutSha256": "sha256:476ad368fc36b0e5673908208998ad304793bdf2bf4507871081bc33fd4b0296",
+  "stderrSha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

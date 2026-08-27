@@ -2,7 +2,7 @@
 
 This public repository contains the issue #213 recovery runner. It does not yet contain a successful public demonstration and has not run a real lifecycle repository.
 
-The runner uses six JSON commands:
+The runner uses seven JSON commands:
 
 ```text
 mdlm-demo-runner snapshot [--input FILE]
@@ -11,6 +11,7 @@ mdlm-demo-runner decision-catalog-build [--input FILE]
 mdlm-demo-runner decision-catalog-validate [--input FILE]
 mdlm-demo-runner run [--input FILE]
 mdlm-demo-runner resume [--input FILE]
+mdlm-demo-runner reconcile [--input FILE]
 ```
 
 Without `--input`, each command reads one JSON value from standard input. It writes one JSON result to standard output. Errors go to standard error and return exit status 1.
@@ -19,7 +20,7 @@ Without `--input`, each command reads one JSON value from standard input. It wri
 
 Tests use the approved public seams.
 
-1. The JSON CLI is the operator boundary. Its six commands do not require imports from MDLM.
+1. The JSON CLI is the operator boundary. Its seven commands do not require imports from MDLM.
 2. `src/adapter.mjs` consumes exact `mdlm-assignment-packet@2` bytes. It returns exact `mdlm-assignment-response@1` bytes or `mdlm-demo-reserved-stop@1` before submission.
 3. Process tests run fake `mdlm` and `mdlm-pi` executables in scratch Git repositories. They check raw process evidence, transaction counts, and Git commit counts.
 4. Deterministic integrations import the installed `mdlm-pi` controller and Assignment runner. They prove attended Review-correction wording reaches proposal authority context, accepted Scenarios are not replayed, and publication A is committed before external Assignment B reaches the worker boundary.
@@ -46,6 +47,7 @@ Every `run` and `resume` first resolves the lifecycle repository and worktree-pr
 | External adapter stop before submission | Re-run the adapter against the same packet bytes |
 | Authenticated A-to-B checkpoint with active B at the exact clean packet boundary | Complete A, advance repository identity once, and return B pre-submission |
 | Later B run with an old-runner A-to-B checkpoint still retained under A's private state | Require the operator-pinned post-run snapshot, reconcile the checkpoint once, complete A, then continue B without invoking A |
+| Timed-out old-runner A command durably recorded an exact A-to-B checkpoint but its ordinary retry is unsafe | Use the standalone `reconcile` command to authenticate and consume A without lifecycle work; run B separately through `run` afterward |
 | Parent killed after an orphaned child completed A and checkpointed B, but before the parent wrote child command evidence or a post-run result | Require `orphanedCheckpointRecovery` with every external trust pin, authenticate the complete old and new boundaries, complete A once, then run B without invoking A |
 | Accepted external publication followed by package-authored materializations | Record one create-once `mdlm next`, publish each exact completed transaction in output order, retire its exact pre-publication lease, then record one final `next` and checkpoint the Assignment at the clean final commit |
 | Accepted external publication followed by preserved `mdlm next` materializations that were committed outside the runner | Require `materializedNextRecovery`, authenticate the accepted old boundary, exact `mdlm-next@1` bytes, ordered transaction commits, and final active Assignment, then advance repository identity once without replaying `next` or its executions |
@@ -96,6 +98,10 @@ After a new external publication, the runner records `mdlm next --json` under cr
 The first `next` lease must match its reported Assignment, Process Package, and the accepted external publication boundary. After all listed transactions are committed, the runner removes only those exact lease bytes. It then records one final `next`, requires no further materializations, and uses the post-run snapshot to authenticate the final active Assignment at the clean final commit before advancing repository identity. A zero-length materialization list leaves the accepted-publication result unchanged. Operator-pinned `materializedNextRecovery` remains available for runs created by older runner versions.
 
 A clean unrelated lifecycle-repository commit is drift, not recovery. Expected values supplied by a later request cannot bless changes to source, harness, artifact, executable target, installed Process Package, or an existing Assignment boundary. Successive ordinary Assignments get separate immutable directories beneath `stateDirectory/assignments`; repository identity and locking remain repository-wide.
+
+The standalone `reconcile` command accepts only `mdlm-demo-reconcile-request@1`. Its caller pins the complete original run request, both complete snapshots, durable authorization and result, both command triplets, Assignment identity, shim configuration, processed and checkpoint markers, and the sole B packet by absolute path and SHA-256 digest. The runner verifies the exact timed-out command, null exit, `SIGKILL`, stream bytes, typed checkpoint stderr, clean A and B boundaries, retained run identity, current B state, and the strict four-commit transaction ancestry. Missing, extra, changed, unrelated, previously consumed, B-attempt, or symlinked evidence fails before any durable change.
+
+`reconcile` runs only repository and evidence authentication. It does not execute snapshot commands, `scenario prepare`, `next`, publication, MDLM, or MDLM-Pi. It writes the same atomic `mdlm-demo-checkpoint-reconciliation@1` phases and A transaction used by checkpoint recovery, returns `mdlm-demo-reconcile-result@1`, and is idempotent after every durable boundary. A later ordinary B `run` revalidates the completed journal and its retained manifests before it can prepare or invoke B.
 
 A later B `run` or `resume` may repair the old-runner case where A reached a clean B boundary but the repository-wide identity still names A. Recovery runs before the generic repository-drift check. It requires A's assignment identity, both command-evidence triplets, shim configuration, the sole retained B packet, and `checkpointRecovery` in the request. The operator must copy the post-run snapshot path and digest from the preserved A run result before upgrading the runner. A digest read or recalculated from the mutable checkpoint state is not an external pin.
 
