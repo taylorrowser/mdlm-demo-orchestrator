@@ -183,7 +183,9 @@ Attended runs use a decision catalog. Build one from wording source files with `
 }
 ```
 
-The command writes the canonical `mdlm-demo-decision-catalog@1` JSON to standard output. For each source file, it converts every CRLF pair to LF and removes exactly one terminal LF. It preserves lone CR code points, additional terminal line breaks, and every other code point. It does not apply NFC, NFD, or any other Unicode normalization. The digest covers the exact UTF-8 bytes of the normalized `wording` string stored in the catalog, not the pre-normalization source bytes or the surrounding JSON token.
+The command writes the canonical `mdlm-demo-decision-catalog@1` JSON to standard output. For each source file, it converts every CRLF pair to LF and removes exactly one terminal LF. It preserves lone CR code points, additional terminal line breaks, and every other code point. It does not apply NFC, NFD, or any other Unicode normalization. Valid astral pairs and U+FFFD remain distinct exact text. The builder and validator reject unpaired UTF-16 surrogates because UTF-8 encoding would otherwise replace them with U+FFFD before hashing. The digest covers the exact UTF-8 bytes of the normalized `wording` string stored in the catalog, not the pre-normalization source bytes or the surrounding JSON token.
+
+Decision-catalog requests and catalog files may contain at most 1,048,576 bytes. A catalog may contain at most 64 decisions, and each wording source may contain at most 65,536 bytes. The builder reads wording files one at a time, so one request holds at most one source descriptor open. It rejects a canonical catalog that would exceed the catalog-file limit after the CLI adds its final LF. Limit failures use the normal structured error on standard error and exit status 1.
 
 Independently check a canonical or manually assembled catalog with `decision-catalog-validate`:
 
@@ -194,7 +196,7 @@ Independently check a canonical or manually assembled catalog with `decision-cat
 }
 ```
 
-The validator reads the catalog without creating state or evidence. It checks every decision's exact UTF-8 wording bytes against its declared digest. `run` and `resume` perform the same side-effect-free preflight before repository resolution, locking, snapshots, transaction state, or worker invocation. The execution seam later reads the catalog again and retains its authoritative fail-closed selected-decision digest check.
+The validator reads the catalog without creating state or evidence. It checks every decision's exact UTF-8 wording bytes against its declared digest. `run` and `resume` perform the same side-effect-free preflight before repository resolution, locking, snapshots, transaction state, or worker invocation. That preflight binds the exact catalog bytes, byte count, and SHA-256 digest in memory. The authoritative execution seam reparses and validates those bound bytes instead of reopening the caller's path. Replacing or editing the path after preflight cannot substitute another decision.
 
 A catalog has this shape:
 

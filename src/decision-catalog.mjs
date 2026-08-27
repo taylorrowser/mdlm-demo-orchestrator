@@ -1,8 +1,15 @@
-import { readFile } from 'node:fs/promises';
+import { open } from 'node:fs/promises';
 import { sha256 } from './util.mjs';
 
 const catalogContract = 'mdlm-demo-decision-catalog@1';
 const utf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
+
+export const decisionCatalogLimits = Object.freeze({
+  buildRequestBytes: 1_048_576,
+  catalogBytes: 1_048_576,
+  decisions: 64,
+  wordingSourceBytes: 65_536,
+});
 
 /**
  * Canonical source-file normalization converts every CRLF pair to LF, then
@@ -11,12 +18,13 @@ const utf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
  */
 export function normalizeDecisionWording(source) {
   if (typeof source !== 'string') throw new Error('decision wording source must be a string');
+  requireWellFormed(source, 'decision wording source');
   const lineNormalized = source.replaceAll('\r\n', '\n');
   return lineNormalized.endsWith('\n') ? lineNormalized.slice(0, -1) : lineNormalized;
 }
 
 export function buildDecisionCatalog(decisions) {
-  if (!Array.isArray(decisions) || decisions.length === 0) throw new Error('decisions must be a nonempty array');
+  requireDecisionCount(decisions);
   const catalog = {
     contract: catalogContract,
     decisions: decisions.map((decision, index) => {
@@ -32,6 +40,10 @@ export function buildDecisionCatalog(decisions) {
     }),
   };
   validateDecisionCatalog(catalog);
+  const serializedBytes = Buffer.byteLength(JSON.stringify(catalog), 'utf8') + 1;
+  if (serializedBytes > decisionCatalogLimits.catalogBytes) {
+    throw new Error(`decision catalog exceeds ${decisionCatalogLimits.catalogBytes}-byte limit`);
+  }
   return catalog;
 }
 
@@ -40,6 +52,9 @@ export function validateDecisionCatalog(catalog) {
     throw new Error('invalid decision catalog contract');
   }
   if (!Array.isArray(catalog.decisions)) throw new Error('decision catalog decisions must be an array');
+  if (catalog.decisions.length > decisionCatalogLimits.decisions) {
+    throw new Error(`decisions must not contain more than ${decisionCatalogLimits.decisions} entries`);
+  }
   const assignments = new Set();
   const decisions = catalog.decisions.map((decision, index) => {
     if (!decision || typeof decision !== 'object' || Array.isArray(decision)) throw new Error(`decision ${index} must be an object`);
@@ -49,50 +64,87 @@ export function validateDecisionCatalog(catalog) {
     if (decision.origin !== 'operator-selected' || typeof decision.authorityBasis !== 'string' || decision.authorityBasis.length === 0 || typeof decision.wording !== 'string') {
       throw new Error('decision must record operator-selected origin, authority basis, and wording');
     }
+    requireWellFormed(decision.wording, `decision ${index} wording`);
+    const wordingBytes = Buffer.byteLength(decision.wording, 'utf8');
+    if (wordingBytes > decisionCatalogLimits.wordingSourceBytes) {
+      throw new Error(`decision ${index} wording exceeds ${decisionCatalogLimits.wordingSourceBytes}-byte limit`);
+    }
     const digest = sha256(Buffer.from(decision.wording, 'utf8'));
     if (decision.digest !== digest) throw new Error('operator decision wording digest differs');
-    return { assignment: decision.assignment, digest, wordingBytes: Buffer.byteLength(decision.wording, 'utf8') };
+    return { assignment: decision.assignment, digest, wordingBytes };
   });
   return { contract: 'mdlm-demo-decision-catalog-validation@1', valid: true, decisions };
 }
 
 export async function buildDecisionCatalogRequest(request) {
   exactRequest(request, 'mdlm-demo-decision-catalog-build-request@1', ['contract', 'decisions']);
-  if (!Array.isArray(request.decisions) || request.decisions.length === 0) throw new Error('decisions must be a nonempty array');
-  const decisions = await Promise.all(request.decisions.map(async (decision, index) => {
+  requireDecisionCount(request.decisions);
+  const decisions = [];
+  for (const [index, decision] of request.decisions.entries()) {
     exactRequest(decision, undefined, ['assignment', 'authorityBasis', 'wordingPath'], `decision ${index}`);
     requireNonempty(decision.assignment, `decision ${index} assignment`);
     requireNonempty(decision.authorityBasis, `decision ${index} authorityBasis`);
     requireNonempty(decision.wordingPath, `decision ${index} wordingPath`);
-    let wordingSource;
-    try {
-      wordingSource = utf8.decode(await readFile(decision.wordingPath));
-    } catch (error) {
-      if (error instanceof TypeError) throw new Error(`decision ${index} wordingPath is not valid UTF-8`);
-      throw error;
-    }
-    return { assignment: decision.assignment, authorityBasis: decision.authorityBasis, wordingSource };
-  }));
+    const sourceBytes = await readFileWithinLimit(
+      decision.wordingPath,
+      decisionCatalogLimits.wordingSourceBytes,
+      `decision ${index} wording source`,
+    );
+    decisions.push({
+      assignment: decision.assignment,
+      authorityBasis: decision.authorityBasis,
+      wordingSource: decodeUtf8(sourceBytes, `decision ${index} wording source`),
+    });
+  }
   return buildDecisionCatalog(decisions);
 }
 
 export async function validateDecisionCatalogRequest(request) {
   exactRequest(request, 'mdlm-demo-decision-catalog-validate-request@1', ['catalogPath', 'contract']);
   requireNonempty(request.catalogPath, 'catalogPath');
-  return validateDecisionCatalog(await readCatalog(request.catalogPath));
+  const { catalog } = await readCatalog(request.catalogPath);
+  return validateDecisionCatalog(catalog);
 }
 
-export async function validateDecisionCatalogFile(file) {
+export async function bindDecisionCatalogFile(file) {
   if (file === undefined) return null;
   requireNonempty(file, 'decisionCatalogPath');
-  return validateDecisionCatalog(await readCatalog(file));
+  const { bytes, catalog } = await readCatalog(file);
+  validateDecisionCatalog(catalog);
+  return Object.freeze({
+    contract: 'mdlm-demo-bound-decision-catalog@1',
+    bytes: bytes.length,
+    bytesBase64: bytes.toString('base64'),
+    digest: sha256(bytes),
+  });
+}
+
+export async function readFileWithinLimit(file, maxBytes, label) {
+  const handle = await open(file, 'r');
+  try {
+    const bytes = Buffer.allocUnsafe(maxBytes + 1);
+    let offset = 0;
+    for (;;) {
+      const result = await handle.read(bytes, offset, bytes.length - offset, null);
+      offset += result.bytesRead;
+      if (offset > maxBytes) throw new Error(`${label} exceeds ${maxBytes}-byte limit`);
+      if (result.bytesRead === 0) return bytes.subarray(0, offset);
+    }
+  } finally {
+    await handle.close();
+  }
 }
 
 async function readCatalog(file) {
+  const bytes = await readFileWithinLimit(file, decisionCatalogLimits.catalogBytes, 'decision catalog');
+  return { bytes, catalog: JSON.parse(decodeUtf8(bytes, 'decision catalog')) };
+}
+
+function decodeUtf8(bytes, label) {
   try {
-    return JSON.parse(utf8.decode(await readFile(file)));
+    return utf8.decode(bytes);
   } catch (error) {
-    if (error instanceof TypeError) throw new Error('decision catalog is not valid UTF-8');
+    if (error instanceof TypeError) throw new Error(`${label} is not valid UTF-8`);
     throw error;
   }
 }
@@ -102,6 +154,21 @@ function validateBuilderDecision(decision, index) {
   requireNonempty(decision.assignment, `decision ${index} assignment`);
   requireNonempty(decision.authorityBasis, `decision ${index} authorityBasis`);
   if (typeof decision.wordingSource !== 'string') throw new Error(`decision ${index} wordingSource must be a string`);
+  requireWellFormed(decision.wordingSource, `decision ${index} wording source`);
+  if (Buffer.byteLength(decision.wordingSource, 'utf8') > decisionCatalogLimits.wordingSourceBytes) {
+    throw new Error(`decision ${index} wording source exceeds ${decisionCatalogLimits.wordingSourceBytes}-byte limit`);
+  }
+}
+
+function requireDecisionCount(decisions) {
+  if (!Array.isArray(decisions) || decisions.length === 0) throw new Error('decisions must be a nonempty array');
+  if (decisions.length > decisionCatalogLimits.decisions) {
+    throw new Error(`decisions must not contain more than ${decisionCatalogLimits.decisions} entries`);
+  }
+}
+
+function requireWellFormed(value, label) {
+  if (!value.isWellFormed()) throw new Error(`${label} contains an unpaired UTF-16 surrogate`);
 }
 
 function exactRequest(value, contract, keys, label = 'request') {

@@ -8,6 +8,7 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import {
   buildDecisionCatalog,
+  decisionCatalogLimits,
   normalizeDecisionWording,
   validateDecisionCatalog,
 } from '../src/decision-catalog.mjs';
@@ -61,6 +62,81 @@ test('canonical builder preserves non-ASCII Unicode and does not normalize NFC o
   assert.equal(catalog.decisions[1].digest, sha256(Buffer.from(nfd, 'utf8')));
   assert.notEqual(catalog.decisions[0].digest, catalog.decisions[1].digest);
   assert.equal(validateDecisionCatalog(catalog).decisions.length, 2);
+});
+
+test('decision wording rejects unpaired surrogates without conflating them with U+FFFD', () => {
+  const unpaired = ['\uD800', '\uDC00', 'nested \uD800 wording'];
+  for (const wordingSource of unpaired) {
+    assert.throws(
+      () => buildDecisionCatalog([{ assignment: 'assignment-invalid', authorityBasis, wordingSource }]),
+      /unpaired UTF-16 surrogate/,
+    );
+    const replacementDigest = sha256(Buffer.from(wordingSource, 'utf8'));
+    assert.equal(replacementDigest, sha256(Buffer.from(wordingSource.replace(/[\uD800-\uDFFF]/gu, '\uFFFD'), 'utf8')));
+    assert.throws(() => validateDecisionCatalog({
+      contract: 'mdlm-demo-decision-catalog@1',
+      decisions: [{
+        assignment: 'assignment-invalid', wording: wordingSource, origin: 'operator-selected', authorityBasis, digest: replacementDigest,
+      }],
+    }), /unpaired UTF-16 surrogate/);
+  }
+
+  const validWording = 'Replacement \uFFFD and astral \u{1F680}';
+  const catalog = buildDecisionCatalog([{ assignment: 'assignment-valid', authorityBasis, wordingSource: validWording }]);
+  assert.equal(catalog.decisions[0].wording, validWording);
+  assert.equal(catalog.decisions[0].digest, sha256(Buffer.from(validWording, 'utf8')));
+  assert.equal(validateDecisionCatalog(catalog).valid, true);
+});
+
+test('decision catalog tooling enforces bounded requests, catalogs, wording, and decision counts', async () => {
+  const scratch = await mkdtemp(path.join(os.tmpdir(), 'issue-17-decision-limits-'));
+  const wordingPath = path.join(scratch, 'wording.txt');
+  await writeFile(wordingPath, Buffer.alloc(decisionCatalogLimits.wordingSourceBytes + 1, 0x61));
+
+  const oversizedWording = execute('decision-catalog-build', {
+    contract: 'mdlm-demo-decision-catalog-build-request@1',
+    decisions: [{ assignment: 'assignment-1', authorityBasis, wordingPath }],
+  });
+  assert.equal(oversizedWording.status, 1);
+  assert.match(JSON.parse(oversizedWording.stderr).error, /wording source exceeds 65536-byte limit/);
+
+  const tooMany = Array.from({ length: decisionCatalogLimits.decisions + 1 }, (_, index) => ({
+    assignment: `assignment-${index}`, authorityBasis, wordingPath,
+  }));
+  const tooManyDecisions = execute('decision-catalog-build', {
+    contract: 'mdlm-demo-decision-catalog-build-request@1', decisions: tooMany,
+  });
+  assert.equal(tooManyDecisions.status, 1);
+  assert.match(JSON.parse(tooManyDecisions.stderr).error, /decisions must not contain more than 64 entries/);
+  assert.throws(() => validateDecisionCatalog({
+    contract: 'mdlm-demo-decision-catalog@1',
+    decisions: tooMany.map(({ assignment }) => ({
+      assignment, wording: 'valid', origin: 'operator-selected', authorityBasis, digest: sha256(Buffer.from('valid')),
+    })),
+  }), /decisions must not contain more than 64 entries/);
+
+  await writeFile(wordingPath, Buffer.alloc(decisionCatalogLimits.wordingSourceBytes, 0x61));
+  const oversizedBuiltCatalog = execute('decision-catalog-build', {
+    contract: 'mdlm-demo-decision-catalog-build-request@1',
+    decisions: Array.from({ length: 17 }, (_, index) => ({ assignment: `large-${index}`, authorityBasis, wordingPath })),
+  });
+  assert.equal(oversizedBuiltCatalog.status, 1);
+  assert.match(JSON.parse(oversizedBuiltCatalog.stderr).error, /decision catalog exceeds 1048576-byte limit/);
+
+  const oversizedRequest = spawnSync(process.execPath, [cli, 'decision-catalog-build'], {
+    cwd: root,
+    input: Buffer.alloc(decisionCatalogLimits.buildRequestBytes + 1, 0x20),
+  });
+  assert.equal(oversizedRequest.status, 1);
+  assert.match(JSON.parse(oversizedRequest.stderr.toString('utf8')).error, /decision catalog request exceeds 1048576-byte limit/);
+
+  const catalogPath = path.join(scratch, 'oversized-catalog.json');
+  await writeFile(catalogPath, Buffer.alloc(decisionCatalogLimits.catalogBytes + 1, 0x20));
+  const oversizedCatalog = execute('decision-catalog-validate', {
+    contract: 'mdlm-demo-decision-catalog-validate-request@1', catalogPath,
+  });
+  assert.equal(oversizedCatalog.status, 1);
+  assert.match(JSON.parse(oversizedCatalog.stderr).error, /decision catalog exceeds 1048576-byte limit/);
 });
 
 test('decision catalog CLI builds from source bytes and validates without writing state', async () => {
