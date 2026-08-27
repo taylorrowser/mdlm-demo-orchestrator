@@ -69,6 +69,7 @@ async function fixture({
   const assignment = '44444444-4444-4444-8444-444444444444';
   const assignmentStatePath = path.join(scratch, 'assignment-id');
   const scenarioStatePath = path.join(scratch, 'scenario-reference');
+  const lifecycleCompletePath = path.join(scratch, 'lifecycle-complete');
   const malformedDigestPath = path.join(scratch, 'malformed-digest');
   const exhaustedDigestPath = path.join(scratch, 'exhausted-digest');
   const exhaustedStatePath = path.join(scratch, 'exhausted-state');
@@ -109,7 +110,7 @@ function repository(){const head=execFileSync('git',['rev-parse','HEAD^{commit}'
 const repo=repository();
 function out(x){process.stdout.write(JSON.stringify(x)+'\\n')}
 if(a[0]==='doctor') { if(exhausted&&exhaustedState==='snapshot-incomplete') process.stdout.write('{'); else out({ok:true,command:'doctor',package:doctorPackage,baselineRepositoryVerification:{verifiedBaselines:0,processDrift:0},index:{rebuilt:false,data:0,path:'.lifecycle/generated/indexes/data.json'},report:{rebuilt:false,data:0,path:'.lifecycle/generated/reports/lifecycle.json'},diagnostics:[]}); }
-else if(a[0]==='status') out({contract:'mdlm-status@1',ok:true,command:'status',package:statusPackage,currentOutcome:exhausted&&exhaustedState!=='status-active'?{outcome:'assignment',assignment:{allocation:'not-allocated'}}:${assignmentSelected ? (attentionRequired ? `{outcome:'attention-required',assignment:{allocation:'active',id:assignment},authorityRequirement:{mode:'attended',authority:'stakeholder',delegationAllowed:false},...${JSON.stringify(attentionDetails)}}` : "{outcome:'assignment',assignment:{allocation:'active',id:assignment}}") : "{outcome:'assignment',assignment:{allocation:'not-allocated'}}"},recentTransaction:${assignmentSelected ? "{available:false}" : "{available:true,id:'99999999-9999-4999-8999-999999999999',status:'completed',scenario:'ordinary@1'}"}});
+else if(a[0]==='status') out({contract:'mdlm-status@1',ok:true,command:'status',package:statusPackage,currentOutcome:fs.existsSync(${JSON.stringify(lifecycleCompletePath)})?{outcome:'lifecycle-complete'}:exhausted&&exhaustedState!=='status-active'?{outcome:'assignment',assignment:{allocation:'not-allocated'}}:${assignmentSelected ? (attentionRequired ? `{outcome:'attention-required',assignment:{allocation:'active',id:assignment},authorityRequirement:{mode:'attended',authority:'stakeholder',delegationAllowed:false},...${JSON.stringify(attentionDetails)}}` : "{outcome:'assignment',assignment:{allocation:'active',id:assignment}}") : "{outcome:'assignment',assignment:{allocation:'not-allocated'}}"},recentTransaction:${assignmentSelected ? "{available:false}" : "{available:true,id:'99999999-9999-4999-8999-999999999999',status:'completed',scenario:'ordinary@1'}"}});
 else if(a[0]==='assignment') { const requested=a[2]; if(requested!==assignment||!${assignmentSelected}) out({contract:'mdlm-assignment-state@1',ok:true,command:'assignment.show',assignment:{id:requested},selected:false,diagnostics:[]}); else out({contract:'mdlm-assignment-state@1',ok:true,command:'assignment.show',assignment:{id:assignment},selected:true,package:assignmentPackage,repository:repo,scenarioReference:scenario,disposition:exhausted&&exhaustedState!=='assignment-active'?'exhausted':'active',retryAvailability:exhausted?{malformedResponseCorrection:exhaustedState==='retry-one'?1:0}:{},malformedResponses,...(exhausted?{terminalDiagnostics:exhaustedState==='terminal-diagnostics-mismatch'?correctionDiagnostics:exhaustedDiagnostics}:{}),diagnostics:[]}); }
 else if(a[0]==='scenario'&&a[1]==='prepare') out({contract:'mdlm-assignment-packet@2',ok:true,command:'scenario.prepare',assignment:{id:assignment},package:packetPackage,repository:repo,scenario:{reference:scenario},responseSchema:{},exactInputs:[]});
 else if(a[0]==='scenario'&&a[1]==='submit') { let chunks=[]; process.stdin.on('data',x=>chunks.push(x)); process.stdin.on('end',()=>{const bytes=Buffer.concat(chunks); fs.appendFileSync(${JSON.stringify(path.join(scratch, 'submit-count'))},'1\\n'); const digest='sha256:'+crypto.createHash('sha256').update(bytes).digest('hex'); if(exhaustedSubmitMode!==null) { fs.writeFileSync(exhaustedPath,digest); if(${exhaustedRepositoryMutation}) fs.writeFileSync(path.join(root,'unexpected.txt'),'drift\\n'); const disposition={ok:false,command:'scenario.submit',contract:'mdlm-assignment-disposition@1',assignment:{id:assignment},disposition:'exhausted',orchestration:{action:'stop',automaticReplacement:false},malformedResponse:{attempt:exhaustedSubmitMode==='inconsistent'?1:2,correctionsRemaining:0,diagnostics:exhaustedDiagnostics},diagnostics:exhaustedDiagnostics}; if(exhaustedSubmitMode==='truncated') process.stdout.write(JSON.stringify(disposition).slice(0,-2)); else out(disposition); process.exitCode=exhaustedSubmitMode==='failed'?9:1; } else if(${correctionRequiredSubmit}&&!fs.existsSync(malformedPath)) { fs.writeFileSync(malformedPath,digest); out({ok:false,command:'scenario.submit',contract:'mdlm-assignment-disposition@1',assignment:{id:assignment},disposition:'correction-required',orchestration:{action:'correct-response',automaticReplacement:false},malformedResponse:{attempt:1,correctionsRemaining:${correctionsRemaining},diagnostics:correctionDiagnostics},diagnostics:correctionDiagnostics}); process.exitCode=1; } else { const id=${JSON.stringify(executionId)}; const dir=path.join(root,'.lifecycle/data/.transactions',id); fs.mkdirSync(dir,{recursive:true}); fs.writeFileSync(path.join(dir,'execution.json'),'execution\\n'); fs.writeFileSync(path.join(dir,'target.json'),'target\\n'); if(${uncertainSubmit}) process.exit(9); else out({contract:'mdlm-scenario-execution@4',ok:true,command:'scenario.submit',execution:{contract:'mdlm-scenario-execution@4',id,status:'completed',response:{assignment,digest},definition:{scenario},outputs:[{lifecycleDatum:{path:${publicationPath ? JSON.stringify(publicationPath) : "'.lifecycle/data/.transactions/'+id+'/target.json'"}}}]}}); } }); }
@@ -236,7 +237,7 @@ async function readAnchoredRun008Fixture() {
   return { resultBytes, run008: JSON.parse(resultBytes), initialManifestBytes, postManifestBytes };
 }
 
-async function operationalFailureFixture({ settledWithoutCompletion = false, mutateScenarioOnFailure = false } = {}) {
+async function operationalFailureFixture({ settledWithoutCompletion = false, mutateScenarioOnFailure = false, completeLifecycleOnSuccess = false } = {}) {
   const attemptsPath = path.join(os.tmpdir(), `mdlm-demo-operational-attempts-${process.pid}-${Date.now()}-${Math.random()}`);
   const failure = settledWithoutCompletion
     ? canonicalPiOperationalFailure()
@@ -244,7 +245,7 @@ async function operationalFailureFixture({ settledWithoutCompletion = false, mut
         error: { code: 'MDLM_COMMAND_FAILURE', message: 'MDLM command failed before response capture' },
       });
   const piScript = `#!/usr/bin/env node
-const fs=require('node:fs'),path=require('node:path'); const attempts=fs.existsSync(${JSON.stringify(attemptsPath)})?Number(fs.readFileSync(${JSON.stringify(attemptsPath)},'utf8')):0; fs.writeFileSync(${JSON.stringify(attemptsPath)},String(attempts+1)); if(attempts===0){if(${mutateScenarioOnFailure})fs.writeFileSync(path.join(path.dirname(path.dirname(process.argv[1])),'scenario-reference'),'changed-scenario@1'); process.stdout.write('Assignment 44444444-4444-4444-8444-444444444444: ordinary@1\\n'); process.stderr.write(${JSON.stringify(`${JSON.stringify(failure, null, 2)}\n`)}); process.exit(1);} console.log('{"status":"lifecycle-complete"}');
+const fs=require('node:fs'),path=require('node:path'); const attempts=fs.existsSync(${JSON.stringify(attemptsPath)})?Number(fs.readFileSync(${JSON.stringify(attemptsPath)},'utf8')):0; fs.writeFileSync(${JSON.stringify(attemptsPath)},String(attempts+1)); if(attempts===0){if(${mutateScenarioOnFailure})fs.writeFileSync(path.join(path.dirname(path.dirname(process.argv[1])),'scenario-reference'),'changed-scenario@1'); process.stdout.write('Assignment 44444444-4444-4444-8444-444444444444: ordinary@1\\n'); process.stderr.write(${JSON.stringify(`${JSON.stringify(failure, null, 2)}\n`)}); process.exit(1);} if(${completeLifecycleOnSuccess})fs.writeFileSync(path.join(path.dirname(path.dirname(process.argv[1])),'lifecycle-complete'),'complete\\n'); console.log('{"status":"lifecycle-complete"}');
 `;
   const value = await fixture({ scenarioReference: 'ordinary@1', piScript });
   value.request.signal = 'clean-interrupted-command';
@@ -2369,6 +2370,43 @@ test('a synced resume transition launches a new worker after a no-completion cra
   });
 });
 
+test('a completed authorized retry reconciles after lifecycle completion while tampered recovery history fails closed', async () => {
+  const value = await operationalFailureFixture({ settledWithoutCompletion: true, completeLifecycleOnSuccess: true });
+  const first = exec(process.execPath, [cli, 'run'], root, JSON.stringify(value.request));
+  assert.equal(first.status, 0, first.stderr);
+  assert.equal(JSON.parse(first.stdout).reason, 'pre-submission-operational-failure');
+
+  const resumeRequest = { ...value.request, contract: 'mdlm-demo-resume-request@1' };
+  const retried = exec(process.execPath, [cli, 'resume'], root, JSON.stringify(resumeRequest));
+  assert.equal(retried.status, 0, retried.stderr);
+  assert.equal(JSON.parse(retried.stdout).reason, 'lifecycle-complete');
+  const transactionPath = path.join(assignmentDirectory(value.request), 'transaction.json');
+  const completedTransaction = await readFile(transactionPath);
+  assert.equal(await readFile(value.attemptsPath, 'utf8'), '2');
+  await assert.rejects(readFile(path.join(value.scratch, 'submit-count')), error => error.code === 'ENOENT');
+
+  const reconciled = exec(process.execPath, [cli, 'resume'], root, JSON.stringify(resumeRequest));
+
+  assert.equal(reconciled.status, 0, reconciled.stderr);
+  assert.equal(JSON.parse(reconciled.stdout).status, 'already-completed', reconciled.stdout);
+  assert.equal(await readFile(value.attemptsPath, 'utf8'), '2');
+  assert.deepEqual(await readFile(transactionPath), completedTransaction);
+  await assert.rejects(readFile(path.join(value.scratch, 'submit-count')), error => error.code === 'ENOENT');
+  assert.equal((await readdir(path.join(assignmentDirectory(value.request), 'durable-command')))
+    .some(name => name.startsWith('attempt-000003')), false);
+
+  const recoveryDirectory = operationalRecoveryDirectoryForTest(value);
+  const retryPath = path.join(recoveryDirectory, (await readdir(recoveryDirectory)).find(name => name.startsWith('retry-')));
+  await chmod(retryPath, 0o600);
+  const retry = JSON.parse(await readFile(retryPath));
+  retry.mode = 'run';
+  await writeFile(retryPath, `${JSON.stringify(retry, null, 2)}\n`);
+  const tampered = exec(process.execPath, [cli, 'resume'], root, JSON.stringify(resumeRequest));
+  assert.equal(tampered.status, 0, tampered.stderr);
+  assert.equal(JSON.parse(tampered.stdout).reason, 'operational-recovery-marker-invalid');
+  assert.equal(await readFile(value.attemptsPath, 'utf8'), '2');
+});
+
 test('tampered or ambiguous operational failure markers fail closed without worker or prepare side effects', async () => {
   for (const mutation of ['tampered', 'ambiguous']) {
     const value = await operationalFailureFixture();
@@ -2622,6 +2660,19 @@ test('canonical operational failures fail closed on arbitrary, malformed, or una
   const authority = `${JSON.stringify({ mode: 'attended', authority: 'stakeholder', delegationAllowed: false }, null, 2)}\n`;
   const context = `${JSON.stringify({ invocations: [] }, null, 2)}\n`;
   const attendedPrompt = 'Explicit conclusion from the named authority holder (not chat approval): ';
+  const escapedCredentialCases = [
+    'apiKey', 'accessToken', 'x-api-key', 'clientSecret', 'password', 'authorization',
+  ].flatMap(key => [1, 3].map(layers => {
+    let message = JSON.stringify({ credentials: { [key]: 'nested-api-secret' } });
+    for (let layer = 0; layer < layers; layer++) {
+      message = message.replaceAll('\\', '\\\\').replaceAll('"', '\\"');
+    }
+    return [
+      `${key} credential escaped through ${layers} serialized layer${layers === 1 ? '' : 's'}`,
+      progress,
+      canonicalPiOperationalFailure({ telemetry: { providerError: { message, truncated: false } } }),
+    ];
+  }));
   const adversarial = [
     ['arbitrary stdout', `${progress}worker says continue\n`, canonical],
     ['mismatched Assignment', 'Assignment aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa: ordinary@1\n', canonical],
@@ -2632,6 +2683,7 @@ test('canonical operational failures fail closed on arbitrary, malformed, or una
     ['mismatched provider', progress, canonicalPiOperationalFailure({ telemetry: { provider: 'anthropic' } })],
     ['secret-bearing provider error', progress, canonicalPiOperationalFailure({ telemetry: { providerError: { message: 'Authorization Bearer sk-secretvalue', truncated: false } } })],
     ['quoted nested provider credential', progress, canonicalPiOperationalFailure({ telemetry: { providerError: { message: '{"headers":{"x-api-key":"nested-provider-secret"}}', truncated: false } } })],
+    ...escapedCredentialCases,
     ['opaque provider credential', progress, canonicalPiOperationalFailure({ telemetry: { providerError: { message: Buffer.from('opaque provider credential value').toString('base64'), truncated: false } } })],
     ['AWS provider credential', progress, canonicalPiOperationalFailure({ telemetry: { providerError: { message: 'AKIAIOSFODNN7EXAMPLE', truncated: false } } })],
     ['JWT provider credential', progress, canonicalPiOperationalFailure({ telemetry: { providerError: { message: 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.signature-value', truncated: false } } })],

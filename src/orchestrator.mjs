@@ -23,6 +23,7 @@ const publicationClosureEvidence = Symbol('publicationClosureEvidence');
 const operationalFailureEvidence = Symbol('operationalFailureEvidence');
 const exhaustedBoundaryEvidence = Symbol('exhaustedBoundaryEvidence');
 const durableResultRepository = Symbol('durableResultRepository');
+const authenticatedCompletedDurableCommand = Symbol('authenticatedCompletedDurableCommand');
 const boundDecisionCatalog = Symbol('boundDecisionCatalog');
 const authoritativeDecisionUtf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
 const outerTimeoutSafetyReserveMs = 60_000;
@@ -511,11 +512,13 @@ async function executeRun(request, context, assignmentDirectory, journalPath, sn
   const assignment = captured.assignment;
   const status = captured.status;
   const existingTransaction = await optionalCanonicalJson(journalPath);
+  let trustedCompletedTransaction = false;
   try {
     const recovered = await recoverDurableAssignmentCommand({
       request, context, assignmentDirectory, snapshotResult, status, diagnosis: captured.diagnosis, mode,
     });
-    if (recovered !== null) return recovered;
+    if (recovered === authenticatedCompletedDurableCommand) trustedCompletedTransaction = true;
+    else if (recovered !== null) return recovered;
   } catch (error) {
     return stopped(
       'durable-command-uncertain',
@@ -560,6 +563,7 @@ async function executeRun(request, context, assignmentDirectory, journalPath, sn
 
   const recoveryGate = await inspectOperationalRecovery({
     request, mode, context, assignmentDirectory, captured, snapshotResult, processPackage, runIdentity,
+    trustedCompletedTransaction,
   });
   if (!recoveryGate.ok) {
     return stopped('operational-recovery-marker-invalid', recoveryGate.detail, snapshotResult, assignmentId);
@@ -1738,6 +1742,7 @@ async function recoverDurableAssignmentCommand({ request, context, assignmentDir
       }
       return consumedOutput;
     }
+    if (consumedOutput.trustedRepositoryAdvance === true) return authenticatedCompletedDurableCommand;
     return null;
   }
   const authorizationPath = attempt.authorizationPath;
@@ -2198,8 +2203,18 @@ function isRedactedProviderError(value) {
     !/\b[A-Za-z0-9+/]{32,}={0,2}\b/u.test(value.message);
 }
 
+const secretLookingTextPattern = /(?:[A-Za-z][A-Za-z0-9+.-]*:\/\/[^\s/@]+:[^\s/@]+@|bearer\s+[^\s,;]+|["']?(?:x[-_ ]?api[-_ ]?key|api[-_ ]?key|access[-_ ]?token|refresh[-_ ]?token|client[-_ ]?secret|authorization|token|secret|password)["']?\s*[:=]\s*(?:"(?:\\.|[^"\\\r\n])*"|'(?:\\.|[^'\\\r\n])*'|[^\s,"';}]+)|(?:sk|rk|pk|ghp|github_pat|xox[baprs])[-_][A-Za-z0-9_-]{8,}|(?:AKIA|ASIA|AIDA|AROA|AIPA|ANPA|ANVA|A3T)[A-Z0-9]{16}|(?:glpat-|npm_|AIza)[A-Za-z0-9_-]{16,}|eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{8,})/iu;
+const maximumEscapedCredentialLayers = 4;
+
 function containsSecretLookingText(value) {
-  return /(?:[A-Za-z][A-Za-z0-9+.-]*:\/\/[^\s/@]+:[^\s/@]+@|bearer\s+[^\s,;]+|["']?(?:x[-_ ]?api[-_ ]?key|api[-_ ]?key|access[-_ ]?token|refresh[-_ ]?token|client[-_ ]?secret|authorization|token|secret|password)["']?\s*[:=]\s*(?:"(?:\\.|[^"\\\r\n])*"|'(?:\\.|[^'\\\r\n])*'|[^\s,"';}]+)|(?:sk|rk|pk|ghp|github_pat|xox[baprs])[-_][A-Za-z0-9_-]{8,}|(?:AKIA|ASIA|AIDA|AROA|AIPA|ANPA|ANVA|A3T)[A-Z0-9]{16}|(?:glpat-|npm_|AIza)[A-Za-z0-9_-]{16,}|eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{8,})/iu.test(value);
+  let candidate = value;
+  for (let layer = 0; layer <= maximumEscapedCredentialLayers; layer++) {
+    if (secretLookingTextPattern.test(candidate)) return true;
+    const unescaped = candidate.replace(/\\(["'\\])/gu, '$1');
+    if (unescaped === candidate) return false;
+    candidate = unescaped;
+  }
+  return false;
 }
 
 function isBoundedText(value, minimum, maximum) {
@@ -2528,7 +2543,10 @@ async function operationalRecoveryHistoryExists(context, assignmentId) {
   catch (error) { if (error.code === 'ENOENT') return false; throw error; }
 }
 
-async function inspectOperationalRecovery({ request, mode, context, assignmentDirectory, captured, snapshotResult, processPackage, runIdentity }) {
+async function inspectOperationalRecovery({
+  request, mode, context, assignmentDirectory, captured, snapshotResult, processPackage, runIdentity,
+  trustedCompletedTransaction,
+}) {
   try {
     const directory = operationalRecoveryDirectory(context, request.assignmentId);
     await recoverPendingOperationalRecoveryWrites(directory);
@@ -2554,7 +2572,9 @@ async function inspectOperationalRecovery({ request, mode, context, assignmentDi
       if (pendingLegacyUpgrade === null) {
         const transitioned = history.markers.filter(marker => history.transitions.has(marker.index)).at(-1);
         if (transitioned === undefined) return { ok: true, requiredNextMode: null, transition: null };
-        requireActiveOperationalBoundary(transitioned.document, captured, request.assignmentId);
+        if (!trustedCompletedTransaction) {
+          requireActiveOperationalBoundary(transitioned.document, captured, request.assignmentId);
+        }
         const transition = history.transitions.get(transitioned.index);
         if (mode !== transition.document.mode) {
           return {
