@@ -1,4 +1,5 @@
-import { chmod, lstat, mkdir, readFile, readdir, realpath, writeFile } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { chmod, lstat, mkdir, open, readFile, readdir, realpath, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { readCanonicalFile } from './canonical-file.mjs';
 import { validateDoctor } from './contracts.mjs';
@@ -264,8 +265,16 @@ export const provenanceLimits = Object.freeze({
 });
 
 export async function inspectProvenance(provenance, timeoutMs, options = {}) {
-  const source = await gitIdentity(provenance?.source, timeoutMs, 'source');
-  const qualificationHarness = await gitIdentity(provenance?.qualificationHarness, timeoutMs, 'qualificationHarness');
+  const gitBinding = await openGitExecutable(provenance?.git, options);
+  let source;
+  let qualificationHarness;
+  try {
+    source = await gitIdentity(provenance?.source, timeoutMs, 'source', gitBinding, options);
+    qualificationHarness = await gitIdentity(provenance?.qualificationHarness, timeoutMs, 'qualificationHarness', gitBinding, options);
+    await verifyGitExecutable(gitBinding);
+  } finally {
+    await gitBinding.handle.close();
+  }
   qualificationHarness.manifest = await expectedFileRecord(
     provenance?.qualificationHarness?.manifest?.path,
     provenance?.qualificationHarness?.manifest?.digest,
@@ -292,6 +301,7 @@ export async function inspectProvenance(provenance, timeoutMs, options = {}) {
   );
   const tooling = await expectedToolingRecord(provenance?.tooling, { mdlm, mdlmPi }, options);
   return {
+    git: gitBinding.identity,
     source,
     package: packageIdentity,
     piPackage: piPackageIdentity,
@@ -302,34 +312,170 @@ export async function inspectProvenance(provenance, timeoutMs, options = {}) {
   };
 }
 
-async function gitIdentity(value, timeoutMs, label) {
+async function gitIdentity(value, timeoutMs, label, gitBinding, options = {}) {
   let repository;
   let expectedCommit;
   let expectedTree;
+  let repositoryHandle;
   try {
     repository = path.resolve(requiredString(value?.repository, `provenance.${label}.repository`));
     expectedCommit = requiredObjectId(value?.commit, `provenance.${label}.commit`);
     expectedTree = requiredObjectId(value?.tree, `provenance.${label}.tree`);
+    repositoryHandle = await (options.openRepository ?? open)(
+      repository,
+      constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+    );
+    const opened = await repositoryHandle.stat({ bigint: true });
+    if (!opened.isDirectory()) throw new Error(`provenance.${label}.repository is not a real directory`);
+    const descriptorPath = `/proc/self/fd/${repositoryHandle.fd}`;
+    const descriptorTarget = await realpath(descriptorPath);
+    if (descriptorTarget !== repository) throw new Error(`provenance.${label}.repository has a symbolic-link path component`);
+    const current = await lstat(repository, { bigint: true });
+    if (!current.isDirectory() || current.isSymbolicLink() || !sameIdentity(opened, current)) {
+      throw new Error(`provenance.${label}.repository changed while it was opened`);
+    }
+    const processOptions = {
+      cwd: descriptorPath,
+      recordedCwd: repository,
+      recordedProgram: gitBinding.identity.path,
+      timeoutMs,
+      env: gitEnvironment(),
+    };
+    const args = name => ['--no-optional-locks', ...name];
+    const preCommit = await runProcess(gitBinding.program, args(['rev-parse', 'HEAD^{commit}']), processOptions);
+    const preTree = await runProcess(gitBinding.program, args(['rev-parse', 'HEAD^{tree}']), processOptions);
+    await options.afterGitPreIdentity?.({ label, repository, repositoryHandle });
+    const status = await runProcess(
+      gitBinding.program,
+      args(['status', '--porcelain=v1', '-z', '--untracked-files=all']),
+      processOptions,
+    );
+    const postCommit = await runProcess(gitBinding.program, args(['rev-parse', 'HEAD^{commit}']), processOptions);
+    const postTree = await runProcess(gitBinding.program, args(['rev-parse', 'HEAD^{tree}']), processOptions);
+    const observedCommit = commandSucceeded(preCommit) ? preCommit.stdout.toString('utf8').trim() : null;
+    const observedTree = commandSucceeded(preTree) ? preTree.stdout.toString('utf8').trim() : null;
+    const postObservedCommit = commandSucceeded(postCommit) ? postCommit.stdout.toString('utf8').trim() : null;
+    const postObservedTree = commandSucceeded(postTree) ? postTree.stdout.toString('utf8').trim() : null;
+    const clean = commandSucceeded(status) ? status.stdout.length === 0 : null;
+    const descriptorAfter = await repositoryHandle.stat({ bigint: true });
+    let pathAfter;
+    try {
+      pathAfter = await lstat(repository, { bigint: true });
+    } catch (error) {
+      if (error.code === 'ENOENT') throw new Error(`provenance.${label}.repository changed while Git inspected it`);
+      throw error;
+    }
+    if (!sameIdentity(opened, descriptorAfter) || !sameIdentity(opened, pathAfter)) {
+      throw new Error(`provenance.${label}.repository changed while Git inspected it`);
+    }
+    const stable = observedCommit === postObservedCommit && observedTree === postObservedTree;
+    return {
+      repository,
+      repositoryIdentity: statIdentity(opened),
+      git: gitBinding.identity,
+      expectedCommit,
+      expectedTree,
+      observedCommit,
+      observedTree,
+      postObservedCommit,
+      postObservedTree,
+      clean,
+      stable,
+      matches: observedCommit === expectedCommit && observedTree === expectedTree && clean === true && stable,
+      commands: {
+        preCommit: commandRecord(preCommit), preTree: commandRecord(preTree), status: commandRecord(status),
+        postCommit: commandRecord(postCommit), postTree: commandRecord(postTree),
+      },
+    };
   } catch (error) {
-    return { repository: value?.repository ?? null, expectedCommit: value?.commit ?? null, expectedTree: value?.tree ?? null, observedCommit: null, observedTree: null, clean: null, matches: false, error: error.message, commands: {} };
+    return {
+      repository: value?.repository ?? null,
+      repositoryIdentity: null,
+      git: gitBinding.identity,
+      expectedCommit: value?.commit ?? null,
+      expectedTree: value?.tree ?? null,
+      observedCommit: null,
+      observedTree: null,
+      postObservedCommit: null,
+      postObservedTree: null,
+      clean: null,
+      stable: false,
+      matches: false,
+      error: error.message,
+      commands: {},
+    };
+  } finally {
+    await repositoryHandle?.close();
   }
-  const options = { cwd: repository, timeoutMs, env: gitEnvironment({ GIT_OPTIONAL_LOCKS: '0' }) };
-  const commit = await runProcess('git', ['rev-parse', 'HEAD^{commit}'], options);
-  const tree = await runProcess('git', ['rev-parse', 'HEAD^{tree}'], options);
-  const status = await runProcess('git', ['status', '--porcelain=v1', '-z', '--untracked-files=all'], options);
-  const observedCommit = commandSucceeded(commit) ? commit.stdout.toString('utf8').trim() : null;
-  const observedTree = commandSucceeded(tree) ? tree.stdout.toString('utf8').trim() : null;
-  const clean = commandSucceeded(status) ? status.stdout.length === 0 : null;
+}
+
+async function openGitExecutable(expected, options = {}) {
+  const requestedPath = expected?.path ?? options.gitPath ?? '/usr/bin/git';
+  if (!path.isAbsolute(requestedPath)) throw new Error('Git executable path must be absolute');
+  const configuredPath = path.resolve(requestedPath);
+  let handle;
+  try {
+    handle = await (options.openGit ?? open)(configuredPath, constants.O_RDONLY | constants.O_NOFOLLOW);
+    const opened = await handle.stat({ bigint: true });
+    if (!opened.isFile()) throw new Error(`Git executable is not a regular file: ${configuredPath}`);
+    if ((Number(opened.mode) & 0o111) === 0) throw new Error(`Git executable is not executable: ${configuredPath}`);
+    if (opened.size > 67_108_864n) throw new Error('Git executable exceeds 67108864-byte limit');
+    const descriptorTarget = await realpath(`/proc/self/fd/${handle.fd}`);
+    if (descriptorTarget !== configuredPath) throw new Error(`Git executable has a symbolic-link path component: ${configuredPath}`);
+    const current = await lstat(configuredPath, { bigint: true });
+    if (!sameIdentity(opened, current)) throw new Error(`Git executable changed while it was opened: ${configuredPath}`);
+    const bytes = await handle.readFile();
+    const digest = sha256(bytes);
+    if (expected?.digest !== undefined && digest !== expected.digest) throw new Error('Git executable differs from provenance.git.digest');
+    const after = await handle.stat({ bigint: true });
+    if (!sameIdentity(opened, after)) throw new Error(`Git executable changed while it was read: ${configuredPath}`);
+    return {
+      handle,
+      information: opened,
+      program: `/proc/self/fd/${handle.fd}`,
+      identity: {
+        path: configuredPath,
+        realpath: descriptorTarget,
+        mode: fileMode(opened),
+        size: Number(opened.size),
+        digest,
+        ...(expected?.digest === undefined ? {} : { expectedDigest: expected.digest }),
+      },
+    };
+  } catch (error) {
+    await handle?.close();
+    throw error;
+  }
+}
+
+async function verifyGitExecutable(binding) {
+  const descriptor = await binding.handle.stat({ bigint: true });
+  let current;
+  try {
+    current = await lstat(binding.identity.path, { bigint: true });
+  } catch (error) {
+    if (error.code === 'ENOENT') throw new Error(`Git executable changed while it was used: ${binding.identity.path}`);
+    throw error;
+  }
+  if (!sameIdentity(binding.information, descriptor) || !sameIdentity(binding.information, current)) {
+    throw new Error(`Git executable changed while it was used: ${binding.identity.path}`);
+  }
+}
+
+function sameIdentity(left, right) {
+  return left.dev === right.dev && left.ino === right.ino && left.mode === right.mode && left.size === right.size &&
+    left.mtimeNs === right.mtimeNs && left.ctimeNs === right.ctimeNs;
+}
+
+function statIdentity(value) {
   return {
-    repository,
-    expectedCommit,
-    expectedTree,
-    observedCommit,
-    observedTree,
-    clean,
-    matches: observedCommit === expectedCommit && observedTree === expectedTree && clean === true,
-    commands: { commit: commandRecord(commit), tree: commandRecord(tree), status: commandRecord(status) },
+    device: value.dev.toString(), inode: value.ino.toString(), mode: fileMode(value), size: Number(value.size),
+    modifiedNanoseconds: value.mtimeNs.toString(), changedNanoseconds: value.ctimeNs.toString(),
   };
+}
+
+function fileMode(value) {
+  return (Number(value.mode) & 0o7777).toString(8).padStart(4, '0');
 }
 
 async function expectedFileRecord(file, expectedDigest, label, maxBytes, options) {

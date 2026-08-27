@@ -1,0 +1,58 @@
+✔ preflight rejects run 036 wrong harness commit even when every harness asset digest matches (503.409916ms)
+✔ preflight rejects the run 032 helper argv shape that omits --input (289.793227ms)
+✔ preflight PASS is identical through stdin and --input and creates no lifecycle state (805.997578ms)
+✔ preflight rejects extra keys, digest drift, and duplicate pin disagreements (908.13468ms)
+✔ preflight emits a typed stdout-only failure for omitted and empty input (121.32194ms)
+✔ preflight rejects symlinked and oversized run-request inputs (292.741321ms)
+✔ preflight rejects malformed UTF-8 in its wrapper and run request (763.084762ms)
+✔ preflight closes every nested run-request and catalog object (4852.762657ms)
+✔ preflight authenticates the complete executable and script identities (1134.578733ms)
+▶ preflight rejects symlinked provenance, package, tool, lock, and catalog files
+  ✔ package (478.853397ms)
+  ✔ pi package (478.876018ms)
+  ✔ mdlm tool (479.377313ms)
+  ✔ mdlm-pi tool (478.178688ms)
+  ✔ tooling lock (498.647242ms)
+  ✔ harness manifest (495.853863ms)
+  ✔ decision catalog (482.44517ms)
+✔ preflight rejects symlinked provenance, package, tool, lock, and catalog files (3393.96657ms)
+▶ preflight rejects oversized provenance, package, tool, lock, and catalog files
+  ✔ package (477.510259ms)
+  ✔ pi package (474.825053ms)
+  ✔ mdlm tool (477.399416ms)
+  ✔ mdlm-pi tool (481.847913ms)
+  ✔ tooling lock (482.969725ms)
+  ✔ harness manifest (478.119277ms)
+  ✔ decision catalog (485.735914ms)
+✔ preflight rejects oversized provenance, package, tool, lock, and catalog files (3359.98483ms)
+▶ provenance inspection rejects deterministic rename substitutions
+  ✔ package (262.171802ms)
+  ✔ tool (263.390498ms)
+  ✔ lock (259.61033ms)
+  ✔ manifest (346.484289ms)
+✔ provenance inspection rejects deterministic rename substitutions (1132.867444ms)
+✔ decision catalog binding rejects rename substitution and records exact bytes (1035.102574ms)
+✔ preflight rejects duplicate JSON members before ordinary JSON collapse (381.650433ms)
+✔ preflight recursively rejects unpaired UTF-16 scalars (322.715041ms)
+▶ one closed run-request schema validates optional paths, enums, and nested extras
+  ✔ adapterInputsPath type (614.20384ms)
+  ✔ adapterInputsPath absolute path (586.740226ms)
+  ✔ signal enum (553.350594ms)
+  ✔ operator nested extra (553.040045ms)
+✔ one closed run-request schema validates optional paths, enums, and nested extras (2308.540959ms)
+✔ preflight never resolves Git through PATH or exposes provider credentials to it (545.105099ms)
+✔ preflight binds an optional expected Git executable digest (828.265316ms)
+✔ preflight disables repository-local fsmonitor execution (563.41865ms)
+✔ provenance inspection rejects a repository pathname replacement between Git observations (302.684634ms)
+✔ preflight rejects symbolic-link components in repository paths (530.772178ms)
+✔ descriptor-rooted tooling traversal rejects replacement, growth, and independent bounds (14.292119ms)
+✔ preflight has no filesystem output path and rejects attempts to add one (271.622677ms)
+✔ preflight rejects hard-linked aliases in the tooling closure (550.958275ms)
+ℹ tests 46
+ℹ suites 0
+ℹ pass 46
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 25462.275724

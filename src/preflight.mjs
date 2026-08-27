@@ -3,7 +3,8 @@ import { fileURLToPath } from 'node:url';
 import { readCanonicalFile } from './canonical-file.mjs';
 import { bindDecisionCatalogFile } from './decision-catalog.mjs';
 import { inspectProvenance } from './evidence.mjs';
-import { validateOperator, validateRunRequest } from './orchestrator.mjs';
+import { validateRunRequest } from './run-request.mjs';
+import { parseStrictJson } from './strict-json.mjs';
 import { sha256 } from './util.mjs';
 
 const requestContract = 'mdlm-demo-preflight-request@1';
@@ -14,7 +15,7 @@ const scriptBytes = 1_048_576;
 const gitTimeoutMs = 30_000;
 const runnerScript = fileURLToPath(new URL('../bin/mdlm-demo-runner.mjs', import.meta.url));
 const utf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
-const limitation = 'This result cannot prove invocation, publication, lifecycle state, or qualification and cannot authorize an Assignment.';
+const limitation = 'A PASS authenticates only supplied bytes against supplied pins; it neither proves nor authorizes invocation, Assignment, publication, lifecycle transition, Review, or qualification.';
 
 export const preflightLimits = Object.freeze({
   requestBytes: 1_048_576,
@@ -55,7 +56,7 @@ export async function preflight(request) {
     const observedDigest = sha256(inputEvidence.bytes);
     if (observedDigest !== request.input.digest) throw new Error('preflight input digest differs from the supplied digest');
     try {
-      target = JSON.parse(decodeUtf8(inputEvidence.bytes, 'preflight input'));
+      target = parseStrictJson(decodeUtf8(inputEvidence.bytes, 'preflight input'), 'preflight input');
     } catch (error) {
       throw new Error(`preflight input is not valid JSON or UTF-8: ${error.message}`);
     }
@@ -83,8 +84,6 @@ export async function preflight(request) {
     const expectedContract = command === 'resume' ? 'mdlm-demo-resume-request@1' : 'mdlm-demo-run-request@1';
     if (target?.contract !== expectedContract) throw new Error(`argv command ${command ?? 'is invalid and'} does not match input contract`);
     validateRunRequest(target);
-    validateOperator(target.operator);
-    validateClosedRunRequest(target);
     checks.push(pass('run-request'));
   } catch (error) {
     checks.push(fail('run-request', error));
@@ -132,7 +131,7 @@ export async function preflight(request) {
     checks.push(value.matches === true ? pass(name) : fail(name, value.error ?? `${name} differs from its supplied pin`));
   }
 
-  return result(checks, { inputEvidence, argv: request.argv, invocationEvidence, catalogBinding });
+  return result(checks, { inputEvidence, argv: request.argv, invocationEvidence, catalogBinding, provenance });
 }
 
 export function preflightFailure(error) {
@@ -189,73 +188,8 @@ function validateArgv(argv, inputPath, contract) {
   return command;
 }
 
-function validateClosedRunRequest(value) {
-  for (const name of ['repository', 'stateDirectory', 'evidenceDirectory']) requireAbsolutePath(value[name], name);
-  requireNonempty(value.assignmentId, 'assignmentId');
-  if (value.decisionCatalogPath !== undefined) requireAbsolutePath(value.decisionCatalogPath, 'decisionCatalogPath');
-
-  exactObject(value.commands, ['mdlm', 'mdlmPi'], 'commands');
-  requireAbsolutePath(value.commands.mdlm, 'commands.mdlm');
-  requireAbsolutePath(value.commands.mdlmPi, 'commands.mdlmPi');
-
-  if (value.harness !== undefined) {
-    exactObject(value.harness, ['commit', 'directory', 'repositoryLocator', 'tree'], 'harness');
-    requireAbsolutePath(value.harness.directory, 'harness.directory');
-    requireNonempty(value.harness.commit, 'harness.commit');
-    requireNonempty(value.harness.tree, 'harness.tree');
-    requireNonempty(value.harness.repositoryLocator, 'harness.repositoryLocator');
-  }
-
-  const provenance = value.provenance;
-  exactObject(
-    provenance,
-    ['package', 'piPackage', 'qualificationHarness', 'source', 'tooling', 'tools'],
-    'provenance',
-  );
-  validateGitPin(provenance.source, 'provenance.source');
-  validateArtifactPin(provenance.package, 'provenance.package');
-  validateArtifactPin(provenance.piPackage, 'provenance.piPackage');
-
-  exactObject(provenance.tooling, ['digest', 'lock', 'root'], 'provenance.tooling');
-  requireAbsolutePath(provenance.tooling.root, 'provenance.tooling.root');
-  requireDigest(provenance.tooling.digest, 'provenance.tooling.digest');
-  validatePathPin(provenance.tooling.lock, 'provenance.tooling.lock');
-
-  exactObject(provenance.tools, ['mdlm', 'mdlmPi'], 'provenance.tools');
-  validatePathPin(provenance.tools.mdlm, 'provenance.tools.mdlm');
-  validatePathPin(provenance.tools.mdlmPi, 'provenance.tools.mdlmPi');
-
-  exactObject(
-    provenance.qualificationHarness,
-    ['commit', 'manifest', 'repository', 'repositoryLocator', 'tree'],
-    'provenance.qualificationHarness',
-  );
-  validateGitPin(provenance.qualificationHarness, 'provenance.qualificationHarness', ['commit', 'manifest', 'repository', 'repositoryLocator', 'tree']);
-  requireNonempty(provenance.qualificationHarness.repositoryLocator, 'provenance.qualificationHarness.repositoryLocator');
-  validatePathPin(provenance.qualificationHarness.manifest, 'provenance.qualificationHarness.manifest');
-}
-
-function validateGitPin(value, label, keys = ['commit', 'repository', 'tree']) {
-  exactObject(value, keys, label);
-  requireAbsolutePath(value.repository, `${label}.repository`);
-  requireNonempty(value.commit, `${label}.commit`);
-  requireNonempty(value.tree, `${label}.tree`);
-}
-
-function validateArtifactPin(value, label) {
-  exactObject(value, ['artifact', 'digest'], label);
-  requireAbsolutePath(value.artifact, `${label}.artifact`);
-  requireDigest(value.digest, `${label}.digest`);
-}
-
-function validatePathPin(value, label) {
-  exactObject(value, ['digest', 'path'], label);
-  requireAbsolutePath(value.path, `${label}.path`);
-  requireDigest(value.digest, `${label}.digest`);
-}
-
 function result(checks, evidence = {}) {
-  const { inputEvidence, argv, invocationEvidence, catalogBinding } = evidence;
+  const { inputEvidence, argv, invocationEvidence, catalogBinding, provenance } = evidence;
   return {
     contract: resultContract,
     status: checks.length > 0 && checks.every(check => check.ok) ? 'PASS' : 'FAIL',
@@ -271,6 +205,13 @@ function result(checks, evidence = {}) {
     }),
     ...(catalogBinding === undefined || catalogBinding === null ? {} : {
       catalog: { path: catalogBinding.path, bytes: catalogBinding.bytes, digest: catalogBinding.digest },
+    }),
+    ...(provenance === undefined ? {} : {
+      provenance: {
+        git: provenance.git,
+        source: { repositoryIdentity: provenance.source.repositoryIdentity },
+        qualificationHarness: { repositoryIdentity: provenance.qualificationHarness.repositoryIdentity },
+      },
     }),
     checks,
     limitation,

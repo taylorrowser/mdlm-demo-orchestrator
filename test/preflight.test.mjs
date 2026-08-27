@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { chmod, mkdtemp, mkdir, open, readFile, rename, rm, symlink, truncate, writeFile } from 'node:fs/promises';
+import { chmod, link, mkdtemp, mkdir, open, readFile, rename, rm, symlink, truncate, writeFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import os from 'node:os';
@@ -8,18 +8,19 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { bindDecisionCatalogFile } from '../src/decision-catalog.mjs';
 import * as evidence from '../src/evidence.mjs';
+import { toolingTreeIdentity } from '../src/util.mjs';
 import { toolingTreeDigest } from './provenance-fixture.mjs';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const cli = path.join(root, 'bin/mdlm-demo-runner.mjs');
 const run036HarnessPin = '8156dfb33344dfd705266307daf2379dc9026a80';
-const limitation = 'This result cannot prove invocation, publication, lifecycle state, or qualification and cannot authorize an Assignment.';
+const limitation = 'A PASS authenticates only supplied bytes against supplied pins; it neither proves nor authorizes invocation, Assignment, publication, lifecycle transition, Review, or qualification.';
 const executableDigest = await fileDigest(process.execPath);
 const scriptDigest = await fileDigest(cli);
 const { inspectProvenance } = evidence;
 
-function exec(program, args, cwd, input) {
-  return spawnSync(program, args, { cwd, input, encoding: 'utf8', timeout: 20_000 });
+function exec(program, args, cwd, input, env = process.env) {
+  return spawnSync(program, args, { cwd, input, env, encoding: 'utf8', timeout: 20_000 });
 }
 
 function git(args, cwd) {
@@ -139,8 +140,8 @@ async function fixture() {
   };
 }
 
-function invoke(request, cwd) {
-  return exec(process.execPath, [cli, 'preflight'], cwd, `${JSON.stringify(request)}\n`);
+function invoke(request, cwd, env = process.env) {
+  return exec(process.execPath, [cli, 'preflight'], cwd, `${JSON.stringify(request)}\n`, env);
 }
 
 async function invokeFile(request, cwd) {
@@ -507,4 +508,220 @@ test('decision catalog binding rejects rename substitution and records exact byt
     digest: digest(substitutedBytes),
   });
   assert.notEqual(second.digest, first.digest);
+});
+
+test('preflight rejects duplicate JSON members before ordinary JSON collapse', async t => {
+  const value = await fixture();
+  t.after(() => rm(value.scratch, { recursive: true, force: true }));
+
+  const wrapper = JSON.stringify(value.preflightRequest).replace(
+    '"contract":"mdlm-demo-preflight-request@1"',
+    '"contract":"mdlm-demo-preflight-request@1","contract":"mdlm-demo-preflight-request@1"',
+  );
+  let execution = exec(process.execPath, [cli, 'preflight'], value.scratch, `${wrapper}\n`);
+  assert.equal(execution.status, 1);
+  assert.match(resultOf(execution).checks[0].error, /duplicate object member.*contract/i);
+
+  const target = JSON.stringify(value.runRequest).replace(
+    `"assignmentId":"${value.runRequest.assignmentId}"`,
+    `"assignmentId":"${value.runRequest.assignmentId}","assignmentId":"${value.runRequest.assignmentId}"`,
+  );
+  const bytes = Buffer.from(`${target}\n`);
+  await writeFile(value.runRequestPath, bytes);
+  value.preflightRequest.input.digest = digest(bytes);
+  execution = invoke(value.preflightRequest, value.scratch);
+  assert.equal(execution.status, 1);
+  assert.match(resultOf(execution).checks.find(check => check.name === 'input').error, /duplicate object member.*assignmentId/i);
+});
+
+test('preflight recursively rejects unpaired UTF-16 scalars', async t => {
+  const value = await fixture();
+  t.after(() => rm(value.scratch, { recursive: true, force: true }));
+  value.runRequest.assignmentId = '\ud800';
+  const bytes = await value.writeRunRequest();
+  value.preflightRequest.input.digest = digest(bytes);
+  const execution = invoke(value.preflightRequest, value.scratch);
+  assert.equal(execution.status, 1);
+  assert.match(resultOf(execution).checks.find(check => check.name === 'input').error, /Unicode scalar|UTF-16/i);
+});
+
+test('one closed run-request schema validates optional paths, enums, and nested extras', async t => {
+  const cases = [
+    { name: 'adapterInputsPath type', mutate: request => { request.adapterInputsPath = 7; } },
+    { name: 'adapterInputsPath absolute path', mutate: request => { request.adapterInputsPath = 'relative.json'; } },
+    { name: 'signal enum', mutate: request => { request.signal = 'invented-stop'; } },
+    { name: 'operator nested extra', mutate: request => { request.operator.unexpected = true; } },
+  ];
+  for (const entry of cases) {
+    await t.test(entry.name, async t => {
+      const value = await fixture();
+      t.after(() => rm(value.scratch, { recursive: true, force: true }));
+      entry.mutate(value.runRequest);
+      const bytes = await value.writeRunRequest();
+      value.preflightRequest.input.digest = digest(bytes);
+      const execution = invoke(value.preflightRequest, value.scratch);
+      assert.equal(execution.status, 1);
+      assert.equal(resultOf(execution).checks.find(check => check.name === 'run-request').ok, false);
+    });
+  }
+});
+
+test('preflight never resolves Git through PATH or exposes provider credentials to it', async t => {
+  const value = await fixture();
+  t.after(() => rm(value.scratch, { recursive: true, force: true }));
+  const fakeDirectory = path.join(value.scratch, 'fake-bin');
+  const marker = path.join(value.scratch, 'fake-git-ran');
+  const fakeGit = path.join(fakeDirectory, 'git');
+  await mkdir(fakeDirectory);
+  await writeFile(fakeGit, `#!/bin/sh\nprintf '%s' "$OPENAI_API_KEY" > '${marker}'\ncase "$PWD:$1:$2" in\n  '${value.source}:rev-parse:HEAD^{commit}') printf '%s\\n' '${value.runRequest.provenance.source.commit}' ;;\n  '${value.source}:rev-parse:HEAD^{tree}') printf '%s\\n' '${value.runRequest.provenance.source.tree}' ;;\n  '${value.harness}:rev-parse:HEAD^{commit}') printf '%s\\n' '${value.runRequest.provenance.qualificationHarness.commit}' ;;\n  '${value.harness}:rev-parse:HEAD^{tree}') printf '%s\\n' '${value.runRequest.provenance.qualificationHarness.tree}' ;;\nesac\nexit 0\n`);
+  await chmod(fakeGit, 0o755);
+  const execution = invoke(value.preflightRequest, value.scratch, {
+    ...process.env,
+    PATH: `${fakeDirectory}:${process.env.PATH}`,
+    OPENAI_API_KEY: 'must-not-reach-git',
+  });
+  assert.equal(execution.status, 0, execution.stderr);
+  await assert.rejects(readFile(marker), { code: 'ENOENT' });
+  const result = resultOf(execution);
+  assert.match(result.provenance?.git?.path ?? '', /^\//);
+  assert.match(result.provenance?.git?.digest ?? '', /^sha256:/);
+});
+
+test('preflight binds an optional expected Git executable digest', async t => {
+  const value = await fixture();
+  t.after(() => rm(value.scratch, { recursive: true, force: true }));
+  value.runRequest.provenance.git = { path: '/usr/bin/git', digest: await fileDigest('/usr/bin/git') };
+  let bytes = await value.writeRunRequest();
+  value.preflightRequest.input.digest = digest(bytes);
+  let execution = invoke(value.preflightRequest, value.scratch);
+  assert.equal(execution.status, 0, execution.stderr);
+  assert.equal(resultOf(execution).provenance.git.expectedDigest, value.runRequest.provenance.git.digest);
+
+  value.runRequest.provenance.git.digest = digest('not Git');
+  bytes = await value.writeRunRequest();
+  value.preflightRequest.input.digest = digest(bytes);
+  execution = invoke(value.preflightRequest, value.scratch);
+  assert.equal(execution.status, 1);
+  assert.match(resultOf(execution).checks.find(check => check.name === 'provenance').error, /Git executable differs/);
+});
+
+test('preflight disables repository-local fsmonitor execution', async t => {
+  const value = await fixture();
+  t.after(() => rm(value.scratch, { recursive: true, force: true }));
+  const marker = path.join(value.scratch, 'fsmonitor-ran');
+  const monitor = path.join(value.scratch, 'fsmonitor.sh');
+  await writeFile(monitor, `#!/bin/sh\nprintf '%s' "$OPENAI_API_KEY" > '${marker}'\nexit 0\n`);
+  await chmod(monitor, 0o755);
+  git(['config', 'core.fsmonitor', monitor], value.source);
+  git(['config', 'core.fsmonitorHookVersion', '2'], value.source);
+  const execution = invoke(value.preflightRequest, value.scratch, {
+    ...process.env,
+    OPENAI_API_KEY: 'must-not-reach-fsmonitor',
+  });
+  assert.equal(execution.status, 0, execution.stderr);
+  await assert.rejects(readFile(marker), { code: 'ENOENT' });
+});
+
+test('provenance inspection rejects a repository pathname replacement between Git observations', async t => {
+  const value = await fixture();
+  t.after(() => rm(value.scratch, { recursive: true, force: true }));
+  const moved = `${value.source}.opened`;
+  let fired = false;
+  const provenance = await inspectProvenance(value.runRequest.provenance, 30_000, {
+    afterGitPreIdentity: async ({ label }) => {
+      if (label !== 'source') return;
+      fired = true;
+      await rename(value.source, moved);
+      await mkdir(value.source);
+    },
+  });
+  assert.equal(fired, true);
+  assert.equal(provenance.source.matches, false);
+  assert.match(provenance.source.error, /repository changed while Git inspected it/);
+});
+
+test('preflight rejects symbolic-link components in repository paths', async t => {
+  const value = await fixture();
+  t.after(() => rm(value.scratch, { recursive: true, force: true }));
+  const alias = path.join(value.scratch, 'source-alias');
+  await symlink(value.source, alias);
+  value.runRequest.provenance.source.repository = alias;
+  const bytes = await value.writeRunRequest();
+  value.preflightRequest.input.digest = digest(bytes);
+  const execution = invoke(value.preflightRequest, value.scratch);
+  assert.equal(execution.status, 1);
+  assert.equal(resultOf(execution).checks.find(check => check.name === 'provenance.source').ok, false);
+});
+
+test('descriptor-rooted tooling traversal rejects replacement, growth, and independent bounds', async t => {
+  const scratch = await mkdtemp(path.join(os.tmpdir(), 'mdlm-tooling-bounds-'));
+  t.after(() => rm(scratch, { recursive: true, force: true }));
+  const file = path.join(scratch, 'tool');
+  await writeFile(file, 'original');
+
+  let fired = false;
+  await assert.rejects(toolingTreeIdentity(scratch, {
+    openFile: async (openedPath, flags) => {
+      const handle = await open(openedPath, flags);
+      if (!fired) {
+        fired = true;
+        await rename(file, `${file}.opened`);
+        await writeFile(file, 'replacement');
+      }
+      return handle;
+    },
+  }), /changed while it was (?:opened|being read)/);
+  assert.equal(fired, true);
+
+  await rm(file);
+  await rename(`${file}.opened`, file);
+  fired = false;
+  await assert.rejects(toolingTreeIdentity(scratch, {
+    openFile: async (openedPath, flags) => {
+      const handle = await open(openedPath, flags);
+      if (!fired) {
+        fired = true;
+        await truncate(file, 32);
+      }
+      return handle;
+    },
+  }), /changed while it was (?:opened|being read)/);
+  assert.equal(fired, true);
+
+  for (const [name, limits, pattern] of [
+    ['entries', { entries: 1 }, /entry limit/],
+    ['files', { files: 0 }, /file limit/],
+    ['depth', { depth: 0 }, /depth limit/],
+    ['file bytes', { fileBytes: 1 }, /byte limit/],
+    ['total bytes', { totalBytes: 1 }, /byte limit/],
+  ]) {
+    await assert.rejects(toolingTreeIdentity(scratch, { limits }), pattern, name);
+  }
+});
+
+test('preflight has no filesystem output path and rejects attempts to add one', async t => {
+  const value = await fixture();
+  t.after(() => rm(value.scratch, { recursive: true, force: true }));
+  const output = path.join(value.scratch, 'preflight-result.json');
+  const request = { ...value.preflightRequest, output };
+  const execution = invoke(request, value.scratch);
+  assert.equal(execution.status, 1);
+  assert.equal(resultOf(execution).checks[0].ok, false);
+  await assert.rejects(readFile(output), { code: 'ENOENT' });
+});
+
+test('preflight rejects hard-linked aliases in the tooling closure', async t => {
+  const value = await fixture();
+  t.after(() => rm(value.scratch, { recursive: true, force: true }));
+  const mdlm = value.runRequest.commands.mdlm;
+  const mdlmPi = value.runRequest.commands.mdlmPi;
+  await rm(mdlmPi);
+  await link(mdlm, mdlmPi);
+  value.runRequest.provenance.tools.mdlmPi.digest = await fileDigest(mdlmPi);
+  value.runRequest.provenance.tooling.digest = await toolingTreeDigest(value.tooling);
+  const bytes = await value.writeRunRequest();
+  value.preflightRequest.input.digest = digest(bytes);
+  const execution = invoke(value.preflightRequest, value.scratch);
+  assert.equal(execution.status, 1);
+  assert.equal(resultOf(execution).checks.find(check => check.name === 'provenance.tooling').ok, false);
 });

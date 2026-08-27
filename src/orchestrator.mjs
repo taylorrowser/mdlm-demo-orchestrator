@@ -8,6 +8,7 @@ import { validateScenarioPrepare } from './contracts.mjs';
 import { bindDecisionCatalogFile } from './decision-catalog.mjs';
 import { snapshot, verifySnapshot } from './evidence.mjs';
 import { normalizeProcessPackage, sameProcessPackageIdentity } from './process-package.mjs';
+import { validateOperator, validateRunRequest } from './run-request.mjs';
 import {
   commandRecord, commandSucceeded, controlledEnvironment, gitEnvironment, parseJsonBytes,
   requireContract, runProcess, sha256,
@@ -16,8 +17,6 @@ import {
 const externalScenarios = new Set(['realize-verification-environment@1', 'register-pilot-target@1', 'execute-verification-run@1']);
 const mdlmShim = fileURLToPath(new URL('../bin/mdlm-demo-mdlm-shim.mjs', import.meta.url));
 const executionIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-const operatorScalarPattern = /^[A-Za-z0-9][A-Za-z0-9._/@:+-]{0,255}$/;
-const thinkingLevels = new Set(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
 const assignmentCheckpointEvidence = Symbol('assignmentCheckpointEvidence');
 const publicationClosureEvidence = Symbol('publicationClosureEvidence');
 const operationalFailureEvidence = Symbol('operationalFailureEvidence');
@@ -26,7 +25,8 @@ const durableResultRepository = Symbol('durableResultRepository');
 const authenticatedCompletedDurableCommand = Symbol('authenticatedCompletedDurableCommand');
 const boundDecisionCatalog = Symbol('boundDecisionCatalog');
 const authoritativeDecisionUtf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
-const outerTimeoutSafetyReserveMs = 60_000;
+
+export { validateOperator, validateRunRequest };
 
 export async function run(request, mode) {
   requireContract(request, mode === 'resume' ? 'mdlm-demo-resume-request@1' : 'mdlm-demo-run-request@1');
@@ -5383,147 +5383,6 @@ function validateReconcileRequest(value) {
       throw new Error(`evidence.commands[${index}] must contain exactly record, stdout, and stderr`);
     }
     for (const name of ['record', 'stdout', 'stderr']) validatePinnedFile(triplet[name], `evidence.commands[${index}].${name}`);
-  }
-}
-export function validateRunRequest(value) {
-  const allowed = new Set([
-    'adapterInputsPath', 'assignmentId', 'checkpointRecovery', 'commands', 'contract', 'correctionContinuation', 'decisionCatalogPath',
-    'evidenceDirectory', 'harness', 'materializedNextRecovery', 'mdlmPiAssignmentTimeoutMs', 'mdlmPiCommandTimeoutMs',
-    'operationalFailureRecovery', 'operator', 'orphanedCheckpointRecovery', 'provenance', 'repository', 'signal',
-    'stateDirectory', 'timeoutMs',
-  ]);
-  for (const key of Object.keys(value)) {
-    if (!allowed.has(key)) throw new Error(`run request.${key} is unsupported`);
-  }
-  requirePositiveSafeInteger(value.timeoutMs, 'timeoutMs');
-  if (value.timeoutMs > 900_000) throw new Error('timeoutMs must not exceed 900000');
-  for (const name of ['mdlmPiCommandTimeoutMs', 'mdlmPiAssignmentTimeoutMs']) {
-    requirePositiveSafeInteger(value[name], name);
-    if (value[name] > value.timeoutMs - outerTimeoutSafetyReserveMs) {
-      throw new Error(`${name} must leave at least ${outerTimeoutSafetyReserveMs}ms safety reserve below timeoutMs`);
-    }
-  }
-  if (value.correctionContinuation !== undefined) {
-    const continuation = value.correctionContinuation;
-    if (!continuation || typeof continuation !== 'object' || Array.isArray(continuation) ||
-        !sameJson(Object.keys(continuation).sort(), ['digest', 'responsePath'])) {
-      throw new Error('correctionContinuation must contain exactly responsePath and digest');
-    }
-    required(continuation.responsePath, 'correctionContinuation.responsePath');
-    if (!path.isAbsolute(continuation.responsePath)) throw new Error('correctionContinuation.responsePath must be an absolute path');
-    if (!/^sha256:[0-9a-f]{64}$/.test(continuation.digest ?? '')) {
-      throw new Error('correctionContinuation.digest must be sha256:<64 lowercase hex>');
-    }
-  }
-  if (value.checkpointRecovery !== undefined) {
-    const recovery = value.checkpointRecovery;
-    if (!recovery || typeof recovery !== 'object' || Array.isArray(recovery) ||
-        !sameJson(Object.keys(recovery).sort(), ['digest', 'snapshotDirectory'])) {
-      throw new Error('checkpointRecovery must contain exactly snapshotDirectory and digest');
-    }
-    required(recovery.snapshotDirectory, 'checkpointRecovery.snapshotDirectory');
-    if (!path.isAbsolute(recovery.snapshotDirectory)) throw new Error('checkpointRecovery.snapshotDirectory must be an absolute path');
-    if (!/^sha256:[0-9a-f]{64}$/.test(recovery.digest ?? '')) {
-      throw new Error('checkpointRecovery.digest must be sha256:<64 lowercase hex>');
-    }
-  }
-  if (value.materializedNextRecovery !== undefined) {
-    validateMaterializedNextRecovery(value.materializedNextRecovery);
-  }
-  if (value.orphanedCheckpointRecovery !== undefined) {
-    validateOrphanedCheckpointRecovery(value.orphanedCheckpointRecovery);
-  }
-  if (value.operationalFailureRecovery !== undefined) {
-    const recovery = value.operationalFailureRecovery;
-    const keys = [
-      'initialSnapshotDigest', 'initialSnapshotDirectory', 'postSnapshotDigest',
-      'postSnapshotDirectory', 'resultDigest', 'resultPath',
-    ];
-    if (!recovery || typeof recovery !== 'object' || Array.isArray(recovery) ||
-        !sameJson(Object.keys(recovery).sort(), keys)) {
-      throw new Error(`operationalFailureRecovery must contain exactly ${keys.join(', ')}`);
-    }
-    for (const name of ['resultPath', 'initialSnapshotDirectory', 'postSnapshotDirectory']) {
-      required(recovery[name], `operationalFailureRecovery.${name}`);
-      if (!path.isAbsolute(recovery[name])) throw new Error(`operationalFailureRecovery.${name} must be an absolute path`);
-    }
-    for (const name of ['resultDigest', 'initialSnapshotDigest', 'postSnapshotDigest']) {
-      if (!/^sha256:[0-9a-f]{64}$/.test(recovery[name] ?? '')) {
-        throw new Error(`operationalFailureRecovery.${name} must be sha256:<64 lowercase hex>`);
-      }
-    }
-  }
-}
-function validateMaterializedNextRecovery(recovery) {
-  const keys = ['acceptedResult', 'finalSnapshot', 'nextExit', 'nextStderr', 'nextStdout', 'oldSnapshot'];
-  if (!recovery || typeof recovery !== 'object' || Array.isArray(recovery) ||
-      !sameJson(Object.keys(recovery).sort(), keys)) {
-    throw new Error(`materializedNextRecovery must contain exactly ${keys.join(', ')}`);
-  }
-  for (const name of ['acceptedResult', 'nextStdout', 'nextStderr', 'nextExit']) {
-    validatePinnedFile(recovery[name], `materializedNextRecovery.${name}`);
-  }
-  for (const name of ['oldSnapshot', 'finalSnapshot']) {
-    const pin = recovery[name];
-    if (!pin || typeof pin !== 'object' || Array.isArray(pin) ||
-        !sameJson(Object.keys(pin).sort(), ['digest', 'directory'])) {
-      throw new Error(`materializedNextRecovery.${name} must contain exactly directory and digest`);
-    }
-    required(pin.directory, `materializedNextRecovery.${name}.directory`);
-    if (!path.isAbsolute(pin.directory)) throw new Error(`materializedNextRecovery.${name}.directory must be an absolute path`);
-    requireSha256(pin.digest, `materializedNextRecovery.${name}.digest`);
-  }
-}
-
-function validateOrphanedCheckpointRecovery(recovery) {
-  const keys = [
-    'assignmentCheckpoint', 'initialSnapshotDigest', 'initialSnapshotDirectory', 'postSnapshotDigest',
-    'postSnapshotDirectory', 'prepare', 'processedAssignment', 'retryTransition', 'shimConfig', 'stopPacket',
-  ].sort();
-  if (!recovery || typeof recovery !== 'object' || Array.isArray(recovery) ||
-      !sameJson(Object.keys(recovery).sort(), keys)) {
-    throw new Error(`orphanedCheckpointRecovery must contain exactly ${keys.join(', ')}`);
-  }
-  for (const name of ['initialSnapshotDirectory', 'postSnapshotDirectory']) {
-    required(recovery[name], `orphanedCheckpointRecovery.${name}`);
-    if (!path.isAbsolute(recovery[name])) throw new Error(`orphanedCheckpointRecovery.${name} must be an absolute path`);
-  }
-  for (const name of ['initialSnapshotDigest', 'postSnapshotDigest']) {
-    requireSha256(recovery[name], `orphanedCheckpointRecovery.${name}`);
-  }
-  const pinnedFileNames = ['retryTransition', 'shimConfig', 'processedAssignment', 'assignmentCheckpoint', 'stopPacket'];
-  for (const name of pinnedFileNames) validatePinnedFile(recovery[name], `orphanedCheckpointRecovery.${name}`);
-  if (!recovery.prepare || typeof recovery.prepare !== 'object' || Array.isArray(recovery.prepare) ||
-      !sameJson(Object.keys(recovery.prepare).sort(), ['record', 'stderr', 'stdout'])) {
-    throw new Error('orphanedCheckpointRecovery.prepare must contain exactly record, stderr, stdout');
-  }
-  for (const name of ['record', 'stdout', 'stderr']) {
-    validatePinnedFile(recovery.prepare[name], `orphanedCheckpointRecovery.prepare.${name}`);
-  }
-}
-function validatePinnedFile(value, label) {
-  if (!value || typeof value !== 'object' || Array.isArray(value) ||
-      !sameJson(Object.keys(value).sort(), ['digest', 'path'])) {
-    throw new Error(`${label} must contain exactly path and digest`);
-  }
-  required(value.path, `${label}.path`);
-  if (!path.isAbsolute(value.path)) throw new Error(`${label}.path must be an absolute path`);
-  requireSha256(value.digest, `${label}.digest`);
-}
-function requireSha256(value, label) {
-  if (!/^sha256:[0-9a-f]{64}$/.test(value ?? '')) throw new Error(`${label} must be sha256:<64 lowercase hex>`);
-}
-function requirePositiveSafeInteger(value, label) {
-  if (!Number.isSafeInteger(value) || value < 1) throw new Error(`${label} must be a positive safe integer`);
-}
-export function validateOperator(value) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('operator must be an object');
-  if (!sameJson(Object.keys(value).sort(), ['model', 'provider', 'thinking'])) throw new Error('operator must contain exactly provider, model, and thinking');
-  for (const name of ['provider', 'model']) {
-    if (typeof value[name] !== 'string' || !operatorScalarPattern.test(value[name])) throw new Error(`operator.${name} must be a safe nonempty scalar string`);
-  }
-  if (typeof value.thinking !== 'string' || !thinkingLevels.has(value.thinking)) {
-    throw new Error(`operator.thinking must be one of ${[...thinkingLevels].join(', ')}`);
   }
 }
 function assignmentKey(value) { return `${value.replace(/[^A-Za-z0-9._-]/g, '_')}-${sha256(Buffer.from(value)).slice(-12)}`; }

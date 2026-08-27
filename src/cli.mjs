@@ -7,6 +7,7 @@ import {
 import { snapshot } from './evidence.mjs';
 import { reconcile, run } from './orchestrator.mjs';
 import { preflight, preflightFailure, preflightLimits } from './preflight.mjs';
+import { parseStrictJson } from './strict-json.mjs';
 
 const publicCommands = [
   'preflight',
@@ -51,7 +52,7 @@ function parseRequestBytes(bytes, label) {
     if (error instanceof TypeError) throw new Error(`${label} is not valid UTF-8`);
     throw error;
   }
-  return JSON.parse(text);
+  return parseStrictJson(text, label);
 }
 
 async function main(args) {
