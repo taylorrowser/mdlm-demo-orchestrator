@@ -43,6 +43,8 @@ Install only the authenticated tarball. The tooling root must not exist before t
 
 After applying read-only permissions, make the source checkout unavailable and invoke the installed executable under a filesystem policy limited to the tooling root. `mdlm-demo-runner --help` and every `<command> --help` must emit the exact same `mdlm-demo-help@1` JSON line on standard output, emit nothing on standard error, exit zero, and leave the installed tree unchanged.
 
+Every qualified identity must record the installed `scripts/validate-runner-install.mjs` path and SHA-256. Authenticate those validator bytes before execution, then pass the installed validator the external install-manifest path and its authenticated SHA-256. Run this validation before and after each installed-runner smoke or qualification command. Do not use a validator from a source checkout or another candidate directory.
+
 The combined identity `89230a0747ac5a701ba3929f5ec0345701ae387f` + `ffd5e70c545449850900ec8ceaae68c18aaf17b0` remains failed artifact-closure evidence. Its launcher bytes were present without `src/cli.mjs`. A later qualification must use a new runner commit and a new combined one-shot identity. It must not rerun or relabel the failed identity.
 
 ## Request preflight

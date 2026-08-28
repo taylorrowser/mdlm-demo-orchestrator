@@ -19,6 +19,7 @@ const runtimeFiles = [
   'scripts/create-distribution-manifest.mjs',
   'scripts/inspect-package.mjs',
   'scripts/launcher-template.mjs',
+  'scripts/validate-runner-install.mjs',
   'src/adapter.mjs',
   'src/canonical-file.mjs',
   'src/classify.mjs',
