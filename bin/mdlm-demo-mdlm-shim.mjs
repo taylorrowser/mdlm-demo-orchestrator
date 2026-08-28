@@ -6,7 +6,7 @@ import { registerHooks } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-const expectedManifestSha256 = "840500f1714978f60df7fd7cdead588745d94c6d419de1f80cf99e74bfd98c82";
+const expectedManifestSha256 = "db2e0d45f985916599316b5f1cbef1a1ab7f3a457b3c532fadd5768cd2b7aac5";
 const launcherPath = "bin/mdlm-demo-mdlm-shim.mjs";
 const entrypoint = "src/shim-cli.mjs";
 const entryExport = "executeShim";

@@ -95,8 +95,8 @@
     },
     {
       "path": "src/reviewer-lease.mjs",
-      "bytes": 13641,
-      "sha256": "f24a2609bcc5168632650c1a04344fe92469b21306866c1e1b67d0cf1a030228"
+      "bytes": 13671,
+      "sha256": "56cf42a1b4e6fbc2367e441c33a08c7ecc7d22073142fae15719d8c72ccb2aa3"
     },
     {
       "path": "src/run-request.mjs",

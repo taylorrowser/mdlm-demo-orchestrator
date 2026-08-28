@@ -168,7 +168,7 @@ async function preserveResponse(root, attempt, input) {
   if (response?.contract !== 'mdlm-assignment-response@1') throw new Error("reviewer response contract must equal 'mdlm-assignment-response@1'");
   if (response.assignment !== attempt.assignment) throw new Error('reviewer response Assignment does not match the attempt');
   const target = path.join(attempt.receiver.path, 'response.json');
-  await writeDurableBytes(target, captured.bytes);
+  if (captured.path !== target) await writeDurableBytes(target, captured.bytes);
   return { path: target, digest, bytes: captured.bytes.length };
 }
 
