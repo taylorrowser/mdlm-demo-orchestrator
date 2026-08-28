@@ -2,7 +2,7 @@
 
 This public repository contains the issue #213 recovery runner. It does not yet contain a successful public demonstration and has not run a real lifecycle repository.
 
-The runner uses eight JSON commands:
+The runner uses nine JSON commands:
 
 ```text
 mdlm-demo-runner preflight [--input FILE]
@@ -13,6 +13,7 @@ mdlm-demo-runner decision-catalog-validate [--input FILE]
 mdlm-demo-runner run [--input FILE]
 mdlm-demo-runner resume [--input FILE]
 mdlm-demo-runner reconcile [--input FILE]
+mdlm-demo-runner reviewer-lease [--input FILE]
 ```
 
 Without `--input`, each command reads one JSON value from standard input. It writes one JSON result to standard output. Errors go to standard error and return exit status 1. `preflight` is the exception for failures: it writes one `mdlm-demo-preflight-result@1` with `status: "FAIL"` to standard output, writes no standard error, and returns exit status 1. `mdlm-demo-runner --help` and `<command> --help` return the machine-readable command catalog without reading standard input.
@@ -86,10 +87,52 @@ The command is read-only. It has no filesystem output option: it writes only its
 
 Tests use the approved public seams.
 
-1. The JSON CLI is the operator boundary. Its eight commands do not require imports from MDLM.
+1. The JSON CLI is the operator boundary. Its nine commands do not require imports from MDLM.
 2. `src/adapter.mjs` consumes exact `mdlm-assignment-packet@2` bytes. It returns exact `mdlm-assignment-response@1` bytes or `mdlm-demo-reserved-stop@1` before submission.
 3. Process tests run fake `mdlm` and `mdlm-pi` executables in scratch Git repositories. They check raw process evidence, transaction counts, and Git commit counts.
 4. Deterministic integrations authenticate the pinned MDLM source commit and tree, build `mdlm-pi` from that worktree, authenticate the complete build and exact CLI bytes, and then import the controller and Assignment runner. A focused producer/consumer check executes that CLI before passing its canonical operational-failure envelope to the runner contract. These checks do not replace the separate one-shot release qualification gate.
+
+## Delegated reviewer transport
+
+`reviewer-lease` keeps response-only Codex reviewer attempts outside the
+lifecycle repository. Give it a dedicated existing directory for one lane. Its
+records bind the lane, Assignment, prepared-packet digest, generated attempt,
+generated receiver, and delegated session; they do not create or alter an MDLM
+Assignment lease and carry no independent-review authority by themselves.
+
+Use four transitions:
+
+1. `open` creates and syncs the attempt and receiver. Start a reviewer with an
+   instruction to wait for activation.
+2. `bind` records and syncs the returned reviewer session, then atomically
+   activates its response-only lease. Only after this succeeds may the reviewer
+   receive the packet and act.
+3. `status` reports `still-running`, `completed-with-response`, or
+   `closed-without-response` without using process absence as evidence. Before
+   activation it reports `awaiting-session` or `session-bound`.
+4. `terminal` records exactly one of `completed-with-response`, `failed`,
+   `cancelled`, `capacity-rejected`, or `disappeared`. Completion copies and
+   authenticates the exact response in the pre-created receiver. Every other
+   outcome closes without a response. After terminal closure, one fresh `open`
+   may create a replacement; while an active lease exists, `open` fails.
+
+The coordinator must translate an authenticated collaboration result into the
+matching terminal transition before releasing or replacing the reviewer. A
+tool timeout or missing collaboration result is still unknown and must not be
+recorded as disappearance until read-only session inventory proves closure.
+Workers never receive a lifecycle-repository writer lease through this command.
+
+Each invocation uses `mdlm-demo-reviewer-lease-request@1`:
+
+```json
+{"contract":"mdlm-demo-reviewer-lease-request@1","action":"open","root":"/absolute/lane-reviewer-transport","lane":"lane-id","assignment":"assignment-id","packetDigest":"sha256:..."}
+{"contract":"mdlm-demo-reviewer-lease-request@1","action":"bind","root":"/absolute/lane-reviewer-transport","attempt":"generated-attempt-id","session":"delegated-session-id"}
+{"contract":"mdlm-demo-reviewer-lease-request@1","action":"status","root":"/absolute/lane-reviewer-transport","attempt":"generated-attempt-id"}
+{"contract":"mdlm-demo-reviewer-lease-request@1","action":"terminal","root":"/absolute/lane-reviewer-transport","attempt":"generated-attempt-id","session":"delegated-session-id","outcome":"completed-with-response","response":{"path":"/absolute/response.json","digest":"sha256:..."}}
+```
+
+For `capacity-rejected`, omit `session`. For `failed`, `cancelled`, or
+`disappeared`, supply the bound `session` and omit `response`.
 
 `bin/mdlm-demo-mdlm-shim.mjs` inspects only successful `scenario prepare` JSON. It intercepts these exact Scenario references before a worker starts:
 
