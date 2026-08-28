@@ -113,10 +113,12 @@ Use four transitions:
    `closed-without-response` without using process absence as evidence. Before
    activation it reports `awaiting-session` or `session-bound`.
 4. `terminal` records exactly one of `completed-with-response`, `failed`,
-   `cancelled`, `capacity-rejected`, or `disappeared`. Completion copies and
-   authenticates the exact response in the pre-created receiver. Every other
-   outcome closes without a response. After terminal closure, one fresh `open`
-   may create a replacement; while an active lease exists, `open` fails.
+   `cancelled`, `capacity-rejected`, or `disappeared`. Completion authenticates
+   the exact response. When the reviewer wrote it to the generated
+   `receiver.responsePath`, terminal closure retains those bytes in place.
+   Otherwise it copies them into that path with create-only semantics. Every
+   other outcome closes without a response. After terminal closure, one fresh
+   `open` may create a replacement; while an active lease exists, `open` fails.
 
 The coordinator must translate an authenticated collaboration result into the
 matching terminal transition before releasing or replacing the reviewer. A

@@ -105,3 +105,47 @@ test('reviewer receiver binds before activation and terminal closure authorizes 
   assert.equal(await readFile(completed.receiver.responsePath, 'utf8'), response);
   assert.equal((await invoke(request(root, 'status', { attempt: replacement.attempt }))).state, 'completed-with-response');
 });
+
+test('terminal closure authenticates a response already written to its canonical receiver path', async () => {
+  const scratch = await mkdtemp(path.join(os.tmpdir(), 'mdlm-reviewer-lease-'));
+  const root = path.join(scratch, 'reviewer-transport');
+  await mkdir(root);
+
+  const opened = await invoke(request(root, 'open', {
+    lane: 'hex-to-bytes-codex-terra-024-old-qualified', assignment, packetDigest,
+  }));
+  await invoke(request(root, 'bind', {
+    attempt: opened.attempt,
+    session: 'reviewer-session-001',
+  }));
+
+  const response = `${JSON.stringify({
+    contract: 'mdlm-assignment-response@1',
+    assignment,
+    kind: 'proposal',
+    proposal: { outputs: [] },
+  })}\n`;
+  const responseDigest = `sha256:${createHash('sha256').update(response).digest('hex')}`;
+  await writeFile(opened.receiver.responsePath, response);
+
+  await assert.rejects(invoke(request(root, 'terminal', {
+    attempt: opened.attempt,
+    session: 'reviewer-session-001',
+    outcome: 'completed-with-response',
+    response: { path: opened.receiver.responsePath, digest: `sha256:${'2'.repeat(64)}` },
+  })), error => error.code === 1 && error.stderr.includes('reviewer response digest does not match'));
+  assert.equal((await invoke(request(root, 'status', { attempt: opened.attempt }))).state, 'still-running');
+  assert.equal(await readFile(opened.receiver.responsePath, 'utf8'), response);
+
+  const completed = await invoke(request(root, 'terminal', {
+    attempt: opened.attempt,
+    session: 'reviewer-session-001',
+    outcome: 'completed-with-response',
+    response: { path: opened.receiver.responsePath, digest: responseDigest },
+  }));
+
+  assert.equal(completed.state, 'completed-with-response');
+  assert.equal(completed.terminal.response.path, opened.receiver.responsePath);
+  assert.equal(await readFile(opened.receiver.responsePath, 'utf8'), response);
+  assert.equal((await invoke(request(root, 'status', { attempt: opened.attempt }))).state, 'completed-with-response');
+});
