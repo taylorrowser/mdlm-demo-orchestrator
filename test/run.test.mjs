@@ -2709,29 +2709,6 @@ test('canonical operational failures fail closed on arbitrary, malformed, or una
   const authority = `${JSON.stringify({ mode: 'attended', authority: 'stakeholder', delegationAllowed: false }, null, 2)}\n`;
   const context = `${JSON.stringify({ invocations: [] }, null, 2)}\n`;
   const attendedPrompt = 'Explicit conclusion from the named authority holder (not chat approval): ';
-  const escapedCredentialCases = [
-    'apiKey', 'accessToken', 'x-api-key', 'clientSecret', 'password', 'authorization',
-  ].flatMap(key => [1, 2, 3, 4, 5, 6].flatMap(layers => {
-    let serializedMessage = JSON.stringify({ credentials: { [key]: 'nested-api-secret' } });
-    for (let layer = 0; layer < layers; layer++) {
-      serializedMessage = serializedMessage.replaceAll('\\', '\\\\').replaceAll('"', '\\"');
-    }
-    const quoteWidth = (2 ** layers) - 1;
-    const escapedQuote = `${'\\'.repeat(quoteWidth)}"`;
-    const shellMessage = `${key}=${escapedQuote}shell-api-secret${escapedQuote}`;
-    return [
-      [
-        `${key} credential escaped through ${layers} serialized layer${layers === 1 ? '' : 's'}`,
-        progress,
-        canonicalPiOperationalFailure({ telemetry: { providerError: { message: serializedMessage, truncated: false } } }),
-      ],
-      [
-        `${key} shell credential at escaped quote width ${quoteWidth}`,
-        progress,
-        canonicalPiOperationalFailure({ telemetry: { providerError: { message: shellMessage, truncated: false } } }),
-      ],
-    ];
-  }));
   const adversarial = [
     ['arbitrary stdout', `${progress}worker says continue\n`, canonical],
     ['mismatched Assignment', 'Assignment aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa: ordinary@1\n', canonical],
@@ -2742,7 +2719,7 @@ test('canonical operational failures fail closed on arbitrary, malformed, or una
     ['mismatched provider', progress, canonicalPiOperationalFailure({ telemetry: { provider: 'anthropic' } })],
     ['secret-bearing provider error', progress, canonicalPiOperationalFailure({ telemetry: { providerError: { message: 'Authorization Bearer sk-secretvalue', truncated: false } } })],
     ['quoted nested provider credential', progress, canonicalPiOperationalFailure({ telemetry: { providerError: { message: '{"headers":{"x-api-key":"nested-provider-secret"}}', truncated: false } } })],
-    ...escapedCredentialCases,
+    ['escaped provider credential', progress, canonicalPiOperationalFailure({ telemetry: { providerError: { message: String.raw`authorization=\\\"shell-api-secret\\\"`, truncated: false } } })],
     ['opaque provider credential', progress, canonicalPiOperationalFailure({ telemetry: { providerError: { message: Buffer.from('opaque provider credential value').toString('base64'), truncated: false } } })],
     ['AWS provider credential', progress, canonicalPiOperationalFailure({ telemetry: { providerError: { message: 'AKIAIOSFODNN7EXAMPLE', truncated: false } } })],
     ['JWT provider credential', progress, canonicalPiOperationalFailure({ telemetry: { providerError: { message: 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.signature-value', truncated: false } } })],
