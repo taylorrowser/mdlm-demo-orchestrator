@@ -30,8 +30,8 @@
     },
     {
       "path": "scripts/create-distribution-manifest.mjs",
-      "bytes": 3888,
-      "sha256": "aee11d5dabe49f52cb11e1d996386e0f791e7821defcbe45b1b5eef09ddee15e"
+      "bytes": 3916,
+      "sha256": "bbf9d2808d44a1f6cd86f7a11e82d7b71706cd7f680afc681190c63a3b841d27"
     },
     {
       "path": "scripts/inspect-package.mjs",
@@ -60,8 +60,8 @@
     },
     {
       "path": "src/cli.mjs",
-      "bytes": 3764,
-      "sha256": "3c3e3353d96e3cacca67cb79f36be1b8f3d1f3cf359f4331220bb21769e464a8"
+      "bytes": 4095,
+      "sha256": "470f6c137dc540a5651c596f9a6989b80d87f1d3842ef301dde78126384f5219"
     },
     {
       "path": "src/contracts.mjs",
@@ -92,6 +92,11 @@
       "path": "src/process-package.mjs",
       "bytes": 1734,
       "sha256": "c1a25a0e8b598dd07c5a293e173a0c599a368e9ae9ea71d2c950a457708d24d5"
+    },
+    {
+      "path": "src/reviewer-lease.mjs",
+      "bytes": 13641,
+      "sha256": "f24a2609bcc5168632650c1a04344fe92469b21306866c1e1b67d0cf1a030228"
     },
     {
       "path": "src/run-request.mjs",

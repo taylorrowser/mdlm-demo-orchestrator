@@ -7,6 +7,7 @@ import {
 import { snapshot } from './evidence.mjs';
 import { reconcile, run } from './orchestrator.mjs';
 import { preflight, preflightFailure, preflightLimits } from './preflight.mjs';
+import { reviewerLease, reviewerLeaseLimits } from './reviewer-lease.mjs';
 import { parseStrictJson } from './strict-json.mjs';
 
 const publicCommands = [
@@ -18,6 +19,7 @@ const publicCommands = [
   'run',
   'resume',
   'reconcile',
+  'reviewer-lease',
 ];
 const usage = `mdlm-demo-runner ${publicCommands.join('|')} [--input file]`;
 const utf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
@@ -70,13 +72,18 @@ async function main(args) {
     }
   }
   const decisionCatalogCommand = command === 'decision-catalog-build' || command === 'decision-catalog-validate';
-  const request = await readRequest(rest, decisionCatalogCommand ? decisionCatalogLimits.buildRequestBytes : undefined);
+  const request = await readRequest(
+    rest,
+    command === 'reviewer-lease' ? reviewerLeaseLimits.requestBytes : decisionCatalogCommand ? decisionCatalogLimits.buildRequestBytes : undefined,
+    command === 'reviewer-lease' ? 'reviewer lease request' : 'decision catalog request',
+  );
   if (command === 'classify') return classify(request);
   if (command === 'decision-catalog-build') return buildDecisionCatalogRequest(request);
   if (command === 'decision-catalog-validate') return validateDecisionCatalogRequest(request);
   if (command === 'snapshot') return snapshot(request);
   if (command === 'run' || command === 'resume') return run(request, command);
   if (command === 'reconcile') return reconcile(request);
+  if (command === 'reviewer-lease') return reviewerLease(request);
   throw new Error(`usage: ${usage}`);
 }
 

@@ -21,6 +21,7 @@ const runtimeFiles = [
   'src/orchestrator.mjs',
   'src/preflight.mjs',
   'src/process-package.mjs',
+  'src/reviewer-lease.mjs',
   'src/run-request.mjs',
   'src/shim-cli.mjs',
   'src/strict-json.mjs',
