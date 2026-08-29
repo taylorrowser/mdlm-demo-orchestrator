@@ -2,7 +2,9 @@
 
 The runner transports one MDLM operator transaction. It calls `mdlm next
 --json` once, passes the included Assignment packet to one operator process,
-then sends that process's response to `mdlm scenario submit --json`.
+then sends that process's response to `mdlm scenario submit --json`. For an
+attended Assignment with an exact authority supply, the submit call includes
+that authority.
 
 The runner understands the six `mdlm-next@2` outcomes and the three
 `mdlm-submission-outcome@1` results. It does not inspect status, select work,
@@ -20,6 +22,10 @@ assemble proposal fields.
   "repository": "/absolute/lifecycle-repository",
   "stateDirectory": "/absolute/runner-state",
   "timeoutMs": 900000,
+  "authoritySupply": {
+    "assignment": "exact-attended-assignment-id",
+    "authority": "stakeholder"
+  },
   "commands": {
     "mdlm": {
       "path": "/absolute/mdlm",
@@ -34,6 +40,15 @@ assemble proposal fields.
 }
 ```
 
+`authoritySupply` is optional and may be used only for an `attention-required`
+outcome. Its Assignment and authority must exactly match that outcome. The
+runner returns the exact `attention-required` result without invoking the
+operator when the supply is absent. Invoke it again with the matching supply to
+continue that Assignment. A mismatched supply is rejected before the operator
+runs. The runner never derives authority from the operator response. For the
+one matching submission it adds `--authority <authority>`. Ordinary
+Assignments never receive an authority flag.
+
 Both commands are authenticated before use. The operator receives the exact
 `mdlm-assignment-packet@3` JSON on standard input and must return one
 `mdlm-assignment-response@2` JSON value on standard output.
@@ -43,6 +58,10 @@ transaction journal before submission starts. If submission closure is
 uncertain, a later invocation inspects the recorded execution or Assignment
 identity. It never submits the response again. A retained repository lock is
 not reclaimed merely because its process is absent.
+
+An invocation recovering an attended transaction must carry the same exact
+`authoritySupply` so the runner can authenticate the journal. Recovery uses it
+only as identity evidence and never submits it again.
 
 `reviewer-lease` remains available for response-only delegated reviewers. It
 does not grant lifecycle authority or write the lifecycle repository.
