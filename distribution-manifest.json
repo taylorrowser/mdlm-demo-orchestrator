@@ -58,8 +58,8 @@
     },
     {
       "path": "src/runner.mjs",
-      "bytes": 15821,
-      "sha256": "480cd143f38e8861d9576f6bb09858a4223c40f227ed97fa604ce3a7c28bc915"
+      "bytes": 17685,
+      "sha256": "72aa33f120187bf047fc63433184df92e810e99317585ab83361e0f9540dd0d6"
     },
     {
       "path": "src/strict-json.mjs",

@@ -22,7 +22,8 @@ const terminalOutcomes = new Set([
 const submissionOutcomes = new Set(['accepted', 'rejected', 'settlement-required']);
 
 export function validateRunRequest(value) {
-  exactObject(value, ['commands', 'contract', 'repository', 'stateDirectory', 'timeoutMs'], 'run request');
+  const keys = ['commands', 'contract', 'repository', 'stateDirectory', 'timeoutMs'];
+  exactObject(value, value?.authoritySupply === undefined ? keys : [...keys, 'authoritySupply'], 'run request');
   if (value.contract !== 'mdlm-demo-run-request@2') throw new Error("run request.contract must equal 'mdlm-demo-run-request@2'");
   absolutePath(value.repository, 'repository');
   absolutePath(value.stateDirectory, 'stateDirectory');
@@ -32,6 +33,11 @@ export function validateRunRequest(value) {
   exactObject(value.commands, ['mdlm', 'operator'], 'commands');
   validateCommand(value.commands.mdlm, 'commands.mdlm', false);
   validateCommand(value.commands.operator, 'commands.operator', true);
+  if (value.authoritySupply !== undefined) {
+    exactObject(value.authoritySupply, ['assignment', 'authority'], 'authoritySupply');
+    nonempty(value.authoritySupply.assignment, 'authoritySupply.assignment');
+    nonempty(value.authoritySupply.authority, 'authoritySupply.authority');
+  }
   return value;
 }
 
@@ -47,6 +53,11 @@ export function validateNextOutcome(value) {
     if (packet.assignment?.id !== assignment.id) throw new Error('packet Assignment differs from next Assignment');
     object(packet.responseScaffold, 'packet.responseScaffold');
     object(packet.responseSchema, 'packet.responseSchema');
+  }
+  if (value.outcome === 'attention-required') {
+    const requirement = object(value.authorityRequirement, 'authorityRequirement');
+    if (requirement.mode !== 'attended') throw new Error("authorityRequirement.mode must equal 'attended'");
+    nonempty(requirement.authority, 'authorityRequirement.authority');
   }
   return value;
 }
@@ -87,13 +98,17 @@ export async function run(request) {
     const journalPath = path.join(stateDirectory, 'transaction.json');
     const journal = await optionalJson(journalPath);
     if (journal !== null) {
-      const recovered = await recover(journal, journalPath, repository, commands, request.timeoutMs);
+      const recovered = await recover(journal, journalPath, repository, commands, request.authoritySupply, request.timeoutMs);
       if (recovered !== null) return recovered;
     }
 
     const nextProcess = await invoke(commands.mdlm.path, ['next', '--json'], repository, request.timeoutMs);
     if (!commandSucceeded(nextProcess)) throw new Error('mdlm next failed');
     const next = validateNextOutcome(parseJson(nextProcess.stdout, 'mdlm next'));
+    const authority = authorityFor(next, request.authoritySupply);
+    if (next.outcome === 'attention-required' && authority === undefined) {
+      return { contract: 'mdlm-demo-run-result@2', status: 'attention-required', next };
+    }
     if (terminalOutcomes.has(next.outcome)) {
       return { contract: 'mdlm-demo-run-result@2', status: next.outcome, next };
     }
@@ -133,13 +148,14 @@ export async function run(request) {
       packetPath: path.join(assignmentDirectory, 'packet.json'),
       responseDigest,
       responsePath,
+      ...(request.authoritySupply === undefined ? {} : { authoritySupply: request.authoritySupply }),
     };
     await durableJson(journalPath, captured);
     await durableJson(journalPath, { ...captured, phase: 'submitting' });
 
     const submissionProcess = await invoke(
       commands.mdlm.path,
-      ['scenario', 'submit', '--json'],
+      ['scenario', 'submit', ...(authority === undefined ? [] : ['--authority', authority]), '--json'],
       repository,
       request.timeoutMs,
       responseBytes,
@@ -173,9 +189,9 @@ export async function run(request) {
   }
 }
 
-async function recover(journal, journalPath, repository, commands, timeoutMs) {
+async function recover(journal, journalPath, repository, commands, authoritySupply, timeoutMs) {
   if (journal.contract !== 'mdlm-demo-transaction@3') throw new Error('transaction journal contract is invalid');
-  await authenticateRecovery(journal, repository, commands);
+  await authenticateRecovery(journal, repository, commands, authoritySupply);
   if (journal.phase === 'accepted') {
     return { contract: 'mdlm-demo-run-result@2', status: 'accepted', submission: journal.submission, recovered: true };
   }
@@ -206,9 +222,10 @@ async function recover(journal, journalPath, repository, commands, timeoutMs) {
   return null;
 }
 
-async function authenticateRecovery(journal, repository, commands) {
+async function authenticateRecovery(journal, repository, commands, authoritySupply) {
   if (journal.repository !== repository) throw new Error('transaction repository differs from the canonical repository');
   if (!sameJson(journal.commands, commands)) throw new Error('transaction command pins differ');
+  if (!sameJson(journal.authoritySupply, authoritySupply)) throw new Error('transaction authority supply differs');
   object(journal.package, 'transaction package');
   object(journal.packetRepository, 'transaction packet repository');
   absolutePath(journal.packetPath, 'transaction packetPath');
@@ -224,6 +241,19 @@ async function authenticateRecovery(journal, repository, commands) {
   if (journal.submission !== undefined) {
     validateSubmissionOutcome(journal.submission, journal.assignment, journal.responseDigest);
   }
+}
+
+function authorityFor(next, supply) {
+  if (next.outcome !== 'attention-required') {
+    if (supply !== undefined) throw new Error('authoritySupply is only valid for attention-required');
+    return undefined;
+  }
+  if (supply === undefined) return undefined;
+  if (supply.assignment !== next.assignment.id) throw new Error('authoritySupply Assignment differs from next Assignment');
+  if (supply.authority !== next.authorityRequirement.authority) {
+    throw new Error('authoritySupply authority differs from the declared authority');
+  }
+  return supply.authority;
 }
 
 function settlementResult(journal, reason) {

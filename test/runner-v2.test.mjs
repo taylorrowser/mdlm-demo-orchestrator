@@ -78,6 +78,94 @@ test('ordinary path calls next once, hands over its packet, and submits one resp
   context.after(async () => import('node:fs/promises').then(fs => fs.rm(scratch, { recursive: true })));
 });
 
+test('attended path supplies only the exact Assignment-bound authority', async context => {
+  const scratch = await mkdtemp(path.join(os.tmpdir(), 'mdlm-runner-authority-'));
+  const repository = path.join(scratch, 'repository');
+  const stateDirectory = path.join(scratch, 'state');
+  await mkdir(repository);
+  await exec('/usr/bin/git', ['init', '-q'], { cwd: repository });
+  const next = await fixture('attention-required.json');
+  const response = await fixture('assignment-response.json');
+  response.assignment = next.assignment.id;
+  const accepted = await fixture('submission-accepted.json');
+  accepted.assignment.id = next.assignment.id;
+  accepted.settlement.assignment = next.assignment.id;
+  accepted.responseDigest = sha256(Buffer.from(`${JSON.stringify(response)}\n`));
+  const calls = path.join(scratch, 'calls.jsonl');
+  const mdlm = path.join(scratch, 'mdlm');
+  const operator = path.join(scratch, 'operator.mjs');
+  await writeFile(mdlm, `#!/usr/bin/env node\nconst fs=require('node:fs');const args=process.argv.slice(2);fs.appendFileSync(${JSON.stringify(calls)},JSON.stringify(args)+'\\n');if(args[0]==='next')process.stdout.write(${JSON.stringify(`${JSON.stringify(next)}\n`)});else if(args[0]==='scenario'&&args[1]==='submit')process.stdout.write(${JSON.stringify(`${JSON.stringify(accepted)}\n`)});else process.exit(8);\n`);
+  await chmod(mdlm, 0o755);
+  await writeFile(operator, `process.stdin.resume();process.stdin.on('end',()=>process.stdout.write(${JSON.stringify(`${JSON.stringify(response)}\n`)}));\n`);
+  const authoritySupply = { assignment: next.assignment.id, authority: 'stakeholder' };
+  const request = {
+    contract: 'mdlm-demo-run-request@2', repository, stateDirectory, timeoutMs: 10_000,
+    commands: {
+      mdlm: { path: mdlm, digest: sha256(await readFile(mdlm)) },
+      operator: { path: process.execPath, digest: sha256(await readFile(process.execPath)), args: [operator] },
+    },
+  };
+  const attention = await run(request);
+  assert.equal(attention.status, 'attention-required');
+  assert.equal(attention.next.assignment.id, authoritySupply.assignment);
+  await assert.rejects(readFile(path.join(stateDirectory, 'transaction.json')), error => error.code === 'ENOENT');
+  const result = await run({ ...request, authoritySupply });
+  assert.equal(result.status, 'accepted');
+  assert.deepEqual((await readFile(calls, 'utf8')).trim().split('\n').map(JSON.parse), [
+    ['next', '--json'],
+    ['next', '--json'],
+    ['scenario', 'submit', '--authority', 'stakeholder', '--json'],
+  ]);
+  assert.deepEqual(
+    JSON.parse(await readFile(path.join(stateDirectory, 'transaction.json'), 'utf8')).authoritySupply,
+    authoritySupply,
+  );
+  context.after(async () => import('node:fs/promises').then(fs => fs.rm(scratch, { recursive: true })));
+});
+
+test('rejects mismatched, extra, and ordinary Assignment authority before operator or submit', async context => {
+  const attended = await fixture('attention-required.json');
+  const ordinary = await fixture('assignment.json');
+  const cases = [
+    ['wrong Assignment', attended, { assignment: ordinary.assignment.id, authority: 'stakeholder' }, /Assignment differs/],
+    ['wrong authority', attended, { assignment: attended.assignment.id, authority: 'reviewer' }, /declared authority/],
+    ['extra field', attended, { assignment: attended.assignment.id, authority: 'stakeholder', source: 'proposal' }, /must contain exactly/],
+    ['ordinary Assignment', ordinary, { assignment: ordinary.assignment.id, authority: 'stakeholder' }, /only valid for attention-required/],
+  ];
+  for (const [name, next, authoritySupply, expected] of cases) {
+    await context.test(name, async subcontext => {
+      const scratch = await mkdtemp(path.join(os.tmpdir(), 'mdlm-runner-authority-reject-'));
+      const repository = path.join(scratch, 'repository');
+      const stateDirectory = path.join(scratch, 'state');
+      await mkdir(repository);
+      await exec('/usr/bin/git', ['init', '-q'], { cwd: repository });
+      const calls = path.join(scratch, 'calls.jsonl');
+      const operatorCalled = path.join(scratch, 'operator-called');
+      const mdlm = path.join(scratch, 'mdlm');
+      const operator = path.join(scratch, 'operator.mjs');
+      await writeFile(mdlm, `#!/usr/bin/env node\nconst fs=require('node:fs');const args=process.argv.slice(2);fs.appendFileSync(${JSON.stringify(calls)},JSON.stringify(args)+'\\n');if(args[0]==='next')process.stdout.write(${JSON.stringify(`${JSON.stringify(next)}\n`)});else process.exit(8);\n`);
+      await chmod(mdlm, 0o755);
+      await writeFile(operator, `require('node:fs').writeFileSync(${JSON.stringify(operatorCalled)},'called');\n`);
+      const request = {
+        contract: 'mdlm-demo-run-request@2', repository, stateDirectory, timeoutMs: 10_000,
+        commands: {
+          mdlm: { path: mdlm, digest: sha256(await readFile(mdlm)) },
+          operator: { path: process.execPath, digest: sha256(await readFile(process.execPath)), args: [operator] },
+        },
+        ...(authoritySupply === undefined ? {} : { authoritySupply }),
+      };
+      await assert.rejects(run(request), expected);
+      if (name === 'extra field') {
+        await assert.rejects(readFile(calls), error => error.code === 'ENOENT');
+      } else {
+        assert.deepEqual(JSON.parse((await readFile(calls, 'utf8')).trim()), ['next', '--json']);
+      }
+      await assert.rejects(readFile(operatorCalled), error => error.code === 'ENOENT');
+      subcontext.after(async () => import('node:fs/promises').then(fs => fs.rm(scratch, { recursive: true })));
+    });
+  }
+});
+
 test('an interrupted submission is inspected by stable identity and never replayed', async context => {
   const scratch = await mkdtemp(path.join(os.tmpdir(), 'mdlm-runner-settlement-'));
   const repository = path.join(scratch, 'repository');
@@ -100,6 +188,7 @@ test('an interrupted submission is inspected by stable identity and never replay
     mdlm: { path: mdlm, digest: sha256(await readFile(mdlm)) },
     operator: { path: process.execPath, digest: sha256(await readFile(process.execPath)), args: [] },
   };
+  const authoritySupply = { assignment, authority: 'stakeholder' };
   await writeFile(path.join(stateDirectory, 'transaction.json'), `${JSON.stringify({
     contract: 'mdlm-demo-transaction@3',
     phase: 'settlement-required',
@@ -111,11 +200,12 @@ test('an interrupted submission is inspected by stable identity and never replay
     packetDigest: sha256(await readFile(packetPath)),
     packetPath,
     responseDigest,
+    authoritySupply,
     settlement: { assignment, execution },
   })}\n`);
   const result = await run({
     contract: 'mdlm-demo-run-request@2', repository, stateDirectory, timeoutMs: 10_000,
-    commands,
+    commands, authoritySupply,
   });
   assert.equal(result.status, 'accepted');
   assert.deepEqual(JSON.parse((await readFile(calls, 'utf8')).trim()), ['scenario', 'settlement', execution, '--json']);
