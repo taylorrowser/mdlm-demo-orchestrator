@@ -51,13 +51,14 @@ export function validateNextOutcome(value) {
   return value;
 }
 
-export function validateSubmissionOutcome(value, assignment) {
+export function validateSubmissionOutcome(value, assignment, responseDigest) {
   object(value, 'submission outcome');
   if (value.contract !== 'mdlm-submission-outcome@1') {
     throw new Error("submission contract must equal 'mdlm-submission-outcome@1'");
   }
   if (!submissionOutcomes.has(value.outcome)) throw new Error('submission returned an unsupported outcome');
   if (value.assignment?.id !== assignment) throw new Error('submission Assignment differs from next Assignment');
+  if (value.responseDigest !== responseDigest) throw new Error('submission response digest differs from captured response');
   if (value.outcome === 'rejected') {
     if (!Array.isArray(value.diagnostics) || value.retryable !== true || value.correctionConsumed !== false) {
       throw new Error('rejected submission must be retryable without consuming correction');
@@ -86,7 +87,7 @@ export async function run(request) {
     const journalPath = path.join(stateDirectory, 'transaction.json');
     const journal = await optionalJson(journalPath);
     if (journal !== null) {
-      const recovered = await recover(journal, journalPath, repository, commands.mdlm, request.timeoutMs);
+      const recovered = await recover(journal, journalPath, repository, commands, request.timeoutMs);
       if (recovered !== null) return recovered;
     }
 
@@ -124,7 +125,12 @@ export async function run(request) {
       contract: 'mdlm-demo-transaction@3',
       phase: 'captured',
       assignment,
+      repository,
+      commands,
+      package: next.assignment.packet.package,
+      packetRepository: next.assignment.packet.repository,
       packetDigest: digest(packetBytes),
+      packetPath: path.join(assignmentDirectory, 'packet.json'),
       responseDigest,
       responsePath,
     };
@@ -145,7 +151,11 @@ export async function run(request) {
     }
     let submission;
     try {
-      submission = validateSubmissionOutcome(parseJson(submissionProcess.stdout, 'submission outcome'), assignment);
+      submission = validateSubmissionOutcome(
+        parseJson(submissionProcess.stdout, 'submission outcome'),
+        assignment,
+        responseDigest,
+      );
     } catch {
       const uncertain = { ...captured, phase: 'settlement-required', settlement: { assignment } };
       await durableJson(journalPath, uncertain);
@@ -163,18 +173,23 @@ export async function run(request) {
   }
 }
 
-async function recover(journal, journalPath, repository, mdlm, timeoutMs) {
+async function recover(journal, journalPath, repository, commands, timeoutMs) {
   if (journal.contract !== 'mdlm-demo-transaction@3') throw new Error('transaction journal contract is invalid');
+  await authenticateRecovery(journal, repository, commands);
   if (journal.phase === 'accepted') {
     return { contract: 'mdlm-demo-run-result@2', status: 'accepted', submission: journal.submission, recovered: true };
   }
   if (journal.phase === 'submitting' || journal.phase === 'settlement-required') {
     const settlement = journal.settlement ?? { assignment: journal.assignment };
     const identity = settlement.execution ?? settlement.assignment;
-    const inspected = await invoke(mdlm.path, ['scenario', 'settlement', identity, '--json'], repository, timeoutMs);
+    const inspected = await invoke(commands.mdlm.path, ['scenario', 'settlement', identity, '--json'], repository, timeoutMs);
     if (commandSucceeded(inspected)) {
       try {
-        const submission = validateSubmissionOutcome(parseJson(inspected.stdout, 'settlement outcome'), journal.assignment);
+        const submission = validateSubmissionOutcome(
+          parseJson(inspected.stdout, 'settlement outcome'),
+          journal.assignment,
+          journal.responseDigest,
+        );
         await durableJson(journalPath, {
           ...journal,
           phase: submission.outcome,
@@ -189,6 +204,26 @@ async function recover(journal, journalPath, repository, mdlm, timeoutMs) {
     return settlementResult({ ...journal, settlement }, 'publication-closure-uncertain');
   }
   return null;
+}
+
+async function authenticateRecovery(journal, repository, commands) {
+  if (journal.repository !== repository) throw new Error('transaction repository differs from the canonical repository');
+  if (!sameJson(journal.commands, commands)) throw new Error('transaction command pins differ');
+  object(journal.package, 'transaction package');
+  object(journal.packetRepository, 'transaction packet repository');
+  absolutePath(journal.packetPath, 'transaction packetPath');
+  const packetBytes = await readFile(journal.packetPath);
+  if (digest(packetBytes) !== journal.packetDigest) throw new Error('transaction packet digest differs');
+  const packet = object(parseJson(packetBytes, 'transaction packet'), 'transaction packet');
+  if (packet.contract !== 'mdlm-assignment-packet@3' || packet.assignment?.id !== journal.assignment) {
+    throw new Error('transaction packet identity differs');
+  }
+  if (!sameJson(packet.package, journal.package) || !sameJson(packet.repository, journal.packetRepository)) {
+    throw new Error('transaction packet package or repository identity differs');
+  }
+  if (journal.submission !== undefined) {
+    validateSubmissionOutcome(journal.submission, journal.assignment, journal.responseDigest);
+  }
 }
 
 function settlementResult(journal, reason) {
@@ -280,6 +315,7 @@ function parseJson(bytes, label) {
 
 function canonicalBytes(value) { return Buffer.from(`${JSON.stringify(value)}\n`); }
 function digest(bytes) { return `sha256:${createHash('sha256').update(bytes).digest('hex')}`; }
+function sameJson(left, right) { return JSON.stringify(left) === JSON.stringify(right); }
 function safeName(value) { return value.replace(/[^A-Za-z0-9._-]/g, '_'); }
 async function requireDirectory(value, label) {
   const canonical = await realpath(value);
