@@ -203,6 +203,11 @@ test('an interrupted submission is inspected by stable identity and never replay
     authoritySupply,
     settlement: { assignment, execution },
   })}\n`);
+  await assert.rejects(run({
+    contract: 'mdlm-demo-run-request@2', repository, stateDirectory, timeoutMs: 10_000,
+    commands, authoritySupply: { assignment, authority: 'reviewer' },
+  }), /transaction authority supply differs/);
+  await assert.rejects(readFile(calls), error => error.code === 'ENOENT');
   const result = await run({
     contract: 'mdlm-demo-run-request@2', repository, stateDirectory, timeoutMs: 10_000,
     commands, authoritySupply,
