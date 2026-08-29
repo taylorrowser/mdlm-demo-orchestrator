@@ -20,7 +20,7 @@ export class AgentSession {
     const receipt = await this.#adapters[spec.kind].start({
       cwd,
       id: proposedId,
-      prompt: agentPrompt(goal, release),
+      prompt: agentPrompt(goal, release, spec),
       spec,
     });
     const session = Object.freeze({ id: receipt.sessionId ?? proposedId, harness: spec.kind });
@@ -78,10 +78,13 @@ function harnessSpec(value) {
   throw new Error("harness must be 'codex' or 'pi'");
 }
 
-function agentPrompt(goal, release) {
+function agentPrompt(goal, release, spec) {
   const releaseText = typeof release === 'string' ? release : JSON.stringify(release);
+  const repositoryInstruction = spec.kind === 'codex' && spec.allowEmptyDestination
+    ? 'The working directory is a harness workspace and may contain injected harness metadata. When the goal names an absent child repository, create and use that child as the repository root; run git init . and initialize MDLM inside that child. Do not initialize the harness workspace itself. '
+    : 'Use the repository identified by the goal as the repository root. ';
   return `Goal:\n${goal}\n\nMDLM release:\n${releaseText}\n\n` +
-    'Work autonomously toward the goal using the public mdlm CLI. The working directory itself is the repository root. If it is a new destination, run git init . there if needed, then initialize and start MDLM. Never create a nested repository. ' +
+    `Work autonomously toward the goal using the public mdlm CLI. ${repositoryInstruction}` +
     'Run mdlm next whenever you finish the current work. Read each result and decide what to do. ' +
     'When MDLM requires stakeholder authority you do not have, stop and report the exact question and impact. ' +
     'Continue after the stakeholder answer arrives in a later message.';

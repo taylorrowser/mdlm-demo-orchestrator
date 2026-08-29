@@ -22,8 +22,9 @@ await agent.send(session, 'Stakeholder answer: use UTF-8 bytes. Continue.');
 For a deliberately empty Codex destination, set
 `{ kind: 'codex', allowEmptyDestination: true }`. This adds
 `--skip-git-repo-check` to that session's initial `codex exec` call and later
-resume calls in the same working directory, so the agent can run `git init .`
-there and initialize MDLM. Do not set it for an existing repository.
+resume calls in the same harness workspace. When the goal names an absent child
+repository, the agent creates that child, runs `git init .` inside it, and uses
+it as the product repository. Do not set this option for an existing repository.
 
 The agent drives the public MDLM CLI. It initializes and starts the process when
 needed, runs `mdlm next` after each unit of work, decides how to proceed, and
