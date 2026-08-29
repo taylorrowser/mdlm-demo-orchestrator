@@ -23,8 +23,8 @@
     },
     {
       "path": "scripts/create-distribution-manifest.mjs",
-      "bytes": 3457,
-      "sha256": "823f72fab682a10923701915d571f15b44debf9e88aa045e24d464a820783b2d"
+      "bytes": 3520,
+      "sha256": "39a8e69ae36c10cfe7fb066e2834feb077bf56ca2e5e8d4fffc1975f9849c414"
     },
     {
       "path": "scripts/inspect-package.mjs",
@@ -40,6 +40,16 @@
       "path": "scripts/validate-runner-install.mjs",
       "bytes": 3854,
       "sha256": "9429e4aba982f30390ce3a8371d30cf422b450d5156b241f6ff658fab867662d"
+    },
+    {
+      "path": "src/agent-session-adapters.mjs",
+      "bytes": 2562,
+      "sha256": "fcee52cce313455e7d4d1f3c585ddafb05af56a729a6f86a5622313d83eff9e8"
+    },
+    {
+      "path": "src/agent-session.mjs",
+      "bytes": 2826,
+      "sha256": "00762117a2368f155e9956bcf4a73ee3924a33478aaeb57b4e37360b8a57076c"
     },
     {
       "path": "src/canonical-file.mjs",
