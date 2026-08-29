@@ -8,7 +8,9 @@ export function createCodexAdapter(execute = executeCommand) {
         cwd,
         input: prompt,
         args: [
-          'exec', '--json', '-C', cwd, '--sandbox', 'workspace-write', '-m', spec.model,
+          'exec', '--json', '-C', cwd,
+          ...(spec.allowEmptyDestination ? ['--skip-git-repo-check'] : []),
+          '--sandbox', 'workspace-write', '-m', spec.model,
           '-c', `model_reasoning_effort=${JSON.stringify(spec.effort)}`, '-',
         ],
       };
