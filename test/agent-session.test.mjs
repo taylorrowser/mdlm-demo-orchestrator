@@ -59,8 +59,9 @@ test('Codex and Pi adapters render only persistent session commands', async () =
   ]);
   assert.equal(commands[0].input.includes('Run mdlm next whenever'), true);
   assert.equal(commands[0].args.includes('--skip-git-repo-check'), true);
-  assert.equal(commands[1].args.includes('--skip-git-repo-check'), false);
+  assert.equal(commands[1].args.includes('--skip-git-repo-check'), true);
   assert.equal(commands[2].args.includes('--skip-git-repo-check'), false);
+  assert.match(commands[0].input, /working directory itself is the repository root.*git init \./);
   assert.deepEqual(commands[1].args.slice(-2), ['codex-1', '-']);
   assert.equal(commands[3].args.includes('pi-1'), true);
   assert.equal(commands[4].args.includes('pi-1'), true);

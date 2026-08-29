@@ -81,7 +81,7 @@ function harnessSpec(value) {
 function agentPrompt(goal, release) {
   const releaseText = typeof release === 'string' ? release : JSON.stringify(release);
   return `Goal:\n${goal}\n\nMDLM release:\n${releaseText}\n\n` +
-    'Work autonomously toward the goal using the public mdlm CLI. If this is a new destination, create its Git repository if needed, then initialize and start MDLM. ' +
+    'Work autonomously toward the goal using the public mdlm CLI. The working directory itself is the repository root. If it is a new destination, run git init . there if needed, then initialize and start MDLM. Never create a nested repository. ' +
     'Run mdlm next whenever you finish the current work. Read each result and decide what to do. ' +
     'When MDLM requires stakeholder authority you do not have, stop and report the exact question and impact. ' +
     'Continue after the stakeholder answer arrives in a later message.';
