@@ -33,11 +33,7 @@ export function validateRunRequest(value) {
   exactObject(value.commands, ['mdlm', 'operator'], 'commands');
   validateCommand(value.commands.mdlm, 'commands.mdlm', false);
   validateCommand(value.commands.operator, 'commands.operator', true);
-  if (value.authoritySupply !== undefined) {
-    exactObject(value.authoritySupply, ['assignment', 'authority'], 'authoritySupply');
-    nonempty(value.authoritySupply.assignment, 'authoritySupply.assignment');
-    nonempty(value.authoritySupply.authority, 'authoritySupply.authority');
-  }
+  if (value.authoritySupply !== undefined) validateAuthoritySupply(value.authoritySupply);
   return value;
 }
 
@@ -225,7 +221,8 @@ async function recover(journal, journalPath, repository, commands, authoritySupp
 async function authenticateRecovery(journal, repository, commands, authoritySupply) {
   if (journal.repository !== repository) throw new Error('transaction repository differs from the canonical repository');
   if (!sameJson(journal.commands, commands)) throw new Error('transaction command pins differ');
-  if (!sameJson(journal.authoritySupply, authoritySupply)) throw new Error('transaction authority supply differs');
+  if (journal.authoritySupply !== undefined) validateAuthoritySupply(journal.authoritySupply);
+  if (!sameAuthoritySupply(journal.authoritySupply, authoritySupply)) throw new Error('transaction authority supply differs');
   object(journal.package, 'transaction package');
   object(journal.packetRepository, 'transaction packet repository');
   absolutePath(journal.packetPath, 'transaction packetPath');
@@ -254,6 +251,17 @@ function authorityFor(next, supply) {
     throw new Error('authoritySupply authority differs from the declared authority');
   }
   return supply.authority;
+}
+
+function validateAuthoritySupply(value) {
+  exactObject(value, ['assignment', 'authority'], 'authoritySupply');
+  nonempty(value.assignment, 'authoritySupply.assignment');
+  nonempty(value.authority, 'authoritySupply.authority');
+}
+
+function sameAuthoritySupply(left, right) {
+  if (left === undefined || right === undefined) return left === right;
+  return left.assignment === right.assignment && left.authority === right.authority;
 }
 
 function settlementResult(journal, reason) {
