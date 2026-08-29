@@ -29,6 +29,28 @@ test('AgentSession exposes only start, send, and observe and leaves MDLM decisio
   assert.equal(agent.observe(session).turns, 2);
 });
 
+test('start prompt uses a goal-named absent child as the repository root', async () => {
+  let prompt;
+  const fake = {
+    async start(input) {
+      prompt = input.prompt;
+      return { ok: true, sessionId: input.id, stdout: '', stderr: '', exitCode: 0 };
+    },
+  };
+  const agent = new AgentSession({ adapters: { codex: fake }, newId: () => 'session-child' });
+  await agent.start(
+    '/tmp/harness-workspace',
+    'Create the absent child repository products/byte-counter and build a byte counter there.',
+    'mdlm@next',
+    { kind: 'codex', allowEmptyDestination: true },
+  );
+
+  assert.match(prompt, /working directory is a harness workspace/);
+  assert.match(prompt, /goal names an absent child repository, create and use that child as the repository root/);
+  assert.match(prompt, /run git init \. and initialize MDLM inside that child/);
+  assert.doesNotMatch(prompt, /working directory itself is the repository root/);
+});
+
 test('Codex and Pi adapters render only persistent session commands', async () => {
   const commands = [];
   const execute = async command => {
@@ -61,7 +83,6 @@ test('Codex and Pi adapters render only persistent session commands', async () =
   assert.equal(commands[0].args.includes('--skip-git-repo-check'), true);
   assert.equal(commands[1].args.includes('--skip-git-repo-check'), true);
   assert.equal(commands[2].args.includes('--skip-git-repo-check'), false);
-  assert.match(commands[0].input, /working directory itself is the repository root.*git init \./);
   assert.deepEqual(commands[1].args.slice(-2), ['codex-1', '-']);
   assert.equal(commands[3].args.includes('pi-1'), true);
   assert.equal(commands[4].args.includes('pi-1'), true);
