@@ -59,6 +59,12 @@ uncertain, a later invocation inspects the recorded execution or Assignment
 identity. It never submits the response again. A retained repository lock is
 not reclaimed merely because its process is absent.
 
+Before parsing each `mdlm next` result, the runner durably records the child
+command facts and exact stdout and stderr bytes under `next-commands/` in the
+transaction state directory. A malformed or empty result may follow a
+side-effecting Assignment claim. Stop and replace that lane; never retry the
+consumed `next` boundary.
+
 An invocation recovering an attended transaction must carry the same exact
 `authoritySupply` so the runner can authenticate the journal. Recovery uses it
 only as identity evidence and never submits it again.

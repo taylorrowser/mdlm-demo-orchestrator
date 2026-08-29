@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
-import { lstat, mkdir, open, readFile, realpath, rename, rm, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, open, readFile, readdir, realpath, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { parseStrictJson } from './strict-json.mjs';
 import { commandSucceeded, controlledEnvironment, runProcess } from './util.mjs';
@@ -99,6 +99,7 @@ export async function run(request) {
     }
 
     const nextProcess = await invoke(commands.mdlm.path, ['next', '--json'], repository, request.timeoutMs);
+    await recordNextCommand(stateDirectory, nextProcess);
     if (!commandSucceeded(nextProcess)) throw new Error('mdlm next failed');
     const next = validateNextOutcome(parseJson(nextProcess.stdout, 'mdlm next'));
     const authority = authorityFor(next, request.authoritySupply);
@@ -183,6 +184,38 @@ export async function run(request) {
   } finally {
     await release();
   }
+}
+
+async function recordNextCommand(stateDirectory, process) {
+  const directory = path.join(stateDirectory, 'next-commands');
+  await mkdir(directory, { recursive: true, mode: 0o700 });
+  const names = await readdir(directory);
+  const ordinal = names.reduce((maximum, name) => {
+    const match = /^(\d{6})\.next\.json$/u.exec(name);
+    return match === null ? maximum : Math.max(maximum, Number(match[1]));
+  }, 0) + 1;
+  const stem = String(ordinal).padStart(6, '0');
+  const stdoutPath = path.join(directory, `${stem}.stdout`);
+  const stderrPath = path.join(directory, `${stem}.stderr`);
+  await durableBytes(stdoutPath, process.stdout);
+  await durableBytes(stderrPath, process.stderr);
+  await durableJson(path.join(directory, `${stem}.next.json`), {
+    contract: 'mdlm-demo-command-evidence@1',
+    command: 'next',
+    argv: process.argv,
+    cwd: process.cwd,
+    startedAt: process.startedAt,
+    completedAt: process.completedAt,
+    timeoutMs: process.timeoutMs,
+    timedOut: process.timedOut,
+    outputLimitExceeded: process.outputLimitExceeded,
+    observedOutputBytes: process.observedOutputBytes,
+    exitStatus: process.exitStatus,
+    signal: process.signal,
+    spawnError: process.spawnError,
+    stdout: { path: stdoutPath, bytes: process.stdout.length, digest: digest(process.stdout) },
+    stderr: { path: stderrPath, bytes: process.stderr.length, digest: digest(process.stderr) },
+  });
 }
 
 async function recover(journal, journalPath, repository, commands, authoritySupply, timeoutMs) {
@@ -320,6 +353,10 @@ async function invoke(program, args, cwd, timeoutMs, input) {
 
 async function durableJson(file, value) {
   const bytes = Buffer.from(`${JSON.stringify(value)}\n`);
+  await durableBytes(file, bytes);
+}
+
+async function durableBytes(file, bytes) {
   const temporary = `${file}.${process.pid}.tmp`;
   const handle = await open(temporary, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, 0o600);
   try {
