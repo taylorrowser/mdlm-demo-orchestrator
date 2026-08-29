@@ -7,7 +7,6 @@
     "mdlm-demo-runner": "bin/mdlm-demo-runner.mjs"
   },
   "files": [
-    "bin/mdlm-demo-mdlm-shim.mjs",
     "bin/mdlm-demo-runner.mjs",
     "distribution-manifest.json",
     "scripts/*.mjs",

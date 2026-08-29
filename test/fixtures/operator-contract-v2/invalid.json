@@ -1,0 +1,1 @@
+{"contract":"mdlm-next@2","outcome":"invalid","diagnostics":[{"code":"invalid-process-package","path":".lifecycle/process/manifest.yaml","message":"The selected Process Package digest does not match its recorded identity."}]}

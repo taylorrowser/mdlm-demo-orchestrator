@@ -52,8 +52,7 @@ async function makeReadOnly(directory) {
       await makeReadOnly(absolute);
       await chmod(absolute, 0o555);
     } else if (!entry.isSymbolicLink()) {
-      const executable = absolute.endsWith('/bin/mdlm-demo-mdlm-shim.mjs')
-        || absolute.endsWith('/bin/mdlm-demo-runner.mjs');
+      const executable = absolute.endsWith('/bin/mdlm-demo-runner.mjs');
       await chmod(absolute, executable ? 0o555 : 0o444);
     }
   }

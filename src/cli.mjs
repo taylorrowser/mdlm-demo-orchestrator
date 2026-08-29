@@ -1,97 +1,51 @@
 import { readFile } from 'node:fs/promises';
-import { readCanonicalFile } from './canonical-file.mjs';
-import { classify } from './classify.mjs';
-import {
-  buildDecisionCatalogRequest, decisionCatalogLimits, readFileWithinLimit, validateDecisionCatalogRequest,
-} from './decision-catalog.mjs';
-import { snapshot } from './evidence.mjs';
-import { reconcile, run } from './orchestrator.mjs';
-import { preflight, preflightFailure, preflightLimits } from './preflight.mjs';
 import { reviewerLease, reviewerLeaseLimits } from './reviewer-lease.mjs';
+import { run } from './runner.mjs';
 import { parseStrictJson } from './strict-json.mjs';
 
-const publicCommands = [
-  'preflight',
-  'snapshot',
-  'classify',
-  'decision-catalog-build',
-  'decision-catalog-validate',
-  'run',
-  'resume',
-  'reconcile',
-  'reviewer-lease',
-];
+const publicCommands = ['run', 'reviewer-lease'];
 const usage = `mdlm-demo-runner ${publicCommands.join('|')} [--input file]`;
 const utf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
 
-async function readRequest(args, maxBytes, label = 'decision catalog request', canonical = false) {
+async function readRequest(args, maxBytes, label) {
+  let bytes;
   if (args.length === 0) {
     const chunks = [];
-    let bytes = 0;
+    let length = 0;
     for await (const chunk of process.stdin) {
-      bytes += chunk.length;
-      if (maxBytes !== undefined && bytes > maxBytes) throw new Error(`${label} exceeds ${maxBytes}-byte limit`);
+      length += chunk.length;
+      if (maxBytes !== undefined && length > maxBytes) throw new Error(`${label} exceeds ${maxBytes}-byte limit`);
       chunks.push(chunk);
     }
-    return parseRequestBytes(Buffer.concat(chunks), label);
+    bytes = Buffer.concat(chunks);
+  } else if (args.length === 2 && args[0] === '--input') {
+    bytes = await readFile(args[1]);
+    if (maxBytes !== undefined && bytes.length > maxBytes) throw new Error(`${label} exceeds ${maxBytes}-byte limit`);
+  } else {
+    throw new Error('expected JSON on stdin or --input <file>');
   }
-  if (args.length === 2 && args[0] === '--input') {
-    const bytes = canonical
-      ? (await readCanonicalFile(args[1], label, undefined, { maxBytes })).bytes
-      : maxBytes === undefined
-        ? await readFile(args[1])
-        : await readFileWithinLimit(args[1], maxBytes, label);
-    return parseRequestBytes(bytes, label);
-  }
-  throw new Error('expected JSON on stdin or --input <file>');
-}
-
-function parseRequestBytes(bytes, label) {
   let text;
-  try {
-    text = utf8.decode(bytes);
-  } catch (error) {
-    if (error instanceof TypeError) throw new Error(`${label} is not valid UTF-8`);
-    throw error;
-  }
+  try { text = utf8.decode(bytes); }
+  catch (error) { if (error instanceof TypeError) throw new Error(`${label} is not valid UTF-8`); throw error; }
   return parseStrictJson(text, label);
 }
 
 async function main(args) {
   const [command, ...rest] = args;
-  const helpRequested = (command === '--help' && rest.length === 0)
+  const help = (command === '--help' && rest.length === 0)
     || (publicCommands.includes(command) && rest.length === 1 && rest[0] === '--help');
-  if (helpRequested) return { contract: 'mdlm-demo-help@1', usage, commands: publicCommands };
+  if (help) return { contract: 'mdlm-demo-help@1', usage, commands: publicCommands };
   if (!publicCommands.includes(command)) throw new Error(`usage: ${usage}`);
-  if (command === 'preflight') {
-    try {
-      const request = await readRequest(rest, preflightLimits.requestBytes, 'preflight request', true);
-      return preflight(request);
-    } catch (error) {
-      return preflightFailure(error);
-    }
+  if (command === 'reviewer-lease') {
+    return reviewerLease(await readRequest(rest, reviewerLeaseLimits.requestBytes, 'reviewer lease request'));
   }
-  const decisionCatalogCommand = command === 'decision-catalog-build' || command === 'decision-catalog-validate';
-  const request = await readRequest(
-    rest,
-    command === 'reviewer-lease' ? reviewerLeaseLimits.requestBytes : decisionCatalogCommand ? decisionCatalogLimits.buildRequestBytes : undefined,
-    command === 'reviewer-lease' ? 'reviewer lease request' : 'decision catalog request',
-  );
-  if (command === 'classify') return classify(request);
-  if (command === 'decision-catalog-build') return buildDecisionCatalogRequest(request);
-  if (command === 'decision-catalog-validate') return validateDecisionCatalogRequest(request);
-  if (command === 'snapshot') return snapshot(request);
-  if (command === 'run' || command === 'resume') return run(request, command);
-  if (command === 'reconcile') return reconcile(request);
-  if (command === 'reviewer-lease') return reviewerLease(request);
-  throw new Error(`usage: ${usage}`);
+  return run(await readRequest(rest, 64 * 1024, 'run request'));
 }
 
 export async function executeCli(args) {
   try {
     const output = await main(args);
     process.stdout.write(`${JSON.stringify(output)}\n`);
-    if (output?.contract === 'mdlm-demo-preflight-result@1' && output.status === 'FAIL') process.exitCode = 1;
   } catch (error) {
     process.stderr.write(`${JSON.stringify({ contract: 'mdlm-demo-error@1', error: error instanceof Error ? error.message : String(error) })}\n`);
     process.exitCode = 1;

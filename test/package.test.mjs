@@ -20,40 +20,21 @@ const runtimeFiles = [
   'scripts/inspect-package.mjs',
   'scripts/launcher-template.mjs',
   'scripts/validate-runner-install.mjs',
-  'src/adapter.mjs',
   'src/canonical-file.mjs',
-  'src/classify.mjs',
   'src/cli.mjs',
-  'src/contracts.mjs',
-  'src/decision-catalog.mjs',
-  'src/evidence.mjs',
-  'src/orchestrator.mjs',
-  'src/preflight.mjs',
-  'src/process-package.mjs',
   'src/reviewer-lease.mjs',
-  'src/run-request.mjs',
-  'src/shim-cli.mjs',
+  'src/runner.mjs',
   'src/strict-json.mjs',
   'src/util.mjs',
 ];
-const launcherFiles = ['bin/mdlm-demo-mdlm-shim.mjs', 'bin/mdlm-demo-runner.mjs'];
+const launcherFiles = ['bin/mdlm-demo-runner.mjs'];
 const packageFiles = [
   'README.md',
   ...launcherFiles,
   'distribution-manifest.json',
   ...runtimeFiles,
 ].sort();
-const publicCommands = [
-  'preflight',
-  'snapshot',
-  'classify',
-  'decision-catalog-build',
-  'decision-catalog-validate',
-  'run',
-  'resume',
-  'reconcile',
-  'reviewer-lease',
-];
+const publicCommands = ['run', 'reviewer-lease'];
 const expectedHelp = `${JSON.stringify({
   contract: 'mdlm-demo-help@1',
   usage: `mdlm-demo-runner ${publicCommands.join('|')} [--input file]`,
@@ -176,14 +157,14 @@ function archive(entries) {
 
 async function verificationImportSwap(executable, packageRoot, cwd) {
   const cli = path.join(packageRoot, 'src', 'cli.mjs');
-  const orchestrator = path.join(packageRoot, 'src', 'orchestrator.mjs');
+  const runner = path.join(packageRoot, 'src', 'runner.mjs');
   await chmod(path.dirname(cli), 0o755);
   await chmod(cli, 0o644);
   const malicious = path.join(packageRoot, 'src', 'cli.swap.mjs');
   await writeFile(malicious, 'process.stdout.write("SWAPPED MODULE EXECUTED\\n");\n');
   const oldTime = new Date(1_000);
-  await utimes(orchestrator, oldTime, oldTime);
-  const beforeAtime = (await stat(orchestrator)).atimeMs;
+  await utimes(runner, oldTime, oldTime);
+  const beforeAtime = (await stat(runner)).atimeMs;
 
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [executable, '--help'], { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -195,7 +176,7 @@ async function verificationImportSwap(executable, packageRoot, cwd) {
     const interval = setInterval(async () => {
       if (swapped) return;
       try {
-        const currentAtime = (await stat(orchestrator)).atimeMs;
+        const currentAtime = (await stat(runner)).atimeMs;
         if (!swapped && currentAtime !== beforeAtime) {
           swapped = true;
           await rename(malicious, cli);
@@ -304,9 +285,9 @@ test('npm package has an externally authenticated, source-independent, read-only
       sha256: digest('sha256', await readFile(publicExecutable)),
     },
   };
-  assert.deepEqual(installManifest.launchers.map(({ mode }) => mode), [0o555, 0o555]);
+  assert.deepEqual(installManifest.launchers.map(({ mode }) => mode), [0o555]);
   assert.equal(installManifest.executable.mode, 0o555);
-  assert.equal(installManifest.executable.sha256, installManifest.launchers[1].sha256);
+  assert.equal(installManifest.executable.sha256, installManifest.launchers[0].sha256);
   const beforeHelp = installedTree;
   for (const args of [['--help'], ...publicCommands.map(command => [command, '--help'])]) {
     const smoke = await run(process.execPath, [
@@ -316,17 +297,12 @@ test('npm package has an externally authenticated, source-independent, read-only
     assert.equal(smoke.stdout, expectedHelp, args.join(' '));
     assert.equal(smoke.stderr, '', args.join(' '));
   }
-  const preflightFailure = spawnSync(process.execPath, [
-    '--permission', `--allow-fs-read=${installRoot}`, publicExecutable, 'preflight',
+  const removedCommand = spawnSync(process.execPath, [
+    '--permission', `--allow-fs-read=${installRoot}`, publicExecutable, 'snapshot',
   ], { cwd: installRoot, input: '', encoding: 'utf8' });
-  assert.equal(preflightFailure.status, 1, preflightFailure.stderr);
-  assert.equal(preflightFailure.stderr, '');
-  assert.deepEqual(JSON.parse(preflightFailure.stdout), {
-    contract: 'mdlm-demo-preflight-result@1',
-    status: 'FAIL',
-    checks: [{ name: 'request', ok: false, error: 'preflight request is not valid JSON at character offset 0' }],
-    limitation: 'A PASS authenticates only supplied bytes against supplied pins; it neither proves nor authorizes invocation, Assignment, publication, lifecycle transition, Review, or qualification.',
-  });
+  assert.equal(removedCommand.status, 1, removedCommand.stderr);
+  assert.equal(removedCommand.stdout, '');
+  assert.match(removedCommand.stderr, /mdlm-demo-error@1/);
   assert.deepEqual(await listTree(packageRoot), beforeHelp);
 });
 
@@ -338,11 +314,11 @@ test('launcher rejects source and manifest mutation, external symlinks, and veri
 
   const updatedManifestRoot = path.join(scratch, 'updated-manifest');
   await cp(pristine, updatedManifestRoot, { recursive: true });
-  const changed = path.join(updatedManifestRoot, 'src', 'classify.mjs');
+  const changed = path.join(updatedManifestRoot, 'src', 'runner.mjs');
   await writeFile(changed, Buffer.concat([await readFile(changed), Buffer.from('\n// changed with manifest\n')]));
   const manifestPath = path.join(updatedManifestRoot, 'distribution-manifest.json');
   const changedManifest = JSON.parse(await readFile(manifestPath, 'utf8'));
-  const changedEntry = changedManifest.files.find(entry => entry.path === 'src/classify.mjs');
+  const changedEntry = changedManifest.files.find(entry => entry.path === 'src/runner.mjs');
   const changedBytes = await readFile(changed);
   changedEntry.bytes = changedBytes.length;
   changedEntry.sha256 = digest('sha256', changedBytes);
@@ -354,7 +330,7 @@ test('launcher rejects source and manifest mutation, external symlinks, and veri
 
   const symlinkRoot = path.join(scratch, 'external-symlink');
   await cp(pristine, symlinkRoot, { recursive: true });
-  const dependency = path.join(symlinkRoot, 'src', 'classify.mjs');
+  const dependency = path.join(symlinkRoot, 'src', 'runner.mjs');
   const outside = path.join(scratch, 'outside.mjs');
   await copyFile(dependency, outside);
   await rm(dependency);
@@ -362,7 +338,7 @@ test('launcher rejects source and manifest mutation, external symlinks, and veri
   const symlinked = await run(process.execPath, [path.join(symlinkRoot, 'bin', 'mdlm-demo-runner.mjs'), '--help']);
   assert.equal(symlinked.status, 1);
   assert.equal(symlinked.stdout, '');
-  assert.match(symlinked.stderr, /artifact closure invalid: .*src\/classify\.mjs.*(symbolic link|outside package root)/);
+  assert.match(symlinked.stderr, /artifact closure invalid: .*src\/runner\.mjs.*(symbolic link|outside package root)/);
 
   const swapRoot = path.join(scratch, 'swap');
   await cp(pristine, swapRoot, { recursive: true });

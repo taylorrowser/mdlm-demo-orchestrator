@@ -5,7 +5,7 @@ import { gunzipSync } from 'node:zlib';
 
 const compressedLimit = 8 * 1024 * 1024;
 const expandedLimit = 16 * 1024 * 1024;
-const launchers = new Set(['package/bin/mdlm-demo-mdlm-shim.mjs', 'package/bin/mdlm-demo-runner.mjs']);
+const launchers = new Set(['package/bin/mdlm-demo-runner.mjs']);
 
 function unsafe(message) {
   throw new Error(`unsafe package archive: ${message}`);

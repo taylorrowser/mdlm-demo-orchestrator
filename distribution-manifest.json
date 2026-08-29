@@ -8,13 +8,6 @@
   },
   "launchers": [
     {
-      "path": "bin/mdlm-demo-mdlm-shim.mjs",
-      "mode": 493,
-      "entrypoint": "src/shim-cli.mjs",
-      "export": "executeShim",
-      "integrity": "authenticated-launcher-embeds-distribution-manifest-sha256"
-    },
-    {
       "path": "bin/mdlm-demo-runner.mjs",
       "mode": 493,
       "entrypoint": "src/cli.mjs",
@@ -25,18 +18,18 @@
   "files": [
     {
       "path": "package.json",
-      "bytes": 738,
-      "sha256": "19ccc204709112214b4469fd78f2acf9bdd8ab9342513de466982c3e9345b906"
+      "bytes": 703,
+      "sha256": "5685b66e022a3f4184903463382ab6ab56c98b53b5f25c65c175843cadfe767d"
     },
     {
       "path": "scripts/create-distribution-manifest.mjs",
-      "bytes": 3957,
-      "sha256": "24265dc9de62880ab65a3f6a52989107803cb1c3a3053405f5859d850aa40958"
+      "bytes": 3457,
+      "sha256": "823f72fab682a10923701915d571f15b44debf9e88aa045e24d464a820783b2d"
     },
     {
       "path": "scripts/inspect-package.mjs",
-      "bytes": 4668,
-      "sha256": "67576a7076b8e7b4fadd9d4cb1b757b52bc237252a2239844db95229dd81153f"
+      "bytes": 4629,
+      "sha256": "3ad05ddc7dee2740ec24ecd56cf5f1c0d0982960f4f36b90d695335a9c7fec19"
     },
     {
       "path": "scripts/launcher-template.mjs",
@@ -49,54 +42,14 @@
       "sha256": "9429e4aba982f30390ce3a8371d30cf422b450d5156b241f6ff658fab867662d"
     },
     {
-      "path": "src/adapter.mjs",
-      "bytes": 10975,
-      "sha256": "2e0606bb29c35fad01afa6f7631a9bb649b238bff8598c8da52c4379e7fb4cb3"
-    },
-    {
       "path": "src/canonical-file.mjs",
       "bytes": 5301,
       "sha256": "74794f4a33b9bba3398489c5e794c66313fb5eb3ea3a337a01ebfdebefd64d5e"
     },
     {
-      "path": "src/classify.mjs",
-      "bytes": 3432,
-      "sha256": "bac4f4cff351bf710bc7fe52ffb9a6d8506c5faed1b34a68e1031b427989f605"
-    },
-    {
       "path": "src/cli.mjs",
-      "bytes": 4095,
-      "sha256": "470f6c137dc540a5651c596f9a6989b80d87f1d3842ef301dde78126384f5219"
-    },
-    {
-      "path": "src/contracts.mjs",
-      "bytes": 7534,
-      "sha256": "2555b6860dbf93173626200119e64198ff624fd4b025e7349d6cae811c5cf981"
-    },
-    {
-      "path": "src/decision-catalog.mjs",
-      "bytes": 8672,
-      "sha256": "bc6941ced4ac290863ebb3ba975348bf9b6a3f7413a1cc6adfedeb4227fb728c"
-    },
-    {
-      "path": "src/evidence.mjs",
-      "bytes": 45542,
-      "sha256": "2c2b0973c280e7649b387975d7be1478dcdd7cd73b687efdfd08e1eefbfd0a61"
-    },
-    {
-      "path": "src/orchestrator.mjs",
-      "bytes": 326176,
-      "sha256": "80dc06e828833c8d5aa8a86ed4ac699dad7df46f478336b8285a4851a1306fee"
-    },
-    {
-      "path": "src/preflight.mjs",
-      "bytes": 11196,
-      "sha256": "c80852b3c2429bea9d63d6c15e0d299e8a910099742e8e243078576e5586af50"
-    },
-    {
-      "path": "src/process-package.mjs",
-      "bytes": 1734,
-      "sha256": "c1a25a0e8b598dd07c5a293e173a0c599a368e9ae9ea71d2c950a457708d24d5"
+      "bytes": 2240,
+      "sha256": "da4cdec5db37744aa6d19c28affcdab89aa05fad179709fa77aa09ec77d3fc14"
     },
     {
       "path": "src/reviewer-lease.mjs",
@@ -104,14 +57,9 @@
       "sha256": "56cf42a1b4e6fbc2367e441c33a08c7ecc7d22073142fae15719d8c72ccb2aa3"
     },
     {
-      "path": "src/run-request.mjs",
-      "bytes": 11390,
-      "sha256": "c036c56b1e8bbca6dfa5c842cef6bdebff55a7bdfeeafaa89f7e0554a7eef4fd"
-    },
-    {
-      "path": "src/shim-cli.mjs",
-      "bytes": 5141,
-      "sha256": "3d71386239b60739864775cc33c120fc404037e3e9bf7911159ea997f8fe9a2c"
+      "path": "src/runner.mjs",
+      "bytes": 15821,
+      "sha256": "480cd143f38e8861d9576f6bb09858a4223c40f227ed97fa604ce3a7c28bc915"
     },
     {
       "path": "src/strict-json.mjs",
