@@ -16,8 +16,17 @@ export function createCodexAdapter(execute = executeCommand) {
       };
       return codexReceipt(await execute(command), command);
     },
-    async send({ cwd, id, message }) {
-      const command = { file: 'codex', cwd, input: message, args: ['exec', 'resume', '--json', id, '-'] };
+    async send({ cwd, id, message, spec }) {
+      const command = {
+        file: 'codex',
+        cwd,
+        input: message,
+        args: [
+          'exec', 'resume', '--json',
+          ...(spec.allowEmptyDestination ? ['--skip-git-repo-check'] : []),
+          id, '-',
+        ],
+      };
       return codexReceipt(await execute(command), command, id);
     },
   };

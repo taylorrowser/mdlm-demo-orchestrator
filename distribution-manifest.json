@@ -43,13 +43,13 @@
     },
     {
       "path": "src/agent-session-adapters.mjs",
-      "bytes": 2648,
-      "sha256": "5ee5ad19cf180dd6be4be4c96f8a3e1b8162916caef3bf70c029d91d2c82838a"
+      "bytes": 2800,
+      "sha256": "b10165c3613a8ad9777232fb217fed12faa753eff686ba8d089062741f894c6b"
     },
     {
       "path": "src/agent-session.mjs",
-      "bytes": 2958,
-      "sha256": "75eda4518cbfbd444a83e62b5285b9eee3c853cba41278f8ba0bf10180663629"
+      "bytes": 3038,
+      "sha256": "839afbb46018b2642d14c9c385c613b4c0d06ef77c79f38b04a44f0f2729b35f"
     },
     {
       "path": "src/canonical-file.mjs",
