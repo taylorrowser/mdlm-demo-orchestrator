@@ -24,6 +24,8 @@ test('AgentSession exposes only start, send, and observe and leaves MDLM decisio
   assert.deepEqual(session, { id: 'session-1', harness: 'pi' });
   assert.match(calls[0][1].prompt, /Run mdlm next whenever/);
   assert.match(calls[0][1].prompt, /report the exact question and impact/);
+  assert.match(calls[0][1].prompt, /An Assignment is work, never a stop/);
+  assert.match(calls[0][1].prompt, /Stop only on a typed terminal outcome, Attention Required, or an exact blocker/);
   assert.doesNotMatch(calls[0][1].prompt, /scenario submit|authority envelope|prepare response|settlement/);
   await agent.send(session, 'Stakeholder answer: accept UTF-8 bytes. Continue.');
   assert.equal(agent.observe(session).turns, 2);
