@@ -65,7 +65,12 @@ function sessionKey(session) {
 function harnessSpec(value) {
   const spec = typeof value === 'string' ? { kind: value } : value;
   if (spec?.kind === 'codex') {
-    return { kind: 'codex', model: spec.model ?? 'gpt-5.6-terra', effort: spec.effort ?? 'medium' };
+    return {
+      kind: 'codex',
+      model: spec.model ?? 'gpt-5.6-terra',
+      effort: spec.effort ?? 'medium',
+      allowEmptyDestination: spec.allowEmptyDestination === true,
+    };
   }
   if (spec?.kind === 'pi') {
     return { kind: 'pi', model: spec.model ?? 'openrouter/z-ai/glm-5.3-flash', thinking: spec.thinking ?? 'low' };
@@ -76,7 +81,7 @@ function harnessSpec(value) {
 function agentPrompt(goal, release) {
   const releaseText = typeof release === 'string' ? release : JSON.stringify(release);
   return `Goal:\n${goal}\n\nMDLM release:\n${releaseText}\n\n` +
-    'Work autonomously toward the goal using the public mdlm CLI. If this is a new repository, initialize and start MDLM. ' +
+    'Work autonomously toward the goal using the public mdlm CLI. If this is a new destination, create its Git repository if needed, then initialize and start MDLM. ' +
     'Run mdlm next whenever you finish the current work. Read each result and decide what to do. ' +
     'When MDLM requires stakeholder authority you do not have, stop and report the exact question and impact. ' +
     'Continue after the stakeholder answer arrives in a later message.';

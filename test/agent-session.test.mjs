@@ -41,19 +41,27 @@ test('Codex and Pi adapters render only persistent session commands', async () =
     adapters: { codex: createCodexAdapter(execute), pi: createPiAdapter(execute) },
     newId: () => 'pi-1',
   });
-  const codex = await agent.start('/tmp/product', 'Count bytes.', 'release.json', 'codex');
+  const codex = await agent.start('/tmp/product', 'Count bytes.', 'release.json', {
+    kind: 'codex',
+    allowEmptyDestination: true,
+  });
   await agent.send(codex, 'Continue.');
+  await agent.start('/tmp/existing-product', 'Count bytes.', 'release.json', 'codex');
   const pi = await agent.start('/tmp/product', 'Count bytes.', 'release.json', 'pi');
   await agent.send(pi, 'Continue.');
 
   assert.deepEqual(commands.map(command => [command.file, command.args.slice(0, 3)]), [
     ['codex', ['exec', '--json', '-C']],
     ['codex', ['exec', 'resume', '--json']],
+    ['codex', ['exec', '--json', '-C']],
     ['pi', ['--print', '--mode', 'json']],
     ['pi', ['--print', '--mode', 'json']],
   ]);
   assert.equal(commands[0].input.includes('Run mdlm next whenever'), true);
+  assert.equal(commands[0].args.includes('--skip-git-repo-check'), true);
+  assert.equal(commands[1].args.includes('--skip-git-repo-check'), false);
+  assert.equal(commands[2].args.includes('--skip-git-repo-check'), false);
   assert.deepEqual(commands[1].args.slice(-2), ['codex-1', '-']);
-  assert.equal(commands[2].args.includes('pi-1'), true);
   assert.equal(commands[3].args.includes('pi-1'), true);
+  assert.equal(commands[4].args.includes('pi-1'), true);
 });

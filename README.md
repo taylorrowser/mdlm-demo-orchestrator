@@ -19,6 +19,12 @@ const orientation = agent.observe(session);
 await agent.send(session, 'Stakeholder answer: use UTF-8 bytes. Continue.');
 ```
 
+For a deliberately empty Codex destination, set
+`{ kind: 'codex', allowEmptyDestination: true }`. This adds
+`--skip-git-repo-check` to the initial `codex exec` call so the agent can
+initialize MDLM and create the repository. Resume calls remain strict and never
+receive that flag. Do not set it for an existing repository.
+
 The agent drives the public MDLM CLI. It initializes and starts the process when
 needed, runs `mdlm next` after each unit of work, decides how to proceed, and
 reports exact stakeholder questions when its authority runs out. `AgentSession`
