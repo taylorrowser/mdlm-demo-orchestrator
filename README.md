@@ -1,5 +1,32 @@
 # MDLM demo runner
 
+## New direct-agent demos
+
+New demos should use `AgentSession` from `src/agent-session.mjs`. It starts one
+persistent Codex or Pi session, sends later stakeholder answers to that same
+session, and reports the last transport receipt:
+
+```js
+import { AgentSession } from './src/agent-session.mjs';
+
+const agent = new AgentSession();
+const session = await agent.start(repository, goal, release, {
+  kind: 'pi',
+  model: 'openrouter/z-ai/glm-5.3-flash',
+  thinking: 'low',
+});
+const orientation = agent.observe(session);
+await agent.send(session, 'Stakeholder answer: use UTF-8 bytes. Continue.');
+```
+
+The agent drives the public MDLM CLI. It initializes and starts the process when
+needed, runs `mdlm next` after each unit of work, decides how to proceed, and
+reports exact stakeholder questions when its authority runs out. `AgentSession`
+does not interpret MDLM results or own lifecycle state.
+
+The transaction runner below remains for canary086 and prior runner-based
+lanes. Do not choose it for a new direct-agent demo.
+
 The runner transports one MDLM operator transaction. It calls `mdlm next
 --json` once, passes the included Assignment packet to one operator process,
 then sends that process's response to `mdlm scenario submit --json`. For an

@@ -12,6 +12,8 @@ const runtimeFiles = [
   'scripts/inspect-package.mjs',
   'scripts/launcher-template.mjs',
   'scripts/validate-runner-install.mjs',
+  'src/agent-session-adapters.mjs',
+  'src/agent-session.mjs',
   'src/canonical-file.mjs',
   'src/cli.mjs',
   'src/reviewer-lease.mjs',
