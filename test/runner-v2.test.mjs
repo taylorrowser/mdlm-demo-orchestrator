@@ -78,6 +78,45 @@ test('ordinary path calls next once, hands over its packet, and submits one resp
   context.after(async () => import('node:fs/promises').then(fs => fs.rm(scratch, { recursive: true })));
 });
 
+test('records successful next command bytes before rejecting invalid JSON', async context => {
+  const scratch = await mkdtemp(path.join(os.tmpdir(), 'mdlm-runner-next-evidence-'));
+  const repository = path.join(scratch, 'repository');
+  const stateDirectory = path.join(scratch, 'state');
+  await mkdir(repository);
+  await exec('/usr/bin/git', ['init', '-q'], { cwd: repository });
+  const mdlm = path.join(scratch, 'mdlm');
+  await writeFile(mdlm, '#!/usr/bin/env node\n');
+  await chmod(mdlm, 0o755);
+  const request = {
+    contract: 'mdlm-demo-run-request@2', repository, stateDirectory, timeoutMs: 10_000,
+    commands: {
+      mdlm: { path: mdlm, digest: sha256(await readFile(mdlm)) },
+      operator: { path: process.execPath, digest: sha256(await readFile(process.execPath)), args: [] },
+    },
+  };
+  await assert.rejects(run(request), /mdlm next is not valid JSON at character offset 0/);
+  const evidence = JSON.parse(await readFile(path.join(stateDirectory, 'next-commands/000001.next.json'), 'utf8'));
+  assert.equal(evidence.contract, 'mdlm-demo-command-evidence@1');
+  assert.deepEqual(evidence.argv.slice(-2), ['next', '--json']);
+  assert.equal(evidence.cwd, repository);
+  assert.equal(evidence.exitStatus, 0);
+  assert.equal(evidence.observedOutputBytes, 0);
+  assert.deepEqual(evidence.stdout, {
+    path: path.join(stateDirectory, 'next-commands/000001.stdout'),
+    bytes: 0,
+    digest: sha256(Buffer.alloc(0)),
+  });
+  assert.deepEqual(evidence.stderr, {
+    path: path.join(stateDirectory, 'next-commands/000001.stderr'),
+    bytes: 0,
+    digest: sha256(Buffer.alloc(0)),
+  });
+  assert.equal((await readFile(evidence.stdout.path)).length, 0);
+  assert.equal((await readFile(evidence.stderr.path)).length, 0);
+  await assert.rejects(readFile(path.join(stateDirectory, 'transaction.json')), error => error.code === 'ENOENT');
+  context.after(async () => import('node:fs/promises').then(fs => fs.rm(scratch, { recursive: true })));
+});
+
 test('attended path supplies only the exact Assignment-bound authority', async context => {
   const scratch = await mkdtemp(path.join(os.tmpdir(), 'mdlm-runner-authority-'));
   const repository = path.join(scratch, 'repository');
