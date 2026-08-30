@@ -86,6 +86,7 @@ function agentPrompt(goal, release, spec) {
   return `Goal:\n${goal}\n\nMDLM release:\n${releaseText}\n\n` +
     `Work autonomously toward the goal using the public mdlm CLI. ${repositoryInstruction}` +
     'Run mdlm next whenever you finish the current work. Read each result and decide what to do. ' +
+    'An Assignment is work, never a stop: execute it, submit or settle it as the public CLI directs, then run mdlm next again. Stop only on a typed terminal outcome, Attention Required, or an exact blocker that prevents the current work. ' +
     'When MDLM requires stakeholder authority you do not have, stop and report the exact question and impact. ' +
     'Continue after the stakeholder answer arrives in a later message.';
 }

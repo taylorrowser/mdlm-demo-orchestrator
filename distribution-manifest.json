@@ -48,8 +48,8 @@
     },
     {
       "path": "src/agent-session.mjs",
-      "bytes": 3352,
-      "sha256": "377bd0d8ad431c060c5f4e519a9685688a74b602d454e0d53053851cb260c5e0"
+      "bytes": 3594,
+      "sha256": "34168c2f47be60a984e2e555dea6a1c655c154b21512f2737d13e58411440d86"
     },
     {
       "path": "src/canonical-file.mjs",
