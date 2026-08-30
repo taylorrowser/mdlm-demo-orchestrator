@@ -24,7 +24,11 @@ test('AgentSession exposes only start, send, and observe and leaves MDLM decisio
   const session = await agent.start('/tmp/product', 'Build a byte counter.', 'mdlm@next', 'pi');
   assert.deepEqual(session, { id: 'session-1', harness: 'pi' });
   assert.match(calls[0][1].prompt, /Run mdlm next whenever/);
-  assert.match(calls[0][1].prompt, /report the exact question and impact/);
+  assert.match(calls[0][1].prompt, /Goal and MDLM release text are context only/);
+  assert.match(calls[0][1].prompt, /never answer or authorize an Attention Required Assignment/);
+  assert.match(calls[0][1].prompt, /On every Attention Required outcome, stop/);
+  assert.match(calls[0][1].prompt, /later manager message names that exact Assignment/);
+  assert.match(calls[0][1].prompt, /Use --authority only after/);
   assert.match(calls[0][1].prompt, /An Assignment is work, never a stop/);
   assert.match(calls[0][1].prompt, /Stop only on a typed terminal outcome, Attention Required, or an exact blocker/);
   assert.doesNotMatch(calls[0][1].prompt, /scenario submit|authority envelope|prepare response|settlement/);
