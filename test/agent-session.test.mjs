@@ -48,8 +48,7 @@ test('start prompt uses a goal-named absent child as the repository root', async
   );
 
   assert.match(prompt, /working directory is a harness workspace/);
-  assert.match(prompt, /goal names an absent child repository, create and use that child as the repository root/);
-  assert.match(prompt, /run git init \. and initialize MDLM inside that child/);
+  assert.match(prompt, /create the named child, change into it, then run git init \. and initialize MDLM there\. Keep the parent harness workspace limited to its injected harness metadata/);
   assert.doesNotMatch(prompt, /working directory itself is the repository root/);
 });
 
