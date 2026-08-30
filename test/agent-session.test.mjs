@@ -262,6 +262,8 @@ test('Codex and Pi adapters render only persistent session commands', async () =
   const codex = await agent.start('/tmp/product', 'Count bytes.', 'release.json', {
     kind: 'codex',
     allowEmptyDestination: true,
+    model: 'gpt-5.6-terra',
+    effort: 'medium',
   });
   await agent.send(codex, 'Continue.');
   await agent.start('/tmp/existing-product', 'Count bytes.', 'release.json', 'codex');
@@ -279,7 +281,9 @@ test('Codex and Pi adapters render only persistent session commands', async () =
   assert.equal(commands[0].args.includes('--skip-git-repo-check'), true);
   assert.equal(commands[1].args.includes('--skip-git-repo-check'), true);
   assert.equal(commands[2].args.includes('--skip-git-repo-check'), false);
-  assert.deepEqual(commands[1].args.slice(-2), ['codex-1', '-']);
+  assert.deepEqual(commands[1].args.slice(-6), [
+    '-m', 'gpt-5.6-terra', '-c', 'model_reasoning_effort="medium"', 'codex-1', '-',
+  ]);
   assert.equal(commands[3].args.includes('pi-1'), true);
   assert.equal(commands[4].args.includes('pi-1'), true);
 });

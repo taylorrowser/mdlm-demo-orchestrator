@@ -24,6 +24,8 @@ export function createCodexAdapter(execute = executeCommand) {
         args: [
           'exec', 'resume', '--json',
           ...(spec.allowEmptyDestination ? ['--skip-git-repo-check'] : []),
+          '-m', spec.model,
+          '-c', `model_reasoning_effort=${JSON.stringify(spec.effort)}`,
           id, '-',
         ],
       };
