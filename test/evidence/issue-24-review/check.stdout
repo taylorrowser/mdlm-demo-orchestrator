@@ -1,4 +1,0 @@
-
-> mdlm-demo-orchestrator@0.1.0 check
-> node --check bin/mdlm-demo-runner.mjs && node --check src/*.mjs
-

@@ -1,4 +1,0 @@
-{
-  "status": "operational-failure",
-  "error": "Pi settled without calling complete_assignment"
-}

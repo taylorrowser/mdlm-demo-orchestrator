@@ -3,20 +3,17 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "bin": {
-    "mdlm-demo-runner": "bin/mdlm-demo-runner.mjs"
+  "exports": {
+    ".": "./src/agent-session.mjs",
+    "./adapters": "./src/agent-session-adapters.mjs"
   },
   "files": [
-    "bin/mdlm-demo-runner.mjs",
-    "distribution-manifest.json",
-    "scripts/*.mjs",
+    "README.md",
     "src/*.mjs"
   ],
   "scripts": {
-    "test": "node --test --test-concurrency=1 test/*.test.mjs",
-    "manifest": "node scripts/create-distribution-manifest.mjs",
-    "prepack": "node scripts/create-distribution-manifest.mjs --check",
-    "check": "node scripts/create-distribution-manifest.mjs --check && node --check bin/*.mjs && node --check scripts/*.mjs && node --check src/*.mjs"
+    "test": "node --test test/agent-session.test.mjs",
+    "check": "node --check src/*.mjs && node --test test/agent-session.test.mjs"
   },
   "engines": {
     "node": ">=24 <25"

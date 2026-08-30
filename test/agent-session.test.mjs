@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { AgentSession } from '../src/agent-session.mjs';
-import { createCodexAdapter, createPiAdapter } from '../src/agent-session-adapters.mjs';
+import { AgentSession } from 'mdlm-demo-orchestrator';
+import { createCodexAdapter, createPiAdapter } from 'mdlm-demo-orchestrator/adapters';
 
 test('AgentSession exposes only start, send, and observe and leaves MDLM decisions to the agent', async () => {
   const calls = [];
