@@ -2,7 +2,7 @@
 
 ## Issue tracker
 
-Before creating, claiming, triaging, implementing, or closing a runner issue, read the canonical MDLM policies:
+Before creating, claiming, triaging, implementing, or closing an AgentSession issue, read the canonical MDLM policies:
 
 - `docs/agents/issue-tracker.md` in `taylorrowser/mdlm`
 - `docs/agents/triage-labels.md` in `taylorrowser/mdlm`
