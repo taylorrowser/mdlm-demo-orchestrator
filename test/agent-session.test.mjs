@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHmac } from 'node:crypto';
 import test from 'node:test';
 import { AgentSession } from 'mdlm-demo-orchestrator';
 import { createCodexAdapter, createPiAdapter } from 'mdlm-demo-orchestrator/adapters';
@@ -18,7 +19,7 @@ test('AgentSession exposes only start, send, and observe and leaves MDLM decisio
   const agent = new AgentSession({ adapters: { codex: fake, pi: fake }, newId: () => 'session-1' });
   assert.deepEqual(
     Object.getOwnPropertyNames(AgentSession.prototype).filter(name => name !== 'constructor').sort(),
-    ['observe', 'send', 'start'],
+    ['attach', 'observe', 'send', 'start'],
   );
   const session = await agent.start('/tmp/product', 'Build a byte counter.', 'mdlm@next', 'pi');
   assert.deepEqual(session, { id: 'session-1', harness: 'pi' });
@@ -29,6 +30,176 @@ test('AgentSession exposes only start, send, and observe and leaves MDLM decisio
   assert.doesNotMatch(calls[0][1].prompt, /scenario submit|authority envelope|prepare response|settlement/);
   await agent.send(session, 'Stakeholder answer: accept UTF-8 bytes. Continue.');
   assert.equal(agent.observe(session).turns, 2);
+});
+
+test('AgentSession authenticates and reattaches a closed session without running a turn', async () => {
+  const calls = [];
+  const fake = {
+    async start(input) {
+      calls.push(['start', input]);
+      return {
+        ok: true,
+        sessionId: input.id,
+        stdout: 'waiting',
+        stderr: '',
+        exitCode: 0,
+        command: {
+          file: 'pi',
+          args: ['--session-id', input.id, '--model', input.spec.model, '--thinking', input.spec.thinking],
+          cwd: input.cwd,
+        },
+      };
+    },
+    async send(input) {
+      calls.push(['send', input]);
+      return {
+        ok: true,
+        sessionId: input.id,
+        stdout: 'continued',
+        stderr: '',
+        exitCode: 0,
+        command: {
+          file: 'pi',
+          args: ['--session-id', input.id, '--model', input.spec.model, '--thinking', input.spec.thinking],
+          cwd: input.cwd,
+        },
+      };
+    },
+  };
+  const descriptorKey = 'qualified-host-secret';
+  const original = new AgentSession({
+    adapters: { pi: fake },
+    descriptorKey,
+    newId: () => 'session-reattach',
+  });
+  const session = await original.start('/tmp/product', 'Count bytes.', 'mdlm@next', {
+    kind: 'pi', model: 'openrouter/z-ai/glm-5.3-flash', thinking: 'low',
+  });
+  const before = original.observe(session);
+  const persisted = JSON.parse(JSON.stringify(before.descriptor));
+
+  const restored = new AgentSession({ adapters: { pi: fake }, descriptorKey });
+  assert.deepEqual(restored.attach(persisted), session);
+  assert.equal(calls.length, 1);
+  assert.deepEqual(restored.observe(session), before);
+
+  await restored.send(session, 'Stakeholder answer: approve. Continue.');
+  assert.equal(calls.length, 2);
+  assert.equal(calls[1][0], 'send');
+  assert.deepEqual(calls[1][1], {
+    cwd: '/tmp/product',
+    id: 'session-reattach',
+    message: 'Stakeholder answer: approve. Continue.',
+    spec: { kind: 'pi', model: 'openrouter/z-ai/glm-5.3-flash', thinking: 'low' },
+  });
+  assert.equal(restored.observe(session).turns, 2);
+});
+
+test('AgentSession rejects mismatched identity and ambiguous command closure on attach', async () => {
+  const descriptorKey = 'qualified-host-secret';
+  const fake = {
+    async start(input) {
+      return {
+        ok: true,
+        sessionId: input.id,
+        stdout: 'waiting',
+        stderr: '',
+        exitCode: 0,
+        command: { file: 'pi', args: ['--session-id', input.id], cwd: input.cwd },
+      };
+    },
+  };
+  const original = new AgentSession({
+    adapters: { pi: fake }, descriptorKey, newId: () => 'session-reattach',
+  });
+  const session = await original.start('/tmp/product', 'Count bytes.', 'mdlm@next', 'pi');
+  const descriptor = original.observe(session).descriptor;
+
+  assert.throws(
+    () => new AgentSession({ adapters: { pi: fake }, descriptorKey: 'different-secret' }).attach(descriptor),
+    /authentication failed/,
+  );
+
+  const mismatch = structuredClone(descriptor);
+  mismatch.session.id = 'different-session';
+  resignDescriptor(mismatch, descriptorKey);
+  assert.throws(
+    () => new AgentSession({ adapters: { pi: fake }, descriptorKey }).attach(mismatch),
+    /receipt identity/,
+  );
+
+  const ambiguous = structuredClone(descriptor);
+  ambiguous.commandClosure = 'unknown';
+  resignDescriptor(ambiguous, descriptorKey);
+  assert.throws(
+    () => new AgentSession({ adapters: { pi: fake }, descriptorKey }).attach(ambiguous),
+    /command closure/,
+  );
+
+  const codex = new AgentSession({
+    adapters: {
+      codex: {
+        async start(input) {
+          return {
+            ok: true,
+            sessionId: 'codex-session',
+            stdout: '{"type":"thread.started","thread_id":"codex-session"}\n',
+            stderr: '',
+            exitCode: 0,
+            command: {
+              file: 'codex', cwd: input.cwd,
+              args: [
+                'exec', '--json', '-C', input.cwd, '--sandbox', 'workspace-write',
+                '-m', 'wrong-model', '-c', 'model_reasoning_effort="high"', '-',
+              ],
+            },
+          };
+        },
+      },
+    },
+    descriptorKey,
+  });
+  const codexSession = await codex.start('/tmp/product', 'Count bytes.', 'mdlm@next', 'codex');
+  assert.throws(
+    () => new AgentSession({ descriptorKey }).attach(codex.observe(codexSession).descriptor),
+    /harness settings/,
+  );
+});
+
+test('AgentSession refuses attachment and duplicate send while a command is unresolved', async () => {
+  const descriptorKey = 'qualified-host-secret';
+  let finishSend;
+  let sendCalls = 0;
+  const fake = {
+    async start(input) {
+      return piReceipt(input);
+    },
+    async send(input) {
+      sendCalls += 1;
+      return new Promise(resolve => {
+        finishSend = () => resolve(piReceipt(input));
+      });
+    },
+  };
+  const original = new AgentSession({
+    adapters: { pi: fake }, descriptorKey, newId: () => 'session-active',
+  });
+  const session = await original.start('/tmp/product', 'Count bytes.', 'mdlm@next', 'pi');
+
+  const pending = original.send(session, 'Continue once.');
+  const active = original.observe(session);
+  assert.equal(active.state, 'transport-active');
+  assert.equal(active.descriptor.commandClosure, 'open');
+  assert.throws(
+    () => new AgentSession({ adapters: { pi: fake }, descriptorKey }).attach(active.descriptor),
+    /command closure/,
+  );
+  await assert.rejects(original.send(session, 'Do not duplicate.'), /active or ambiguous command/);
+  assert.equal(sendCalls, 1);
+
+  finishSend();
+  await pending;
+  assert.equal(original.observe(session).descriptor.commandClosure, 'closed');
 });
 
 test('start prompt uses a goal-named absent child as the repository root', async () => {
@@ -88,3 +259,34 @@ test('Codex and Pi adapters render only persistent session commands', async () =
   assert.equal(commands[3].args.includes('pi-1'), true);
   assert.equal(commands[4].args.includes('pi-1'), true);
 });
+
+function resignDescriptor(descriptor, key) {
+  const { authentication: _authentication, ...payload } = descriptor;
+  descriptor.authentication = {
+    algorithm: 'hmac-sha256',
+    digest: createHmac('sha256', key).update(canonicalJson(payload)).digest('hex'),
+  };
+}
+
+function piReceipt(input) {
+  return {
+    ok: true,
+    sessionId: input.id,
+    stdout: 'waiting',
+    stderr: '',
+    exitCode: 0,
+    command: {
+      file: 'pi',
+      args: ['--session-id', input.id, '--model', input.spec.model, '--thinking', input.spec.thinking],
+      cwd: input.cwd,
+    },
+  };
+}
+
+function canonicalJson(value) {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
