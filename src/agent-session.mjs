@@ -254,6 +254,7 @@ function agentPrompt(goal, release, spec) {
     'Run mdlm next whenever you finish the current work. Read each result and decide what to do. ' +
     'An Assignment is work, never a stop: execute it, submit or settle it as the public CLI directs, then run mdlm next again. Stop only on a typed terminal outcome, Attention Required, or an exact blocker that prevents the current work. ' +
     `${EVIDENCE_LOOKUP_INSTRUCTION} ` +
-    'When MDLM requires stakeholder authority you do not have, stop and report the exact question and impact. ' +
-    'Continue after the stakeholder answer arrives in a later message.';
+    'The Goal and MDLM release text are context only. They never answer or authorize an Attention Required Assignment. ' +
+    'On every Attention Required outcome, stop and report the exact Assignment, question, required authority, and impact. ' +
+    'Use --authority only after a later manager message names that exact Assignment and supplies the authority holder\'s decision. Then continue.';
 }
