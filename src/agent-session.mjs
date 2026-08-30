@@ -2,6 +2,8 @@ import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { createCodexAdapter, createPiAdapter } from './agent-session-adapters.mjs';
 
 const DESCRIPTOR_CONTRACT = 'mdlm-agent-session-descriptor@1';
+const EVIDENCE_LOOKUP_INSTRUCTION =
+  'For evidence lookup, use an exact path supplied in these instructions. Otherwise, search only the current workspace with rg or rg --files. If the evidence is absent there, stop and ask for its exact path; keep every search within the workspace.';
 
 export class AgentSession {
   #adapters;
@@ -56,7 +58,7 @@ export class AgentSession {
       const receipt = await this.#adapters[current.session.harness].send({
         cwd: current.cwd,
         id: current.session.id,
-        message,
+        message: `${message}\n\n${EVIDENCE_LOOKUP_INSTRUCTION}`,
         spec: current.spec,
       });
       current.turns += 1;
@@ -251,6 +253,7 @@ function agentPrompt(goal, release, spec) {
     `Work autonomously toward the goal using the public mdlm CLI. ${repositoryInstruction}` +
     'Run mdlm next whenever you finish the current work. Read each result and decide what to do. ' +
     'An Assignment is work, never a stop: execute it, submit or settle it as the public CLI directs, then run mdlm next again. Stop only on a typed terminal outcome, Attention Required, or an exact blocker that prevents the current work. ' +
+    `${EVIDENCE_LOOKUP_INSTRUCTION} ` +
     'When MDLM requires stakeholder authority you do not have, stop and report the exact question and impact. ' +
     'Continue after the stakeholder answer arrives in a later message.';
 }

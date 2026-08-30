@@ -89,7 +89,7 @@ test('AgentSession authenticates and reattaches a closed session without running
   assert.deepEqual(calls[1][1], {
     cwd: '/tmp/product',
     id: 'session-reattach',
-    message: 'Stakeholder answer: approve. Continue.',
+    message: 'Stakeholder answer: approve. Continue.\n\nFor evidence lookup, use an exact path supplied in these instructions. Otherwise, search only the current workspace with rg or rg --files. If the evidence is absent there, stop and ask for its exact path; keep every search within the workspace.',
     spec: { kind: 'pi', model: 'openrouter/z-ai/glm-5.3-flash', thinking: 'low' },
   });
   assert.equal(restored.observe(session).turns, 2);
@@ -221,6 +221,30 @@ test('start prompt uses a goal-named absent child as the repository root', async
   assert.match(prompt, /working directory is a harness workspace/);
   assert.match(prompt, /create the named child, change into it, then run git init \. and initialize MDLM there\. Keep the parent harness workspace limited to its injected harness metadata/);
   assert.doesNotMatch(prompt, /working directory itself is the repository root/);
+});
+
+test('start and continuation prompts bound evidence lookup to supplied paths or the workspace', async () => {
+  const calls = [];
+  const fake = {
+    async start(input) {
+      calls.push(input.prompt);
+      return { ok: true, sessionId: input.id, stdout: '', stderr: '', exitCode: 0 };
+    },
+    async send(input) {
+      calls.push(input.message);
+      return { ok: true, sessionId: input.id, stdout: '', stderr: '', exitCode: 0 };
+    },
+  };
+  const agent = new AgentSession({ adapters: { pi: fake }, newId: () => 'session-bounded-search' });
+  const session = await agent.start('/tmp/product', 'Use evidence to count bytes.', 'mdlm@next', 'pi');
+  await agent.send(session, 'The decision is at /tmp/product/attended-decision-0001.json. Continue.');
+
+  for (const prompt of calls) {
+    assert.match(prompt, /use an exact path supplied in these instructions/);
+    assert.match(prompt, /search only the current workspace with rg or rg --files/);
+    assert.match(prompt, /absent there, stop and ask for its exact path/);
+    assert.match(prompt, /keep every search within the workspace/);
+  }
 });
 
 test('Codex and Pi adapters render only persistent session commands', async () => {
