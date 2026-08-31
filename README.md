@@ -55,9 +55,10 @@ Codex defaults to `gpt-5.6-terra` with medium effort. Pi defaults to
 `openrouter/z-ai/glm-5.3-flash` with low thinking.
 
 For a deliberately empty Codex destination, set
-`{ kind: 'codex', allowEmptyDestination: true }`. Codex can then operate from a
-harness workspace while the agent creates and initializes the child repository
-named by the goal. Existing repository sessions remain strict.
+`{ kind: 'codex', allowEmptyDestination: true }`. Create that exact empty
+directory and pass it as `repository`; the agent runs `mdlm init .` there before
+any Git command. Do not pass a parent workspace or ask the agent to infer or
+create a child repository. Existing repository sessions remain strict.
 
 Codex uses the `workspace-write` sandbox by default. A host that already
 isolates the agent process may select another Codex-supported mode with
