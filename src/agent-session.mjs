@@ -2,6 +2,7 @@ import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { createCodexAdapter, createPiAdapter } from './agent-session-adapters.mjs';
 
 const DESCRIPTOR_CONTRACT = 'mdlm-agent-session-descriptor@1';
+const CODEX_SANDBOXES = new Set(['read-only', 'workspace-write', 'danger-full-access']);
 const EVIDENCE_LOOKUP_INSTRUCTION =
   'For evidence lookup, use an exact path supplied in these instructions. Otherwise, search only the current workspace with rg or rg --files. If the evidence is absent there, stop and ask for its exact path; keep every search within the workspace.';
 
@@ -177,12 +178,16 @@ function validateCodexCommand(args, session, cwd, spec) {
     throw new Error('session descriptor receipt command does not match its harness settings');
   }
   if (args[1] === 'resume') {
-    if (args[2] !== '--json' || args.at(-2) !== session.id || args.at(-1) !== '-') {
-      throw new Error('session descriptor receipt command does not match its identity');
+    if (args[2] !== '--json' || option(args, '-m') !== spec.model ||
+        !hasOption(args, '-c', `model_reasoning_effort=${JSON.stringify(spec.effort)}`) ||
+        !hasOption(args, '-c', `sandbox_mode=${JSON.stringify(spec.sandbox)}`) ||
+        args.at(-2) !== session.id || args.at(-1) !== '-') {
+      throw new Error('session descriptor receipt command does not match its identity or harness settings');
     }
     return;
   }
   if (args[1] !== '--json' || option(args, '-C') !== cwd || option(args, '-m') !== spec.model ||
+      option(args, '--sandbox') !== spec.sandbox ||
       option(args, '-c') !== `model_reasoning_effort=${JSON.stringify(spec.effort)}` || args.at(-1) !== '-') {
     throw new Error('session descriptor receipt command does not match its harness settings');
   }
@@ -197,6 +202,10 @@ function observationState(current) {
 function option(args, name) {
   const index = args.indexOf(name);
   return index === -1 ? undefined : args[index + 1];
+}
+
+function hasOption(args, name, value) {
+  return args.some((argument, index) => argument === name && args[index + 1] === value);
 }
 
 function descriptorDigest(payload, key) {
@@ -231,10 +240,15 @@ function sessionKey(session) {
 function harnessSpec(value) {
   const spec = typeof value === 'string' ? { kind: value } : value;
   if (spec?.kind === 'codex') {
+    const sandbox = spec.sandbox ?? 'workspace-write';
+    if (!CODEX_SANDBOXES.has(sandbox)) {
+      throw new Error("Codex sandbox must be 'read-only', 'workspace-write', or 'danger-full-access'");
+    }
     return {
       kind: 'codex',
       model: spec.model ?? 'gpt-5.6-terra',
       effort: spec.effort ?? 'medium',
+      sandbox,
       allowEmptyDestination: spec.allowEmptyDestination === true,
     };
   }

@@ -10,7 +10,7 @@ export function createCodexAdapter(execute = executeCommand) {
         args: [
           'exec', '--json', '-C', cwd,
           ...(spec.allowEmptyDestination ? ['--skip-git-repo-check'] : []),
-          '--sandbox', 'workspace-write', '-m', spec.model,
+          '--sandbox', spec.sandbox, '-m', spec.model,
           '-c', `model_reasoning_effort=${JSON.stringify(spec.effort)}`, '-',
         ],
       };
@@ -26,6 +26,7 @@ export function createCodexAdapter(execute = executeCommand) {
           ...(spec.allowEmptyDestination ? ['--skip-git-repo-check'] : []),
           '-m', spec.model,
           '-c', `model_reasoning_effort=${JSON.stringify(spec.effort)}`,
+          '-c', `sandbox_mode=${JSON.stringify(spec.sandbox)}`,
           id, '-',
         ],
       };
