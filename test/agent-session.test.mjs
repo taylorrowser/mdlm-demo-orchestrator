@@ -285,11 +285,42 @@ test('Codex and Pi adapters render only persistent session commands', async () =
   assert.equal(commands[0].args.includes('--skip-git-repo-check'), true);
   assert.equal(commands[1].args.includes('--skip-git-repo-check'), true);
   assert.equal(commands[2].args.includes('--skip-git-repo-check'), false);
-  assert.deepEqual(commands[1].args.slice(-6), [
-    '-m', 'gpt-5.6-terra', '-c', 'model_reasoning_effort="medium"', 'codex-1', '-',
+  assert.equal(option(commands[0].args, '--sandbox'), 'workspace-write');
+  assert.deepEqual(commands[1].args.slice(-8), [
+    '-m', 'gpt-5.6-terra', '-c', 'model_reasoning_effort="medium"',
+    '-c', 'sandbox_mode="workspace-write"', 'codex-1', '-',
   ]);
   assert.equal(commands[3].args.includes('pi-1'), true);
   assert.equal(commands[4].args.includes('pi-1'), true);
+});
+
+test('Codex preserves an explicit sandbox through start, descriptor attachment, and resume', async () => {
+  const commands = [];
+  const execute = async command => {
+    commands.push(command);
+    return { exitCode: 0, stdout: '{"type":"thread.started","thread_id":"codex-sandbox"}\n', stderr: '' };
+  };
+  const descriptorKey = 'qualified-host-secret';
+  const original = new AgentSession({
+    adapters: { codex: createCodexAdapter(execute) },
+    descriptorKey,
+  });
+  const session = await original.start('/tmp/product', 'Count bytes.', 'release.json', {
+    kind: 'codex',
+    model: 'gpt-5.6-terra',
+    effort: 'low',
+    sandbox: 'danger-full-access',
+  });
+
+  const restored = new AgentSession({
+    adapters: { codex: createCodexAdapter(execute) },
+    descriptorKey,
+  });
+  restored.attach(original.observe(session).descriptor);
+  await restored.send(session, 'Continue.');
+
+  assert.equal(option(commands[0].args, '--sandbox'), 'danger-full-access');
+  assert.equal(option(commands[1].args, '-c', 2), 'sandbox_mode="danger-full-access"');
 });
 
 function resignDescriptor(descriptor, key) {
@@ -321,4 +352,12 @@ function canonicalJson(value) {
     return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonicalJson(value[key])}`).join(',')}}`;
   }
   return JSON.stringify(value);
+}
+
+function option(args, name, occurrence = 1) {
+  let seen = 0;
+  for (let index = 0; index < args.length; index += 1) {
+    if (args[index] === name && ++seen === occurrence) return args[index + 1];
+  }
+  return undefined;
 }

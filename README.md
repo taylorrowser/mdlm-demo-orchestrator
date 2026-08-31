@@ -59,6 +59,11 @@ For a deliberately empty Codex destination, set
 harness workspace while the agent creates and initializes the child repository
 named by the goal. Existing repository sessions remain strict.
 
+Codex uses the `workspace-write` sandbox by default. A host that already
+isolates the agent process may select another Codex-supported mode with
+`sandbox`, for example `{ kind: 'codex', sandbox: 'danger-full-access' }`.
+AgentSession preserves that selection when it resumes the session.
+
 ## Check
 
 ```bash
