@@ -261,7 +261,7 @@ function harnessSpec(value) {
 function agentPrompt(goal, release, spec) {
   const releaseText = typeof release === 'string' ? release : JSON.stringify(release);
   const repositoryInstruction = spec.kind === 'codex' && spec.allowEmptyDestination
-    ? 'The working directory is a harness workspace and may contain injected harness metadata. When the goal names an absent child repository, create the named child, change into it, then run git init . and initialize MDLM there. Keep the parent harness workspace limited to its injected harness metadata. '
+    ? 'The working directory is the exact repository root and may begin empty. Run `mdlm init .` before any Git or repository command, then keep all work in that directory. '
     : 'Use the repository identified by the goal as the repository root. ';
   return `Goal:\n${goal}\n\nMDLM release:\n${releaseText}\n\n` +
     `Work autonomously toward the goal using the public mdlm CLI. ${repositoryInstruction}` +

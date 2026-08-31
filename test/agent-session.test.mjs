@@ -206,7 +206,7 @@ test('AgentSession refuses attachment and duplicate send while a command is unre
   assert.equal(original.observe(session).descriptor.commandClosure, 'closed');
 });
 
-test('start prompt uses a goal-named absent child as the repository root', async () => {
+test('empty Codex start uses its exact working directory as the MDLM repository root', async () => {
   let prompt;
   const fake = {
     async start(input) {
@@ -216,15 +216,15 @@ test('start prompt uses a goal-named absent child as the repository root', async
   };
   const agent = new AgentSession({ adapters: { codex: fake }, newId: () => 'session-child' });
   await agent.start(
-    '/tmp/harness-workspace',
-    'Create the absent child repository products/byte-counter and build a byte counter there.',
+    '/tmp/byte-counter',
+    'Build a byte counter in the assigned repository.',
     'mdlm@next',
     { kind: 'codex', allowEmptyDestination: true },
   );
 
-  assert.match(prompt, /working directory is a harness workspace/);
-  assert.match(prompt, /create the named child, change into it, then run git init \. and initialize MDLM there\. Keep the parent harness workspace limited to its injected harness metadata/);
-  assert.doesNotMatch(prompt, /working directory itself is the repository root/);
+  assert.match(prompt, /working directory is the exact repository root/);
+  assert.match(prompt, /Run `mdlm init \.` before any Git or repository command/);
+  assert.doesNotMatch(prompt, /create the named child|git init|harness workspace/);
 });
 
 test('start and continuation prompts bound evidence lookup to supplied paths or the workspace', async () => {
