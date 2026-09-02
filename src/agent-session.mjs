@@ -54,6 +54,9 @@ export class AgentSession {
 
   async send(session, message) {
     const current = this.#session(session);
+    if (typeof message !== 'string' || message.trim().length === 0) {
+      throw new Error('message must contain non-whitespace text');
+    }
     if (current.commandClosure !== 'closed') {
       throw new Error(`session ${current.session.id} has an active or ambiguous command`);
     }

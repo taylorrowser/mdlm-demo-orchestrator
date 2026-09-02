@@ -211,6 +211,30 @@ test('AgentSession refuses attachment and duplicate send while a command is unre
   assert.equal(original.observe(session).descriptor.commandClosure, 'closed');
 });
 
+test('AgentSession rejects an empty send before dispatch or turn allocation', async () => {
+  let sendCalls = 0;
+  const fake = {
+    async start(input) {
+      return piReceipt(input);
+    },
+    async send() {
+      sendCalls += 1;
+      throw new Error('adapter must not run');
+    },
+  };
+  const agent = new AgentSession({
+    adapters: { pi: fake }, newId: () => 'session-empty-send',
+  });
+  const session = await agent.start('/tmp/product', 'Count bytes.', 'mdlm@next', 'pi');
+
+  for (const message of [undefined, '', ' \t\n']) {
+    await assert.rejects(agent.send(session, message), /message must contain non-whitespace text/);
+    assert.equal(sendCalls, 0);
+    assert.equal(agent.observe(session).turns, 1);
+    assert.equal(agent.observe(session).state, 'turn-complete');
+  }
+});
+
 test('empty Codex start uses its exact working directory as the MDLM repository root', async () => {
   let prompt;
   const fake = {
