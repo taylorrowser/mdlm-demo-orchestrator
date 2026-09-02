@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
+import path from 'node:path';
 import test from 'node:test';
 import { AgentSession } from 'mdlm-demo-orchestrator';
 import { createCodexAdapter, createPiAdapter } from 'mdlm-demo-orchestrator/adapters';
@@ -48,7 +49,7 @@ test('AgentSession authenticates and reattaches a closed session without running
         stderr: '',
         exitCode: 0,
         command: {
-          file: 'pi',
+          file: input.spec.executable,
           args: ['--session-id', input.id, '--model', input.spec.model, '--thinking', input.spec.thinking],
           cwd: input.cwd,
         },
@@ -63,7 +64,7 @@ test('AgentSession authenticates and reattaches a closed session without running
         stderr: '',
         exitCode: 0,
         command: {
-          file: 'pi',
+          file: input.spec.executable,
           args: ['--session-id', input.id, '--model', input.spec.model, '--thinking', input.spec.thinking],
           cwd: input.cwd,
         },
@@ -90,11 +91,15 @@ test('AgentSession authenticates and reattaches a closed session without running
   await restored.send(session, 'Stakeholder answer: approve. Continue.');
   assert.equal(calls.length, 2);
   assert.equal(calls[1][0], 'send');
+  assert.equal(path.basename(calls[1][1].spec.executable), 'pi');
   assert.deepEqual(calls[1][1], {
     cwd: '/tmp/product',
     id: 'session-reattach',
     message: 'Stakeholder answer: approve. Continue.\n\nFor evidence lookup, use an exact path supplied in these instructions. Otherwise, search only the current workspace with rg or rg --files. If the evidence is absent there, stop and ask for its exact path; keep every search within the workspace.',
-    spec: { kind: 'pi', model: 'openrouter/z-ai/glm-5.3-flash', thinking: 'low' },
+    spec: {
+      kind: 'pi', model: 'openrouter/z-ai/glm-5.3-flash', thinking: 'low',
+      executable: calls[1][1].spec.executable,
+    },
   });
   assert.equal(restored.observe(session).turns, 2);
 });
@@ -109,7 +114,7 @@ test('AgentSession rejects mismatched identity and ambiguous command closure on 
         stdout: 'waiting',
         stderr: '',
         exitCode: 0,
-        command: { file: 'pi', args: ['--session-id', input.id], cwd: input.cwd },
+        command: { file: input.spec.executable, args: ['--session-id', input.id], cwd: input.cwd },
       };
     },
   };
@@ -151,7 +156,7 @@ test('AgentSession rejects mismatched identity and ambiguous command closure on 
             stderr: '',
             exitCode: 0,
             command: {
-              file: 'codex', cwd: input.cwd,
+              file: input.spec.executable, cwd: input.cwd,
               args: [
                 'exec', '--json', '-C', input.cwd, '--sandbox', 'workspace-write',
                 '-m', 'wrong-model', '-c', 'model_reasoning_effort="high"', '-',
@@ -255,7 +260,7 @@ test('Codex and Pi adapters render only persistent session commands', async () =
   const commands = [];
   const execute = async command => {
     commands.push(command);
-    return command.file === 'codex'
+    return path.basename(command.file) === 'codex'
       ? { exitCode: 0, stdout: '{"type":"thread.started","thread_id":"codex-1"}\n', stderr: '' }
       : { exitCode: 0, stdout: '{"type":"agent_end"}\n', stderr: '' };
   };
@@ -274,7 +279,7 @@ test('Codex and Pi adapters render only persistent session commands', async () =
   const pi = await agent.start('/tmp/product', 'Count bytes.', 'release.json', 'pi');
   await agent.send(pi, 'Continue.');
 
-  assert.deepEqual(commands.map(command => [command.file, command.args.slice(0, 3)]), [
+  assert.deepEqual(commands.map(command => [path.basename(command.file), command.args.slice(0, 3)]), [
     ['codex', ['exec', '--json', '-C']],
     ['codex', ['exec', 'resume', '--json']],
     ['codex', ['exec', '--json', '-C']],
@@ -292,6 +297,45 @@ test('Codex and Pi adapters render only persistent session commands', async () =
   ]);
   assert.equal(commands[3].args.includes('pi-1'), true);
   assert.equal(commands[4].args.includes('pi-1'), true);
+});
+
+test('AgentSession rejects a missing bound harness executable before invoking its adapter', async () => {
+  let starts = 0;
+  const fake = {
+    async start() {
+      starts += 1;
+      throw new Error('adapter must not run');
+    },
+  };
+  const agent = new AgentSession({ adapters: { codex: fake } });
+
+  await assert.rejects(
+    agent.start('/tmp/product', 'Count bytes.', 'release.json', {
+      kind: 'codex',
+      executable: '/definitely/missing/codex',
+    }),
+    /harness executable.*does not exist or is not executable/,
+  );
+  assert.equal(starts, 0);
+});
+
+test('Codex adapter rejects a child spawn error through its awaited command', async () => {
+  const adapter = createCodexAdapter();
+
+  await assert.rejects(
+    adapter.start({
+      cwd: '/tmp',
+      prompt: 'Do not run.',
+      spec: {
+        executable: '/definitely/missing/codex',
+        model: 'gpt-5.6-terra',
+        effort: 'medium',
+        sandbox: 'workspace-write',
+        allowEmptyDestination: false,
+      },
+    }),
+    error => error?.code === 'ENOENT' && error?.syscall.includes('spawn'),
+  );
 });
 
 test('Codex preserves an explicit sandbox through start, descriptor attachment, and resume', async () => {
@@ -339,7 +383,7 @@ function piReceipt(input) {
     stderr: '',
     exitCode: 0,
     command: {
-      file: 'pi',
+      file: input.spec.executable,
       args: ['--session-id', input.id, '--model', input.spec.model, '--thinking', input.spec.thinking],
       cwd: input.cwd,
     },

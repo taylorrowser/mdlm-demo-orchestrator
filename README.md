@@ -65,6 +65,17 @@ isolates the agent process may select another Codex-supported mode with
 `sandbox`, for example `{ kind: 'codex', sandbox: 'danger-full-access' }`.
 AgentSession preserves that selection when it resumes the session.
 
+For a service or another restricted environment, bind the authenticated harness
+executable explicitly:
+
+```js
+{ kind: 'codex', executable: '/absolute/path/to/codex' }
+```
+
+`start` checks the file before it invokes the adapter. Without `executable`, it
+resolves the existing `codex` or `pi` command through the current `PATH`, then
+uses and records that exact path for the session.
+
 ## Check
 
 ```bash
