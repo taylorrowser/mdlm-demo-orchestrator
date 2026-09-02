@@ -1,4 +1,7 @@
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
+import { constants } from 'node:fs';
+import { access, stat } from 'node:fs/promises';
+import path from 'node:path';
 import { createCodexAdapter, createPiAdapter } from './agent-session-adapters.mjs';
 
 const DESCRIPTOR_CONTRACT = 'mdlm-agent-session-descriptor@1';
@@ -22,7 +25,7 @@ export class AgentSession {
   }
 
   async start(cwd, goal, release, harness) {
-    const spec = harnessSpec(harness);
+    const spec = await runnableHarnessSpec(harness, cwd);
     const proposedId = this.#newId();
     const receipt = await this.#adapters[spec.kind].start({
       cwd,
@@ -157,7 +160,7 @@ function validateReceipt(receipt, session, cwd, spec) {
     throw new Error('session descriptor closed receipt is inconsistent');
   }
   const command = receipt.command;
-  const expectedFile = session.harness === 'pi' ? 'pi' : 'codex';
+  const expectedFile = spec.executable ?? (session.harness === 'pi' ? 'pi' : 'codex');
   if (!command || command.file !== expectedFile || command.cwd !== cwd ||
       !Array.isArray(command.args) || command.args.some(argument => typeof argument !== 'string')) {
     throw new Error('session descriptor receipt command is inconsistent');
@@ -239,6 +242,7 @@ function sessionKey(session) {
 
 function harnessSpec(value) {
   const spec = typeof value === 'string' ? { kind: value } : value;
+  const executable = configuredExecutable(spec?.executable);
   if (spec?.kind === 'codex') {
     const sandbox = spec.sandbox ?? 'workspace-write';
     if (!CODEX_SANDBOXES.has(sandbox)) {
@@ -250,12 +254,48 @@ function harnessSpec(value) {
       effort: spec.effort ?? 'medium',
       sandbox,
       allowEmptyDestination: spec.allowEmptyDestination === true,
+      ...(executable === undefined ? {} : { executable }),
     };
   }
   if (spec?.kind === 'pi') {
-    return { kind: 'pi', model: spec.model ?? 'openrouter/z-ai/glm-5.3-flash', thinking: spec.thinking ?? 'low' };
+    return {
+      kind: 'pi',
+      model: spec.model ?? 'openrouter/z-ai/glm-5.3-flash',
+      thinking: spec.thinking ?? 'low',
+      ...(executable === undefined ? {} : { executable }),
+    };
   }
   throw new Error("harness must be 'codex' or 'pi'");
+}
+
+async function runnableHarnessSpec(value, cwd) {
+  const spec = harnessSpec(value);
+  const executable = await resolveExecutable(spec.executable ?? spec.kind, cwd);
+  return { ...spec, executable };
+}
+
+function configuredExecutable(value) {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'string' || !path.isAbsolute(value)) {
+    throw new Error('harness executable must be an absolute path');
+  }
+  return value;
+}
+
+async function resolveExecutable(value, cwd) {
+  const candidates = path.isAbsolute(value)
+    ? [value]
+    : (process.env.PATH ?? '').split(path.delimiter).map(directory =>
+      path.resolve(cwd, directory, value));
+  for (const candidate of candidates) {
+    try {
+      await access(candidate, constants.X_OK);
+      if ((await stat(candidate)).isFile()) return candidate;
+    } catch (error) {
+      if (error.code !== 'ENOENT' && error.code !== 'EACCES') throw error;
+    }
+  }
+  throw new Error(`harness executable '${value}' does not exist or is not executable`);
 }
 
 function agentPrompt(goal, release, spec) {

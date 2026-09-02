@@ -4,7 +4,7 @@ export function createCodexAdapter(execute = executeCommand) {
   return {
     async start({ cwd, prompt, spec }) {
       const command = {
-        file: 'codex',
+        file: spec.executable ?? 'codex',
         cwd,
         input: prompt,
         args: [
@@ -18,7 +18,7 @@ export function createCodexAdapter(execute = executeCommand) {
     },
     async send({ cwd, id, message, spec }) {
       const command = {
-        file: 'codex',
+        file: spec.executable ?? 'codex',
         cwd,
         input: message,
         args: [
@@ -50,7 +50,7 @@ export function createPiAdapter(execute = executeCommand) {
 
 function piCommand(cwd, id, message, spec) {
   return {
-    file: 'pi',
+    file: spec.executable ?? 'pi',
     cwd,
     args: [
       '--print', '--mode', 'json', '--session-id', id,
@@ -79,13 +79,14 @@ function receipt(result, command, sessionId) {
 }
 
 function executeCommand(command) {
-  return new Promise(resolve => {
+  return new Promise((resolve, reject) => {
     const child = spawn(command.file, command.args, { cwd: command.cwd, stdio: ['pipe', 'pipe', 'pipe'] });
     const stdout = [];
     const stderr = [];
     child.stdout.on('data', chunk => stdout.push(chunk));
     child.stderr.on('data', chunk => stderr.push(chunk));
-    child.on('close', exitCode => resolve({
+    child.once('error', reject);
+    child.once('close', exitCode => resolve({
       exitCode,
       stdout: Buffer.concat(stdout).toString(),
       stderr: Buffer.concat(stderr).toString(),
