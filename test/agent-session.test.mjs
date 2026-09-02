@@ -22,7 +22,7 @@ test('AgentSession exposes only start, send, and observe and leaves MDLM decisio
     Object.getOwnPropertyNames(AgentSession.prototype).filter(name => name !== 'constructor').sort(),
     ['attach', 'observe', 'send', 'start'],
   );
-  const session = await agent.start('/tmp/product', 'Build a byte counter.', 'mdlm@next', 'pi');
+  const session = await agent.start('/tmp/product', 'mdlm@next', 'pi');
   assert.deepEqual(session, { id: 'session-1', harness: 'pi' });
   assert.match(calls[0][1].prompt, /Run mdlm next whenever/);
   assert.match(calls[0][1].prompt, /Goal and MDLM release text are context only/);
@@ -35,6 +35,28 @@ test('AgentSession exposes only start, send, and observe and leaves MDLM decisio
   assert.doesNotMatch(calls[0][1].prompt, /scenario submit|authority envelope|prepare response|settlement/);
   await agent.send(session, 'Stakeholder answer: accept UTF-8 bytes. Continue.');
   assert.equal(agent.observe(session).turns, 2);
+});
+
+test('AgentSession rejects caller-authored launch goals before adapter dispatch', async () => {
+  let starts = 0;
+  const fake = {
+    async start() {
+      starts += 1;
+      return { ok: true, sessionId: 'session-unsafe', stdout: '', stderr: '', exitCode: 0 };
+    },
+  };
+  const agent = new AgentSession({ adapters: { pi: fake } });
+
+  await assert.rejects(
+    agent.start(
+      '/tmp/product',
+      'Use the fixed stakeholder brief as lifecycle evidence for the attended product answer.',
+      'mdlm@next',
+      'pi',
+    ),
+    /caller-authored launch goals are not supported/,
+  );
+  assert.equal(starts, 0);
 });
 
 test('AgentSession authenticates and reattaches a closed session without running a turn', async () => {
@@ -77,7 +99,7 @@ test('AgentSession authenticates and reattaches a closed session without running
     descriptorKey,
     newId: () => 'session-reattach',
   });
-  const session = await original.start('/tmp/product', 'Count bytes.', 'mdlm@next', {
+  const session = await original.start('/tmp/product', 'mdlm@next', {
     kind: 'pi', model: 'openrouter/z-ai/glm-5.3-flash', thinking: 'low',
   });
   const before = original.observe(session);
@@ -121,7 +143,7 @@ test('AgentSession rejects mismatched identity and ambiguous command closure on 
   const original = new AgentSession({
     adapters: { pi: fake }, descriptorKey, newId: () => 'session-reattach',
   });
-  const session = await original.start('/tmp/product', 'Count bytes.', 'mdlm@next', 'pi');
+  const session = await original.start('/tmp/product', 'mdlm@next', 'pi');
   const descriptor = original.observe(session).descriptor;
 
   assert.throws(
@@ -168,7 +190,7 @@ test('AgentSession rejects mismatched identity and ambiguous command closure on 
     },
     descriptorKey,
   });
-  const codexSession = await codex.start('/tmp/product', 'Count bytes.', 'mdlm@next', 'codex');
+  const codexSession = await codex.start('/tmp/product', 'mdlm@next', 'codex');
   assert.throws(
     () => new AgentSession({ descriptorKey }).attach(codex.observe(codexSession).descriptor),
     /harness settings/,
@@ -193,7 +215,7 @@ test('AgentSession refuses attachment and duplicate send while a command is unre
   const original = new AgentSession({
     adapters: { pi: fake }, descriptorKey, newId: () => 'session-active',
   });
-  const session = await original.start('/tmp/product', 'Count bytes.', 'mdlm@next', 'pi');
+  const session = await original.start('/tmp/product', 'mdlm@next', 'pi');
 
   const pending = original.send(session, 'Continue once.');
   const active = original.observe(session);
@@ -225,7 +247,7 @@ test('AgentSession rejects an empty send before dispatch or turn allocation', as
   const agent = new AgentSession({
     adapters: { pi: fake }, newId: () => 'session-empty-send',
   });
-  const session = await agent.start('/tmp/product', 'Count bytes.', 'mdlm@next', 'pi');
+  const session = await agent.start('/tmp/product', 'mdlm@next', 'pi');
 
   for (const message of [undefined, '', ' \t\n']) {
     await assert.rejects(agent.send(session, message), /message must contain non-whitespace text/);
@@ -246,7 +268,6 @@ test('empty Codex start uses its exact working directory as the MDLM repository 
   const agent = new AgentSession({ adapters: { codex: fake }, newId: () => 'session-child' });
   await agent.start(
     '/tmp/byte-counter',
-    'Build a byte counter in the assigned repository.',
     'mdlm@next',
     { kind: 'codex', allowEmptyDestination: true },
   );
@@ -269,7 +290,7 @@ test('start and continuation prompts bound evidence lookup to supplied paths or 
     },
   };
   const agent = new AgentSession({ adapters: { pi: fake }, newId: () => 'session-bounded-search' });
-  const session = await agent.start('/tmp/product', 'Use evidence to count bytes.', 'mdlm@next', 'pi');
+  const session = await agent.start('/tmp/product', 'mdlm@next', 'pi');
   await agent.send(session, 'The decision is at /tmp/product/attended-decision-0001.json. Continue.');
 
   for (const prompt of calls) {
@@ -292,15 +313,15 @@ test('Codex and Pi adapters render only persistent session commands', async () =
     adapters: { codex: createCodexAdapter(execute), pi: createPiAdapter(execute) },
     newId: () => 'pi-1',
   });
-  const codex = await agent.start('/tmp/product', 'Count bytes.', 'release.json', {
+  const codex = await agent.start('/tmp/product', 'release.json', {
     kind: 'codex',
     allowEmptyDestination: true,
     model: 'gpt-5.6-terra',
     effort: 'medium',
   });
   await agent.send(codex, 'Continue.');
-  await agent.start('/tmp/existing-product', 'Count bytes.', 'release.json', 'codex');
-  const pi = await agent.start('/tmp/product', 'Count bytes.', 'release.json', 'pi');
+  await agent.start('/tmp/existing-product', 'release.json', 'codex');
+  const pi = await agent.start('/tmp/product', 'release.json', 'pi');
   await agent.send(pi, 'Continue.');
 
   assert.deepEqual(commands.map(command => [path.basename(command.file), command.args.slice(0, 3)]), [
@@ -334,7 +355,7 @@ test('AgentSession rejects a missing bound harness executable before invoking it
   const agent = new AgentSession({ adapters: { codex: fake } });
 
   await assert.rejects(
-    agent.start('/tmp/product', 'Count bytes.', 'release.json', {
+    agent.start('/tmp/product', 'release.json', {
       kind: 'codex',
       executable: '/definitely/missing/codex',
     }),
@@ -373,7 +394,7 @@ test('Codex preserves an explicit sandbox through start, descriptor attachment, 
     adapters: { codex: createCodexAdapter(execute) },
     descriptorKey,
   });
-  const session = await original.start('/tmp/product', 'Count bytes.', 'release.json', {
+  const session = await original.start('/tmp/product', 'release.json', {
     kind: 'codex',
     model: 'gpt-5.6-terra',
     effort: 'low',

@@ -8,7 +8,7 @@ drives the public MDLM CLI and decides how to handle each result.
 import { AgentSession } from 'mdlm-demo-orchestrator';
 
 const agent = new AgentSession();
-const session = await agent.start(repository, goal, release, {
+const session = await agent.start(repository, release, {
   kind: 'pi',
   model: 'openrouter/z-ai/glm-5.3-flash',
   thinking: 'low',
@@ -21,9 +21,12 @@ await agent.send(session, 'Stakeholder answer: use UTF-8 bytes. Continue.');
 The public instance methods are exactly `start`, `attach`, `send`, and
 `observe`.
 
-The start prompt tells the agent to run `mdlm next` after each unit of work, to
-complete ordinary Assignments, and to ask for stakeholder input only at an
-Attention Required boundary or an exact blocker. The session module does not
+AgentSession generates the launch Goal from the repository, release, public CLI
+loop, and stop contract. Product intent enters the session only through a later
+manager message bound to the exact attended Assignment. The start prompt tells
+the agent to run `mdlm next` after each unit of work, complete ordinary
+Assignments, and ask for stakeholder input only at an Attention Required
+boundary or an exact blocker. The session module does not
 parse MDLM results, construct authority, prepare responses, submit, settle, or
 own lifecycle recovery.
 
@@ -36,7 +39,7 @@ from it.
 
 ```js
 const original = new AgentSession({ descriptorKey });
-const session = await original.start(repository, goal, release, harness);
+const session = await original.start(repository, release, harness);
 await writeDescriptor(original.observe(session).descriptor);
 
 const replacement = new AgentSession({ descriptorKey });

@@ -24,13 +24,16 @@ export class AgentSession {
     this.#newId = newId;
   }
 
-  async start(cwd, goal, release, harness) {
+  async start(cwd, release, harness) {
+    if (arguments.length > 3) {
+      throw new Error('caller-authored launch goals are not supported; supply product intent only in a later Assignment-bound manager message');
+    }
     const spec = await runnableHarnessSpec(harness, cwd);
     const proposedId = this.#newId();
     const receipt = await this.#adapters[spec.kind].start({
       cwd,
       id: proposedId,
-      prompt: agentPrompt(goal, release, spec),
+      prompt: agentPrompt(cwd, release, spec),
       spec,
     });
     const session = Object.freeze({ id: receipt.sessionId ?? proposedId, harness: spec.kind });
@@ -301,12 +304,12 @@ async function resolveExecutable(value, cwd) {
   throw new Error(`harness executable '${value}' does not exist or is not executable`);
 }
 
-function agentPrompt(goal, release, spec) {
+function agentPrompt(cwd, release, spec) {
   const releaseText = typeof release === 'string' ? release : JSON.stringify(release);
   const repositoryInstruction = spec.kind === 'codex' && spec.allowEmptyDestination
     ? 'The working directory is the exact repository root and may begin empty. Run `mdlm init .` before any Git or repository command, then keep all work in that directory. '
     : 'Use the repository identified by the goal as the repository root. ';
-  return `Goal:\n${goal}\n\nMDLM release:\n${releaseText}\n\n` +
+  return `Goal:\nComplete the selected MDLM lifecycle through Lifecycle Complete in the exact repository ${cwd} using only the public mdlm CLI and the exact MDLM release below.\n\nMDLM release:\n${releaseText}\n\n` +
     `Work autonomously toward the goal using the public mdlm CLI. ${repositoryInstruction}` +
     'Run mdlm next whenever you finish the current work. Read each result and decide what to do. ' +
     'An Assignment is work, never a stop: execute it, submit or settle it as the public CLI directs, then run mdlm next again. Stop only on a typed terminal outcome, Attention Required, or an exact blocker that prevents the current work. ' +
