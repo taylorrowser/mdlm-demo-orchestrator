@@ -30,6 +30,29 @@ boundary or an exact blocker. The session module does not
 parse MDLM results, construct authority, prepare responses, submit, settle, or
 own lifecycle recovery.
 
+## Durable controller
+
+Long-lived hosts can expose a Unix socket with the packaged controller helper:
+
+```js
+import { listenAgentSessionController } from 'mdlm-demo-orchestrator/controller';
+
+await listenAgentSessionController({
+  socketPath,
+  currentState,
+  beginSend,
+  recordClientDisconnect,
+  recordPreSendFailure,
+});
+```
+
+`beginSend` must synchronously write the controller-owned numbered request and
+in-flight records, mark the host busy, and start `AgentSession.send`. If that
+pre-send work throws, the helper returns `pre-send-rejected`, calls
+`recordPreSendFailure`, and keeps the controller alive for status inspection.
+The manager must keep prepared messages and authority records outside the
+controller's request, in-flight, and receipt paths.
+
 ## Reattaching after host closure
 
 Configure the same non-empty `descriptorKey` on the original and replacement
