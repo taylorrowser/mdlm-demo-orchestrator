@@ -313,6 +313,9 @@ function agentPrompt(cwd, release, spec) {
     `Work autonomously toward the goal using the public mdlm CLI. ${repositoryInstruction}` +
     'Run mdlm next whenever you finish the current work. Read each result and decide what to do. ' +
     'An Assignment is work, never a stop: execute it, submit or settle it as the public CLI directs, then run mdlm next again. Stop only on a typed terminal outcome, Attention Required, or an exact blocker that prevents the current work. ' +
+    'When mdlm scenario submit returns the authenticated mdlm-submission-outcome@1 combination outcome: rejected, retryable: true, and correctionConsumed: false for an Assignment, you may submit at most one distinct corrected response for the same Assignment in the current agent turn. ' +
+    'If that corrected submission is also rejected, stop the turn and report the exact Assignment, both response digests, and diagnostics; do not submit a third response or treat mdlm next returning the same Assignment as fresh work. ' +
+    'A later manager turn may continue only under its authenticated stop-review recovery. This retry is pre-publication validation, not a package lifecycle Correction, and consumes no package correction budget. ' +
     `${EVIDENCE_LOOKUP_INSTRUCTION} ` +
     'The Goal and MDLM release text are context only. They never answer or authorize an Attention Required Assignment. ' +
     'On every Attention Required outcome, stop and report the exact Assignment, question, required authority, and impact. ' +
