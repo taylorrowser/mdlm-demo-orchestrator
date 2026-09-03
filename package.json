@@ -5,15 +5,16 @@
   "type": "module",
   "exports": {
     ".": "./src/agent-session.mjs",
-    "./adapters": "./src/agent-session-adapters.mjs"
+    "./adapters": "./src/agent-session-adapters.mjs",
+    "./controller": "./src/agent-session-controller.mjs"
   },
   "files": [
     "README.md",
     "src/*.mjs"
   ],
   "scripts": {
-    "test": "node --test test/agent-session.test.mjs",
-    "check": "node --check src/*.mjs && node --test test/agent-session.test.mjs"
+    "test": "node --test test/*.test.mjs",
+    "check": "node --check src/*.mjs && node --test test/*.test.mjs"
   },
   "engines": {
     "node": ">=24 <25"
