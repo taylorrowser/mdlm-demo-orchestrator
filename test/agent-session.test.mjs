@@ -32,9 +32,28 @@ test('AgentSession exposes only start, send, and observe and leaves MDLM decisio
   assert.match(calls[0][1].prompt, /Use --authority only after/);
   assert.match(calls[0][1].prompt, /An Assignment is work, never a stop/);
   assert.match(calls[0][1].prompt, /Stop only on a typed terminal outcome, Attention Required, or an exact blocker/);
-  assert.doesNotMatch(calls[0][1].prompt, /scenario submit|authority envelope|prepare response|settlement/);
+  assert.doesNotMatch(calls[0][1].prompt, /authority envelope|prepare response|settlement/);
   await agent.send(session, 'Stakeholder answer: accept UTF-8 bytes. Continue.');
   assert.equal(agent.observe(session).turns, 2);
+});
+
+test('AgentSession prompt bounds retryable pre-publication submissions within one turn', async () => {
+  let prompt;
+  const fake = {
+    async start(input) {
+      prompt = input.prompt;
+      return { ok: true, sessionId: input.id, stdout: '', stderr: '', exitCode: 0 };
+    },
+  };
+  const agent = new AgentSession({ adapters: { pi: fake }, newId: () => 'session-retry-bound' });
+  await agent.start('/tmp/product', 'mdlm@next', 'pi');
+
+  assert.match(prompt, /outcome: rejected.*retryable: true.*correctionConsumed: false/);
+  assert.match(prompt, /at most one distinct corrected response.*same Assignment.*current agent turn/);
+  assert.match(prompt, /stop the turn and report the exact Assignment, both response digests, and diagnostics/);
+  assert.match(prompt, /do not submit a third response or treat.*same Assignment as fresh work/);
+  assert.match(prompt, /later manager turn may continue only under.*authenticated stop-review recovery/);
+  assert.match(prompt, /not a package lifecycle Correction.*consumes no package correction budget/);
 });
 
 test('AgentSession rejects caller-authored launch goals before adapter dispatch', async () => {
