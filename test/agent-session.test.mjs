@@ -56,6 +56,43 @@ test('AgentSession prompt bounds retryable pre-publication submissions within on
   assert.match(prompt, /not a package lifecycle Correction.*consumes no package correction budget/);
 });
 
+test('resumed turns repeat the launch work and stop contract without changing the send', async () => {
+  const calls = [];
+  const fake = {
+    async start(input) {
+      calls.push(input);
+      return { ok: true, sessionId: input.id, stdout: '', stderr: '', exitCode: 0 };
+    },
+    async send(input) {
+      calls.push(input);
+      return { ok: true, sessionId: input.id, stdout: '', stderr: '', exitCode: 0 };
+    },
+  };
+  const agent = new AgentSession({ adapters: { codex: fake }, newId: () => 'session-work-contract' });
+  const session = await agent.start('/tmp/product', 'mdlm@next', {
+    kind: 'codex', model: 'gpt-5.6-terra', effort: 'low', allowEmptyDestination: true,
+  });
+  const message = 'Continue the lifecycle from its current state.';
+  await agent.send(session, message);
+
+  assert.equal(calls.length, 2);
+  assert.equal(calls[1].id, calls[0].id);
+  assert.deepEqual(calls[1].spec, calls[0].spec);
+  assert.equal(calls[1].spec.model, 'gpt-5.6-terra');
+  assert.equal(calls[1].spec.effort, 'low');
+  assert.ok(calls[1].message.startsWith(message + '\n\n'));
+  const workContract = calls[1].message.slice(message.length + 2).split('\n\n')[0];
+  assert.ok(calls[0].prompt.includes(workContract));
+  assert.match(workContract, /An Assignment is work, never a stop/);
+  assert.match(workContract, /Receiving the next Assignment, writing files, or correcting a local assertion/);
+  assert.match(workContract, /Use commentary for progress.*do not end with a promise to finish later/);
+  assert.match(workContract, /Stop only on a typed terminal outcome, Attention Required, or an exact blocker/);
+  assert.match(workContract, /at most one distinct corrected response.*same Assignment.*current agent turn/);
+  assert.match(workContract, /If that corrected submission is also rejected, stop the turn/);
+  assert.match(workContract, /authenticated stop-review recovery/);
+  assert.match(calls[1].message, /keep every search within the workspace/);
+});
+
 test('AgentSession rejects caller-authored launch goals before adapter dispatch', async () => {
   let starts = 0;
   const fake = {
@@ -133,10 +170,11 @@ test('AgentSession authenticates and reattaches a closed session without running
   assert.equal(calls.length, 2);
   assert.equal(calls[1][0], 'send');
   assert.equal(path.basename(calls[1][1].spec.executable), 'pi');
-  assert.deepEqual(calls[1][1], {
+  const { message, ...resumed } = calls[1][1];
+  assert.ok(message.startsWith('Stakeholder answer: approve. Continue.\n\n'));
+  assert.deepEqual(resumed, {
     cwd: '/tmp/product',
     id: 'session-reattach',
-    message: 'Stakeholder answer: approve. Continue.\n\nFor evidence lookup, use an exact path supplied in these instructions. Otherwise, search only the current workspace with rg or rg --files. If the evidence is absent there, stop and ask for its exact path; keep every search within the workspace.',
     spec: {
       kind: 'pi', model: 'openrouter/z-ai/glm-5.3-flash', thinking: 'low',
       executable: calls[1][1].spec.executable,

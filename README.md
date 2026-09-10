@@ -26,7 +26,12 @@ loop, and stop contract. Product intent enters the session only through a later
 manager message bound to the exact attended Assignment. The start prompt tells
 the agent to run `mdlm next` after each unit of work, complete ordinary
 Assignments, and ask for stakeholder input only at an Attention Required
-boundary or an exact blocker. The session module does not
+boundary or an exact blocker. Resumed sends repeat the same work and stop
+contract, including the bounded submission retry rule. Receiving work or fixing
+a local assertion remains part of the active turn; progress belongs in commentary.
+The fake-adapter regression checks instruction delivery, not model obedience.
+Fresh operation must confirm that the author continues through a committed
+candidate and the next actual lifecycle boundary. The session module does not
 parse MDLM results, construct authority, prepare responses, submit, settle, or
 own lifecycle recovery.
 

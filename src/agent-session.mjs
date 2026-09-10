@@ -9,6 +9,14 @@ const CODEX_SANDBOXES = new Set(['read-only', 'workspace-write', 'danger-full-ac
 const EVIDENCE_LOOKUP_INSTRUCTION =
   'For evidence lookup, use an exact path supplied in these instructions. Otherwise, search only the current workspace with rg or rg --files. If the evidence is absent there, stop and ask for its exact path; keep every search within the workspace.';
 
+const WORK_AND_STOP_INSTRUCTION =
+  'Run mdlm next whenever you finish the current work. Read each result and decide what to do. ' +
+  'An Assignment is work, never a stop: execute it, submit or settle it as the public CLI directs, then run mdlm next again. Stop only on a typed terminal outcome, Attention Required, or an exact blocker that prevents the current work. ' +
+  'Receiving the next Assignment, writing files, or correcting a local assertion is progress within the current turn. Keep working through local verification and ordinary correction. Use commentary for progress; do not end with a promise to finish later. ' +
+  'When mdlm scenario submit returns the authenticated mdlm-submission-outcome@1 combination outcome: rejected, retryable: true, and correctionConsumed: false for an Assignment, you may submit at most one distinct corrected response for the same Assignment in the current agent turn. ' +
+  'If that corrected submission is also rejected, stop the turn and report the exact Assignment, both response digests, and diagnostics; do not submit a third response or treat mdlm next returning the same Assignment as fresh work. ' +
+  'A later manager turn may continue only under its authenticated stop-review recovery. This retry is pre-publication validation, not a package lifecycle Correction, and consumes no package correction budget.';
+
 export class AgentSession {
   #adapters;
   #descriptorKey;
@@ -68,7 +76,7 @@ export class AgentSession {
       const receipt = await this.#adapters[current.session.harness].send({
         cwd: current.cwd,
         id: current.session.id,
-        message: `${message}\n\n${EVIDENCE_LOOKUP_INSTRUCTION}`,
+        message: `${message}\n\n${WORK_AND_STOP_INSTRUCTION}\n\n${EVIDENCE_LOOKUP_INSTRUCTION}`,
         spec: current.spec,
       });
       current.turns += 1;
@@ -311,11 +319,7 @@ function agentPrompt(cwd, release, spec) {
     : 'Use the repository identified by the goal as the repository root. ';
   return `Goal:\nComplete the selected MDLM lifecycle through Lifecycle Complete in the exact repository ${cwd} using only the public mdlm CLI and the exact MDLM release below.\n\nMDLM release:\n${releaseText}\n\n` +
     `Work autonomously toward the goal using the public mdlm CLI. ${repositoryInstruction}` +
-    'Run mdlm next whenever you finish the current work. Read each result and decide what to do. ' +
-    'An Assignment is work, never a stop: execute it, submit or settle it as the public CLI directs, then run mdlm next again. Stop only on a typed terminal outcome, Attention Required, or an exact blocker that prevents the current work. ' +
-    'When mdlm scenario submit returns the authenticated mdlm-submission-outcome@1 combination outcome: rejected, retryable: true, and correctionConsumed: false for an Assignment, you may submit at most one distinct corrected response for the same Assignment in the current agent turn. ' +
-    'If that corrected submission is also rejected, stop the turn and report the exact Assignment, both response digests, and diagnostics; do not submit a third response or treat mdlm next returning the same Assignment as fresh work. ' +
-    'A later manager turn may continue only under its authenticated stop-review recovery. This retry is pre-publication validation, not a package lifecycle Correction, and consumes no package correction budget. ' +
+    `${WORK_AND_STOP_INSTRUCTION} ` +
     `${EVIDENCE_LOOKUP_INSTRUCTION} ` +
     'The Goal and MDLM release text are context only. They never answer or authorize an Attention Required Assignment. ' +
     'On every Attention Required outcome, stop and report the exact Assignment, question, required authority, and impact. ' +
