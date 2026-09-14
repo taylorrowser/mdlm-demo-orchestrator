@@ -22,18 +22,25 @@ The public instance methods are exactly `start`, `attach`, `send`, and
 `observe`.
 
 AgentSession generates the launch Goal from the repository, release, public CLI
-loop, and stop contract. Product intent enters the session only through a later
-manager message bound to the exact attended Assignment. The start prompt tells
-the agent to run `mdlm next` after each unit of work, complete ordinary
-Assignments, and ask for stakeholder input only at an Attention Required
-boundary or an exact blocker. Resumed sends repeat the same work and stop
-contract, including the bounded submission retry rule. Receiving work or fixing
-a local assertion remains part of the active turn; progress belongs in commentary.
+loop, and stop contract. Product intent enters through a later manager message
+bound to the exact action and context. The agent discovers work with
+`mdlm expectations --json`, chooses an eligible item, and retrieves its
+package-owned guidance with `mdlm expectations show <action> [<exact-subject>]
+--json`. It publishes proposals and runs verification through direct operations.
+If a result is uncertain, it queries settlement before retrying and continues
+from accepted results without repeating completed work.
+
+Independent review still requires an independent verdict. Stakeholder decisions
+must come from a manager message identifying the exact protected action and
+context. The agent stops at a typed completion boundary or reports an exact
+blocker when no eligible work can proceed. Optional work does not hold up
+completion. Resumed sends repeat these same instructions. Local corrections
+remain part of the active turn; progress belongs in commentary.
+
 The fake-adapter regression checks instruction delivery, not model obedience.
-Fresh operation must confirm that the author continues through a committed
-candidate and the next actual lifecycle boundary. The session module does not
-parse MDLM results, construct authority, prepare responses, submit, settle, or
-own lifecycle recovery.
+Fresh operation must confirm the agent uses direct operations through the next
+lifecycle boundary. The session module does not parse MDLM results, rank work,
+construct authority, prepare proposals, submit, settle, or own lifecycle recovery.
 
 ## Durable controller
 

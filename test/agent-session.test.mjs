@@ -24,20 +24,20 @@ test('AgentSession exposes only start, send, and observe and leaves MDLM decisio
   );
   const session = await agent.start('/tmp/product', 'mdlm@next', 'pi');
   assert.deepEqual(session, { id: 'session-1', harness: 'pi' });
-  assert.match(calls[0][1].prompt, /Run mdlm next whenever/);
-  assert.match(calls[0][1].prompt, /Goal and MDLM release text are context only/);
-  assert.match(calls[0][1].prompt, /never answer or authorize an Attention Required Assignment/);
-  assert.match(calls[0][1].prompt, /On every Attention Required outcome, stop/);
-  assert.match(calls[0][1].prompt, /later manager message names that exact Assignment/);
-  assert.match(calls[0][1].prompt, /Use --authority only after/);
-  assert.match(calls[0][1].prompt, /An Assignment is work, never a stop/);
-  assert.match(calls[0][1].prompt, /Stop only on a typed terminal outcome, Attention Required, or an exact blocker/);
-  assert.doesNotMatch(calls[0][1].prompt, /authority envelope|prepare response|settlement/);
+  assert.match(calls[0][1].prompt, /Run mdlm expectations --json/);
+  assert.match(calls[0][1].prompt, /Choose an eligible item using stakeholder intent and current evidence/);
+  assert.match(calls[0][1].prompt, /priority is display order/);
+  assert.match(calls[0][1].prompt, /mdlm expectations show <action> \[<exact-subject>\] --json/);
+  assert.match(calls[0][1].prompt, /mdlm proposal submit <file\|-> --json/);
+  assert.match(calls[0][1].prompt, /mdlm execution run <exact-implementation> <operation> --json/);
+  assert.match(calls[0][1].prompt, /Stop on profile-boundary-reached or lifecycle-complete/);
+  assert.match(calls[0][1].prompt, /Optional items do not prevent completion/);
+  assert.doesNotMatch(calls[0][1].prompt, /Assignment|mdlm next|mdlm scenario|correctionConsumed|--authority/);
   await agent.send(session, 'Stakeholder answer: accept UTF-8 bytes. Continue.');
   assert.equal(agent.observe(session).turns, 2);
 });
 
-test('AgentSession prompt bounds retryable pre-publication submissions within one turn', async () => {
+test('AgentSession prompt preserves settlement and protected decisions', async () => {
   let prompt;
   const fake = {
     async start(input) {
@@ -45,15 +45,19 @@ test('AgentSession prompt bounds retryable pre-publication submissions within on
       return { ok: true, sessionId: input.id, stdout: '', stderr: '', exitCode: 0 };
     },
   };
-  const agent = new AgentSession({ adapters: { pi: fake }, newId: () => 'session-retry-bound' });
+  const agent = new AgentSession({ adapters: { pi: fake }, newId: () => 'session-direct' });
   await agent.start('/tmp/product', 'mdlm@next', 'pi');
 
-  assert.match(prompt, /outcome: rejected.*retryable: true.*correctionConsumed: false/);
-  assert.match(prompt, /at most one distinct corrected response.*same Assignment.*current agent turn/);
-  assert.match(prompt, /stop the turn and report the exact Assignment, both response digests, and diagnostics/);
-  assert.match(prompt, /do not submit a third response or treat.*same Assignment as fresh work/);
-  assert.match(prompt, /later manager turn may continue only under.*authenticated stop-review recovery/);
-  assert.match(prompt, /not a package lifecycle Correction.*consumes no package correction budget/);
+  assert.match(prompt, /mdlm proposal settlement <operation> --json/);
+  assert.match(prompt, /mdlm execution settlement <operation> --json before retrying/);
+  assert.match(prompt, /without duplicating publication or rerunning completed execution/);
+  assert.match(prompt, /Never reuse an operation identity for changed content/);
+  assert.match(prompt, /mdlm review context <action> <exact-subject> --json/);
+  assert.match(prompt, /mdlm review register <proposal-file> <verdict-file> --json/);
+  assert.match(prompt, /Do not author your own independent approval/);
+  assert.match(prompt, /manager message supplies the authority holder's decision for that exact context/);
+  assert.match(prompt, /Goal and release text are context only and never supply stakeholder decisions/);
+  assert.match(prompt, /stop and report repeated diagnostics when you cannot make progress/);
 });
 
 test('resumed turns repeat the launch work and stop contract without changing the send', async () => {
@@ -83,13 +87,13 @@ test('resumed turns repeat the launch work and stop contract without changing th
   assert.ok(calls[1].message.startsWith(message + '\n\n'));
   const workContract = calls[1].message.slice(message.length + 2).split('\n\n')[0];
   assert.ok(calls[0].prompt.includes(workContract));
-  assert.match(workContract, /An Assignment is work, never a stop/);
-  assert.match(workContract, /Receiving the next Assignment, writing files, or correcting a local assertion/);
+  assert.match(workContract, /Run mdlm expectations --json/);
+  assert.match(workContract, /Choosing work, writing files and correcting a local assertion/);
   assert.match(workContract, /Use commentary for progress.*do not end with a promise to finish later/);
-  assert.match(workContract, /Stop only on a typed terminal outcome, Attention Required, or an exact blocker/);
-  assert.match(workContract, /at most one distinct corrected response.*same Assignment.*current agent turn/);
-  assert.match(workContract, /If that corrected submission is also rejected, stop the turn/);
-  assert.match(workContract, /authenticated stop-review recovery/);
+  assert.match(workContract, /Stop on profile-boundary-reached or lifecycle-complete/);
+  assert.match(workContract, /settlement <operation> --json before retrying/);
+  assert.match(workContract, /Do not author your own independent approval/);
+  assert.match(workContract, /manager message supplies the authority holder's decision for that exact context/);
   assert.match(calls[1].message, /keep every search within the workspace/);
 });
 
@@ -388,7 +392,7 @@ test('Codex and Pi adapters render only persistent session commands', async () =
     ['pi', ['--print', '--mode', 'json']],
     ['pi', ['--print', '--mode', 'json']],
   ]);
-  assert.equal(commands[0].input.includes('Run mdlm next whenever'), true);
+  assert.equal(commands[0].input.includes('Run mdlm expectations --json'), true);
   assert.equal(commands[0].args.includes('--skip-git-repo-check'), true);
   assert.equal(commands[1].args.includes('--skip-git-repo-check'), true);
   assert.equal(commands[2].args.includes('--skip-git-repo-check'), false);

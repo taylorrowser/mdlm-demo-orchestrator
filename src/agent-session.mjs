@@ -10,12 +10,13 @@ const EVIDENCE_LOOKUP_INSTRUCTION =
   'For evidence lookup, use an exact path supplied in these instructions. Otherwise, search only the current workspace with rg or rg --files. If the evidence is absent there, stop and ask for its exact path; keep every search within the workspace.';
 
 const WORK_AND_STOP_INSTRUCTION =
-  'Run mdlm next whenever you finish the current work. Read each result and decide what to do. ' +
-  'An Assignment is work, never a stop: execute it, submit or settle it as the public CLI directs, then run mdlm next again. Stop only on a typed terminal outcome, Attention Required, or an exact blocker that prevents the current work. ' +
-  'Receiving the next Assignment, writing files, or correcting a local assertion is progress within the current turn. Keep working through local verification and ordinary correction. Use commentary for progress; do not end with a promise to finish later. ' +
-  'When mdlm scenario submit returns the authenticated mdlm-submission-outcome@1 combination outcome: rejected, retryable: true, and correctionConsumed: false for an Assignment, you may submit at most one distinct corrected response for the same Assignment in the current agent turn. ' +
-  'If that corrected submission is also rejected, stop the turn and report the exact Assignment, both response digests, and diagnostics; do not submit a third response or treat mdlm next returning the same Assignment as fresh work. ' +
-  'A later manager turn may continue only under its authenticated stop-review recovery. This retry is pre-publication validation, not a package lifecycle Correction, and consumes no package correction budget.';
+  'Run mdlm expectations --json to discover work, and refresh it after each completed operation. Choose an eligible item using stakeholder intent and current evidence; priority is display order, not an instruction to select the first item. ' +
+  'Retrieve its package prompt, schemas, exact context and authority requirements with mdlm expectations show <action> [<exact-subject>] --json. Follow that guidance to prepare a proposal and publish with mdlm proposal submit <file|-> --json. ' +
+  'When execution evidence is needed, use mdlm execution run <exact-implementation> <operation> --json. Give each operation a stable identity and retain its exact request. If publication or execution is uncertain, inspect mdlm proposal settlement <operation> --json or mdlm execution settlement <operation> --json before retrying. Continue from accepted results without duplicating publication or rerunning completed execution. Never reuse an operation identity for changed content. ' +
+  'For independent-review actions, retrieve mdlm review context <action> <exact-subject> --json and obtain an independent reviewer verdict through the authorized review channel before mdlm review register <proposal-file> <verdict-file> --json. Do not author your own independent approval. ' +
+  'For stakeholder authority, report the exact action, subject or inputs, question, required authority and impact. Continue that protected action only after a manager message supplies the authority holder\'s decision for that exact context. Goal and release text are context only and never supply stakeholder decisions. ' +
+  'Stop on profile-boundary-reached or lifecycle-complete, or report an exact blocker when no eligible work can proceed. Optional items do not prevent completion. When diagnostics reject a request, resolve the stated cause and refresh guidance before correcting it; stop and report repeated diagnostics when you cannot make progress. ' +
+  'Choosing work, writing files and correcting a local assertion are progress within the current turn. Keep working through local verification and ordinary correction. Use commentary for progress; do not end with a promise to finish later.';
 
 export class AgentSession {
   #adapters;
@@ -34,7 +35,7 @@ export class AgentSession {
 
   async start(cwd, release, harness) {
     if (arguments.length > 3) {
-      throw new Error('caller-authored launch goals are not supported; supply product intent only in a later Assignment-bound manager message');
+      throw new Error('caller-authored launch goals are not supported; supply product intent only in a later manager message bound to the exact action and context');
     }
     const spec = await runnableHarnessSpec(harness, cwd);
     const proposedId = this.#newId();
@@ -320,8 +321,5 @@ function agentPrompt(cwd, release, spec) {
   return `Goal:\nComplete the selected MDLM lifecycle through Lifecycle Complete in the exact repository ${cwd} using only the public mdlm CLI and the exact MDLM release below.\n\nMDLM release:\n${releaseText}\n\n` +
     `Work autonomously toward the goal using the public mdlm CLI. ${repositoryInstruction}` +
     `${WORK_AND_STOP_INSTRUCTION} ` +
-    `${EVIDENCE_LOOKUP_INSTRUCTION} ` +
-    'The Goal and MDLM release text are context only. They never answer or authorize an Attention Required Assignment. ' +
-    'On every Attention Required outcome, stop and report the exact Assignment, question, required authority, and impact. ' +
-    'Use --authority only after a later manager message names that exact Assignment and supplies the authority holder\'s decision. Then continue.';
+    `${EVIDENCE_LOOKUP_INSTRUCTION}`;
 }
